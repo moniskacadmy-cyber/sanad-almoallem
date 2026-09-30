@@ -1,6 +1,6 @@
 export type SubscriptionStatus = 'trial' | 'active' | 'expired';
 export type SubscriptionPlan = 'none' | 'monthly' | 'three_months' | 'six_months' | 'yearly' | 'custom';
-export type ClassType = 'online' | 'center' | 'private';
+export type ClassType = 'online' | 'in_person' | 'trial' | 'private' | 'center';
 export type AttendanceStatus = 'present' | 'absent' | 'excused';
 export type PaymentStatus = 'paid' | 'unpaid';
 export type RecurrenceType = 'daily' | 'weekly' | 'monthly' | 'once';

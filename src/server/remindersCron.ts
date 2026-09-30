@@ -43,13 +43,17 @@ export function formatWhatsAppPhone(phone: string): string {
 export function getClassTypeArabic(type: string): string {
   switch (type) {
     case 'online':
-      return 'أونلاين (عن بُعد)';
+      return 'أونلاين (عن بُعد 🌐)';
+    case 'in_person':
+      return 'حضور شخصي 👤';
+    case 'trial':
+      return 'حصة تجريبية ✨';
     case 'center':
-      return 'في السنتر (مجموعة)';
+      return 'حضور شخصي (في السنتر 🏫)';
     case 'private':
-      return 'برايفيت (حضور خاص)';
+      return 'حضور شخصي (برايفيت 👤)';
     default:
-      return type || 'حصة خاصة';
+      return type || 'حصة دراسية';
   }
 }
 

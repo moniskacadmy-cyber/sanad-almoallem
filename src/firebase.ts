@@ -720,9 +720,46 @@ export async function updateStudent(
 export async function deleteStudent(teacherId: string, studentId: string) {
   const path = `teachers/${teacherId}/students/${studentId}`;
   try {
+    // 1. Cascade Delete: Delete all lesson logs from subcollection
+    try {
+      const lessonsSnap = await getDocs(
+        collection(db, 'teachers', teacherId, 'students', studentId, 'lessons')
+      );
+      const deleteLessonPromises = lessonsSnap.docs.map((d) => deleteDoc(d.ref));
+      await Promise.all(deleteLessonPromises);
+    } catch (e) {
+      console.warn('Could not fetch/delete student lessons:', e);
+    }
+
+    // 2. Cascade Delete: Delete any reports subcollection
+    try {
+      const reportsSnap = await getDocs(
+        collection(db, 'teachers', teacherId, 'students', studentId, 'reports')
+      );
+      const deleteReportPromises = reportsSnap.docs.map((d) => deleteDoc(d.ref));
+      await Promise.all(deleteReportPromises);
+    } catch (e) {
+      console.warn('Could not fetch/delete student reports:', e);
+    }
+
+    // 3. Cascade Delete: Delete all schedule slots associated with this student
+    try {
+      const schedulesSnap = await getDocs(collection(db, 'teachers', teacherId, 'schedules'));
+      const studentSchedules = schedulesSnap.docs.filter((d) => {
+        const data = d.data();
+        return data.studentId === studentId;
+      });
+      const deleteSchedulePromises = studentSchedules.map((d) => deleteDoc(d.ref));
+      await Promise.all(deleteSchedulePromises);
+    } catch (e) {
+      console.warn('Could not fetch/delete student schedules:', e);
+    }
+
+    // 4. Cascade Delete: Delete main student document
     await deleteDoc(doc(db, 'teachers', teacherId, 'students', studentId));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
+    throw error;
   }
 }
 

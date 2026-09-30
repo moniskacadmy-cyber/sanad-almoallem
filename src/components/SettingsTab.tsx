@@ -351,13 +351,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
   // Export Students as CSV
   const handleExportStudentsCSV = () => {
-    const headers = ['الاسم', 'رقم الواتساب', 'المادة', 'نوع الحصة', 'المصروفات الشهرية', 'حالة الدفع'];
+    const headers = ['الاسم', 'رقم الواتساب', 'المادة', 'نوع الحصة', 'سعر الساعة (ج.م)', 'حالة الدفع'];
     const rows = students.map((s) => [
       `"${s.name}"`,
-      `"${s.whatsapp}"`,
+      `"${s.whatsapp || ''}"`,
       `"${s.subject}"`,
-      `"${s.classType === 'online' ? 'أونلاين' : s.classType === 'center' ? 'سنتر' : 'برايفيت'}"`,
-      s.monthlyFee,
+      `"${s.classType === 'online' ? 'أونلاين' : s.classType === 'trial' ? 'حصة تجريبية' : s.classType === 'center' ? 'سنتر' : 'حضور شخصي'}"`,
+      s.hourlyRate || (s.monthlyFee ? Math.round(s.monthlyFee / 4) : 100),
       `"${s.paymentStatus === 'paid' ? 'دفع' : 'لم يدفع'}"`,
     ]);
 

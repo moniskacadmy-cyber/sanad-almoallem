@@ -24,6 +24,8 @@ import {
   ExternalLink,
   MessageCircle,
   Play,
+  AlertTriangle,
+  AlertCircle,
 } from 'lucide-react';
 
 interface ScheduleTabProps {
@@ -34,19 +36,122 @@ interface ScheduleTabProps {
 
 // Custom Vibrant Palette for Classes
 export const CLASS_COLORS = [
-  { id: 'purple', name: 'بنفسجي', hex: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.25)', border: '#a78bfa', text: '#ede9fe' },
-  { id: 'blue', name: 'أزرق', hex: '#3b82f6', bg: 'rgba(59, 130, 246, 0.25)', border: '#60a5fa', text: '#dbeafe' },
-  { id: 'cyan', name: 'سماوي', hex: '#06b6d4', bg: 'rgba(6, 182, 212, 0.25)', border: '#22d3ee', text: '#cffafe' },
-  { id: 'emerald', name: 'أخضر', hex: '#10b981', bg: 'rgba(16, 185, 129, 0.25)', border: '#34d399', text: '#d1fae5' },
-  { id: 'amber', name: 'برتقالي', hex: '#f59e0b', bg: 'rgba(245, 158, 11, 0.25)', border: '#fbbf24', text: '#fef3c7' },
-  { id: 'rose', name: 'وردي', hex: '#ec4899', bg: 'rgba(236, 72, 153, 0.25)', border: '#f472b6', text: '#fce7f3' },
-  { id: 'red', name: 'أحمر', hex: '#ef4444', bg: 'rgba(239, 68, 68, 0.25)', border: '#f87171', text: '#fee2e2' },
-  { id: 'indigo', name: 'نيلي', hex: '#6366f1', bg: 'rgba(99, 102, 241, 0.25)', border: '#818cf8', text: '#e0e7ff' },
+  { id: 'cyan', name: 'أزرق سماوي (أونلاين)', hex: '#06b6d4', bg: 'rgba(14, 165, 233, 0.28)', border: '#38bdf8', text: '#e0f2fe' },
+  { id: 'emerald', name: 'أخضر زمردي (حضور شخصي)', hex: '#10b981', bg: 'rgba(16, 185, 129, 0.28)', border: '#34d399', text: '#d1fae5' },
+  { id: 'amber', name: 'ذهبي / برتقالي (حصة تجريبية)', hex: '#f59e0b', bg: 'rgba(245, 158, 11, 0.32)', border: '#fbbf24', text: '#fef3c7' },
+  { id: 'purple', name: 'بنفسجي ملكي', hex: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.28)', border: '#a78bfa', text: '#ede9fe' },
+  { id: 'blue', name: 'أزرق كلاسيكي', hex: '#3b82f6', bg: 'rgba(59, 130, 246, 0.28)', border: '#60a5fa', text: '#dbeafe' },
+  { id: 'rose', name: 'وردي', hex: '#ec4899', bg: 'rgba(236, 72, 153, 0.28)', border: '#f472b6', text: '#fce7f3' },
+  { id: 'red', name: 'أحمر قرمزي', hex: '#ef4444', bg: 'rgba(239, 68, 68, 0.28)', border: '#f87171', text: '#fee2e2' },
+  { id: 'indigo', name: 'نيلي', hex: '#6366f1', bg: 'rgba(99, 102, 241, 0.28)', border: '#818cf8', text: '#e0e7ff' },
 ];
+
+export interface ClassTypeMeta {
+  id: ClassType;
+  label: string;
+  shortLabel: string;
+  desc: string;
+  bg: string;
+  border: string;
+  text: string;
+  badgeClass: string;
+  dotColor: string;
+  colorId: string;
+}
+
+export const CLASS_TYPE_META: Record<string, ClassTypeMeta> = {
+  online: {
+    id: 'online',
+    label: 'أونلاين',
+    shortLabel: 'أونلاين 🌐',
+    desc: 'عبر الإنترنت (Zoom / Teams / Meet)',
+    bg: 'rgba(14, 165, 233, 0.28)',
+    border: '#38bdf8',
+    text: '#e0f2fe',
+    badgeClass: 'bg-sky-950/90 border-sky-500/50 text-sky-300 font-semibold',
+    dotColor: '#38bdf8',
+    colorId: 'cyan',
+  },
+  in_person: {
+    id: 'in_person',
+    label: 'حضور شخصي',
+    shortLabel: 'حضور شخصي 👤',
+    desc: 'لقاء مباشر (منزل الطالب / السنتر / المكتب)',
+    bg: 'rgba(16, 185, 129, 0.28)',
+    border: '#34d399',
+    text: '#d1fae5',
+    badgeClass: 'bg-emerald-950/90 border-emerald-500/50 text-emerald-300 font-semibold',
+    dotColor: '#34d399',
+    colorId: 'emerald',
+  },
+  trial: {
+    id: 'trial',
+    label: 'حصة تجريبية',
+    shortLabel: 'حصة تجريبية ✨',
+    desc: 'جلسة أولى للتقييم والتعارف (مجانية أو مخفضة)',
+    bg: 'rgba(245, 158, 11, 0.32)',
+    border: '#fbbf24',
+    text: '#fef3c7',
+    badgeClass: 'bg-amber-950/90 border-amber-500/50 text-amber-300 font-semibold ring-1 ring-amber-400/30',
+    dotColor: '#fbbf24',
+    colorId: 'amber',
+  },
+  // Backward compatibility mappings
+  private: {
+    id: 'in_person',
+    label: 'حضور شخصي',
+    shortLabel: 'حضور شخصي 👤',
+    desc: 'لقاء مباشر',
+    bg: 'rgba(16, 185, 129, 0.28)',
+    border: '#34d399',
+    text: '#d1fae5',
+    badgeClass: 'bg-emerald-950/90 border-emerald-500/50 text-emerald-300 font-semibold',
+    dotColor: '#34d399',
+    colorId: 'emerald',
+  },
+  center: {
+    id: 'in_person',
+    label: 'حضور شخصي (سنتر)',
+    shortLabel: 'سنتر 🏫',
+    desc: 'حضور في السنتر',
+    bg: 'rgba(16, 185, 129, 0.28)',
+    border: '#34d399',
+    text: '#d1fae5',
+    badgeClass: 'bg-emerald-950/90 border-emerald-500/50 text-emerald-300 font-semibold',
+    dotColor: '#34d399',
+    colorId: 'emerald',
+  },
+};
+
+export function getClassTypeMeta(type?: string): ClassTypeMeta {
+  if (type && CLASS_TYPE_META[type]) {
+    return CLASS_TYPE_META[type];
+  }
+  return CLASS_TYPE_META.in_person;
+}
 
 export function getColorStyle(colorId?: string) {
   const found = CLASS_COLORS.find((c) => c.id === colorId || c.hex === colorId);
   return found || CLASS_COLORS[0];
+}
+
+export function getSlotColorStyle(slot: { classType?: ClassType; color?: string }) {
+  // If slot has an explicit custom color other than purple/default
+  if (slot.color && slot.color !== 'purple' && slot.color !== 'default') {
+    const custom = CLASS_COLORS.find((c) => c.id === slot.color || c.hex === slot.color);
+    if (custom) return custom;
+  }
+  // Otherwise use the signature color for its class type
+  const meta = getClassTypeMeta(slot.classType);
+  const typeColor = CLASS_COLORS.find((c) => c.id === meta.colorId);
+  return typeColor || {
+    id: meta.id,
+    name: meta.label,
+    hex: meta.dotColor,
+    bg: meta.bg,
+    border: meta.border,
+    text: meta.text,
+  };
 }
 
 // 7 Days of the week in Arabic starting with Saturday
@@ -84,6 +189,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
   const todayIndex = new Date().getDay();
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [selectedDayFilter, setSelectedDayFilter] = useState<number | 'all'>(todayIndex);
+  const [selectedClassTypeFilter, setSelectedClassTypeFilter] = useState<'all' | 'online' | 'in_person' | 'trial'>('all');
 
   // Modals state
   const [showAddModal, setShowAddModal] = useState(false);
@@ -97,9 +203,10 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
   const [formTime, setFormTime] = useState('16:00');
   const [formDuration, setFormDuration] = useState<number>(60);
   const [formRecurrence, setFormRecurrence] = useState<RecurrenceType>('weekly');
-  const [formClassType, setFormClassType] = useState<ClassType>('private');
-  const [formColor, setFormColor] = useState('purple');
+  const [formClassType, setFormClassType] = useState<ClassType>('in_person');
+  const [formColor, setFormColor] = useState('emerald');
   const [formLocationOrLink, setFormLocationOrLink] = useState('');
+  const [conflictError, setConflictError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Notification state
@@ -113,8 +220,6 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
   // Auto-scroll grid to ~08:00 AM on initial load
   useEffect(() => {
     if (viewMode === 'grid' && gridScrollRef.current) {
-      // 08:00 AM is index 16 (16 * 44 = 704px)
-      // Check if there are scheduled classes earlier than 8 AM
       let earliestSlot = 16;
       schedules.forEach((s) => {
         const [h, m] = s.time.split(':').map(Number);
@@ -143,52 +248,67 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
     }
   };
 
+  const handleClassTypeChange = (type: ClassType) => {
+    setFormClassType(type);
+    const meta = getClassTypeMeta(type);
+    setFormColor(meta.colorId);
+  };
+
   // Open Add modal with defaults
   const handleOpenAddDefault = () => {
+    setConflictError(null);
     setEditingSchedule(null);
     setViewingScheduleDetails(null);
     if (students.length > 0) {
-      setFormStudentId(students[0].id);
-      setFormStudentName(students[0].name);
-      setFormClassType(students[0].classType);
+      const firstStudent = students[0];
+      setFormStudentId(firstStudent.id);
+      setFormStudentName(firstStudent.name);
+      const sType = firstStudent.classType || 'in_person';
+      setFormClassType(sType);
+      setFormColor(getClassTypeMeta(sType).colorId);
     } else {
       setFormStudentId('custom');
       setFormStudentName('');
-      setFormClassType('private');
+      setFormClassType('in_person');
+      setFormColor('emerald');
     }
     setFormSelectedDays([todayIndex]);
     setFormTime('16:00');
     setFormDuration(60);
     setFormRecurrence('weekly');
-    setFormColor('purple');
     setFormLocationOrLink('');
     setShowAddModal(true);
   };
 
   // Open Add modal from an empty cell in the grid
   const handleCellClick = (dayIndex: number, time24: string) => {
+    setConflictError(null);
     setEditingSchedule(null);
     setViewingScheduleDetails(null);
     if (students.length > 0) {
-      setFormStudentId(students[0].id);
-      setFormStudentName(students[0].name);
-      setFormClassType(students[0].classType);
+      const firstStudent = students[0];
+      setFormStudentId(firstStudent.id);
+      setFormStudentName(firstStudent.name);
+      const sType = firstStudent.classType || 'in_person';
+      setFormClassType(sType);
+      setFormColor(getClassTypeMeta(sType).colorId);
     } else {
       setFormStudentId('custom');
       setFormStudentName('');
-      setFormClassType('private');
+      setFormClassType('in_person');
+      setFormColor('emerald');
     }
     setFormSelectedDays([dayIndex]);
     setFormTime(time24);
     setFormDuration(60);
     setFormRecurrence('weekly');
-    setFormColor(CLASS_COLORS[dayIndex % CLASS_COLORS.length].id);
     setFormLocationOrLink('');
     setShowAddModal(true);
   };
 
   // Open Edit modal from slot
   const handleOpenEdit = (slot: ScheduleSlot) => {
+    setConflictError(null);
     setViewingScheduleDetails(null);
     setEditingSchedule(slot);
     setFormStudentId(slot.studentId);
@@ -197,8 +317,8 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
     setFormTime(slot.time);
     setFormDuration(slot.duration);
     setFormRecurrence(slot.recurrence);
-    setFormClassType(slot.classType);
-    setFormColor(slot.color || 'purple');
+    setFormClassType(slot.classType || 'in_person');
+    setFormColor(slot.color || getClassTypeMeta(slot.classType).colorId);
     setFormLocationOrLink(slot.locationOrLink || '');
     setShowAddModal(true);
   };
@@ -210,15 +330,19 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
   };
 
   const handleStudentSelectChange = (id: string) => {
+    setConflictError(null);
     setFormStudentId(id);
     const found = students.find((s) => s.id === id);
     if (found) {
       setFormStudentName(found.name);
-      setFormClassType(found.classType);
+      const sType = found.classType || 'in_person';
+      setFormClassType(sType);
+      setFormColor(getClassTypeMeta(sType).colorId);
     }
   };
 
   const toggleDaySelection = (dayIndex: number) => {
+    setConflictError(null);
     if (editingSchedule) {
       setFormSelectedDays([dayIndex]);
       return;
@@ -233,13 +357,39 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
   };
 
   const selectPresetDays = (preset: number[]) => {
+    setConflictError(null);
     setFormSelectedDays(preset);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formStudentName.trim() || !formTime || formSelectedDays.length === 0) return;
+
+    // Schedule Conflict Check (منع تعارض المواعيد)
+    const newStartMin = getMinutesFromTime(formTime);
+    const newEndMin = newStartMin + (Number(formDuration) || 60);
+
+    for (const day of formSelectedDays) {
+      const daySlots = schedules.filter((s) => s.dayOfWeek === Number(day));
+      for (const slot of daySlots) {
+        if (editingSchedule && slot.id === editingSchedule.id) continue;
+        const slotStart = getMinutesFromTime(slot.time);
+        const slotEnd = slotStart + (slot.duration || 60);
+
+        // Check if intervals overlap: startA < endB && endA > startB
+        if (newStartMin < slotEnd && newEndMin > slotStart) {
+          const dayObj = WEEK_DAYS.find((d) => d.dayIndex === Number(day));
+          const slotEndFormatted = getEndTimeFormatted(slot.time, slot.duration || 60);
+          setConflictError(
+            `تنبيه: هذا الموعد يتعارض مع حصة الطالب [${slot.studentName}] بنفس الوقت! (يوم ${dayObj?.name || 'هذا اليوم'} من ${slot.time} إلى ${slotEndFormatted})`
+          );
+          return;
+        }
+      }
+    }
+
     setIsSubmitting(true);
+    setConflictError(null);
 
     try {
       if (editingSchedule) {
@@ -300,27 +450,30 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
     }
   };
 
-  const getClassTypeBadge = (type: ClassType) => {
+  const getClassTypeBadge = (type?: ClassType) => {
     switch (type) {
       case 'online':
         return (
-          <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.2 rounded-full bg-blue-950/80 border border-blue-500/40 text-blue-300">
-            <Video className="w-2.5 h-2.5" />
-            <span>أونلاين</span>
+          <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-sky-950/90 border border-sky-500/40 text-sky-300 font-bold shadow-sm">
+            <Video className="w-2.5 h-2.5 text-sky-400" />
+            <span>أونلاين 🌐</span>
           </span>
         );
-      case 'center':
+      case 'trial':
         return (
-          <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.2 rounded-full bg-amber-950/80 border border-amber-500/40 text-amber-300">
-            <Building className="w-2.5 h-2.5" />
-            <span>سنتر</span>
+          <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-amber-950/90 border border-amber-500/50 text-amber-300 font-bold shadow-sm ring-1 ring-amber-400/30">
+            <Sparkles className="w-2.5 h-2.5 text-amber-400" />
+            <span>حصة تجريبية ✨</span>
           </span>
         );
+      case 'in_person':
       case 'private':
+      case 'center':
+      default:
         return (
-          <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.2 rounded-full bg-purple-950/80 border border-purple-500/40 text-purple-300">
-            <UserCheck className="w-2.5 h-2.5" />
-            <span>برايفيت</span>
+          <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/90 border border-emerald-500/40 text-emerald-300 font-bold shadow-sm">
+            <UserCheck className="w-2.5 h-2.5 text-emerald-400" />
+            <span>{type === 'center' ? 'سنتر 🏫' : 'حضور شخصي 👤'}</span>
           </span>
         );
     }
@@ -340,13 +493,13 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
   };
 
   // Helper to format minutes from time string "HH:MM"
-  const getMinutesFromTime = (timeStr: string) => {
+  export const getMinutesFromTime = (timeStr: string) => {
     const [h, m] = timeStr.split(':').map(Number);
     return (h || 0) * 60 + (m || 0);
   };
 
   // Format end time from start and duration
-  const getEndTimeFormatted = (start: string, durationMin: number) => {
+  export const getEndTimeFormatted = (start: string, durationMin: number) => {
     const total = getMinutesFromTime(start) + durationMin;
     const endH = Math.floor(total / 60) % 24;
     const endM = total % 60;
@@ -394,9 +547,32 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
 
   const nextUpcomingOrOngoing = evaluatedTodaySchedule.find((c) => c.isOngoing || c.isUpcoming);
 
+  // Filter schedules by class type
+  const isSlotMatchingTypeFilter = (slot: ScheduleSlot, filter: string) => {
+    if (filter === 'all') return true;
+    if (filter === 'online') return slot.classType === 'online';
+    if (filter === 'trial') return slot.classType === 'trial';
+    if (filter === 'in_person') {
+      return (
+        slot.classType === 'in_person' ||
+        slot.classType === 'private' ||
+        slot.classType === 'center' ||
+        !slot.classType
+      );
+    }
+    return true;
+  };
+
+  const onlineSlotsCount = schedules.filter((s) => s.classType === 'online').length;
+  const inPersonSlotsCount = schedules.filter(
+    (s) => s.classType === 'in_person' || s.classType === 'private' || s.classType === 'center' || !s.classType
+  ).length;
+  const trialSlotsCount = schedules.filter((s) => s.classType === 'trial').length;
+
   const filteredListSchedules = schedules.filter((s) => {
-    if (selectedDayFilter === 'all') return true;
-    return s.dayOfWeek === selectedDayFilter;
+    const matchesDay = selectedDayFilter === 'all' || s.dayOfWeek === selectedDayFilter;
+    const matchesType = isSlotMatchingTypeFilter(s, selectedClassTypeFilter);
+    return matchesDay && matchesType;
   });
 
   return (
@@ -516,37 +692,96 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
       {/* Grid Legend & Quick Time Jumpers (Shown in Grid View) */}
       {viewMode === 'grid' && (
         <div className="space-y-2">
-          {/* Legend Banner */}
-          <div className="rounded-xl bg-slate-900/90 border border-purple-500/20 p-2.5 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded-md bg-purple-500/40 border border-purple-400 shadow-sm" />
-                <span className="text-purple-200 font-medium">حصة محجوزة (انقر للتعديل)</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded-md bg-slate-800/80 border border-slate-700" />
-                <span className="text-slate-400">خلية فارغة (انقر للحجز)</span>
-              </div>
+          {/* Class Types Legend & Filter Banner */}
+          <div className="rounded-2xl bg-slate-900/90 border border-purple-500/25 p-3 flex flex-wrap items-center justify-between gap-2.5 text-[11px] shadow-md">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-slate-400 font-bold ml-1">تصنيف الحصص بالألوان:</span>
+              <button
+                type="button"
+                onClick={() => setSelectedClassTypeFilter('all')}
+                className={`px-2.5 py-1 rounded-xl font-bold transition cursor-pointer flex items-center gap-1 text-[11px] ${
+                  selectedClassTypeFilter === 'all'
+                    ? 'bg-purple-600 text-white shadow-md'
+                    : 'bg-slate-800/80 text-slate-400 hover:text-white border border-slate-700/60'
+                }`}
+              >
+                <span>الكل</span>
+                <span className="text-[10px] opacity-80">({schedules.length})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedClassTypeFilter(selectedClassTypeFilter === 'online' ? 'all' : 'online')}
+                className={`px-2.5 py-1 rounded-xl font-bold transition cursor-pointer flex items-center gap-1 text-[11px] border ${
+                  selectedClassTypeFilter === 'online'
+                    ? 'bg-sky-500/30 border-sky-400 text-sky-200 ring-2 ring-sky-400/40 shadow-md'
+                    : 'bg-sky-950/60 border-sky-500/40 text-sky-300 hover:bg-sky-900/60'
+                }`}
+                title="تصفية حصص الأونلاين"
+              >
+                <Video className="w-3 h-3 text-sky-400" />
+                <span>أونلاين 🌐</span>
+                <span className="text-[10px] bg-sky-900/80 px-1.5 py-0.2 rounded-full font-mono font-bold">
+                  {onlineSlotsCount}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedClassTypeFilter(selectedClassTypeFilter === 'in_person' ? 'all' : 'in_person')}
+                className={`px-2.5 py-1 rounded-xl font-bold transition cursor-pointer flex items-center gap-1 text-[11px] border ${
+                  selectedClassTypeFilter === 'in_person'
+                    ? 'bg-emerald-500/30 border-emerald-400 text-emerald-200 ring-2 ring-emerald-400/40 shadow-md'
+                    : 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60'
+                }`}
+                title="تصفية حصص الحضور الشخصي"
+              >
+                <UserCheck className="w-3 h-3 text-emerald-400" />
+                <span>حضور شخصي 👤</span>
+                <span className="text-[10px] bg-emerald-900/80 px-1.5 py-0.2 rounded-full font-mono font-bold">
+                  {inPersonSlotsCount}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedClassTypeFilter(selectedClassTypeFilter === 'trial' ? 'all' : 'trial')}
+                className={`px-2.5 py-1 rounded-xl font-bold transition cursor-pointer flex items-center gap-1 text-[11px] border ${
+                  selectedClassTypeFilter === 'trial'
+                    ? 'bg-amber-500/30 border-amber-400 text-amber-200 ring-2 ring-amber-400/40 shadow-md'
+                    : 'bg-amber-950/60 border-amber-500/40 text-amber-300 hover:bg-amber-900/60 ring-1 ring-amber-400/30'
+                }`}
+                title="تصفية الحصص التجريبية"
+              >
+                <Sparkles className="w-3 h-3 text-amber-400" />
+                <span>حصة تجريبية ✨</span>
+                <span className="text-[10px] bg-amber-900/80 px-1.5 py-0.2 rounded-full font-mono font-bold">
+                  {trialSlotsCount}
+                </span>
+              </button>
             </div>
 
             {/* Quick Scroll Anchors */}
             <div className="flex items-center gap-1 text-[10px] text-slate-400 mr-auto">
-              <span>انتقال سريع:</span>
+              <span className="hidden sm:inline">انتقال سريع:</span>
               <button
+                type="button"
                 onClick={() => scrollToHour(8)}
-                className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-purple-300 hover:text-white transition cursor-pointer"
+                className="px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-purple-300 hover:text-white transition cursor-pointer border border-slate-700/60"
               >
                 08:00 ص
               </button>
               <button
+                type="button"
                 onClick={() => scrollToHour(14)}
-                className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-purple-300 hover:text-white transition cursor-pointer"
+                className="px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-purple-300 hover:text-white transition cursor-pointer border border-slate-700/60"
               >
                 02:00 م
               </button>
               <button
+                type="button"
                 onClick={() => scrollToHour(18)}
-                className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-purple-300 hover:text-white transition cursor-pointer"
+                className="px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-purple-300 hover:text-white transition cursor-pointer border border-slate-700/60"
               >
                 06:00 م
               </button>
@@ -575,7 +810,11 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
                 {/* 7 Days Columns Headers */}
                 {WEEK_DAYS.map((day) => {
                   const isToday = day.dayIndex === todayIndex;
-                  const dayClassCount = schedules.filter((s) => s.dayOfWeek === day.dayIndex).length;
+                  const daySchedules = schedules.filter((s) => s.dayOfWeek === day.dayIndex);
+                  const matchingCount = daySchedules.filter((s) =>
+                    isSlotMatchingTypeFilter(s, selectedClassTypeFilter)
+                  ).length;
+
                   return (
                     <div
                       key={day.dayIndex}
@@ -596,7 +835,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
                         )}
                       </div>
                       <span className="text-[10px] text-slate-400">
-                        {dayClassCount > 0 ? `${dayClassCount} حصص` : 'فارغ'}
+                        {matchingCount > 0 ? `${matchingCount} حصص` : 'فارغ'}
                       </span>
                     </div>
                   );
@@ -658,15 +897,20 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
                         );
                       })}
 
-                      {/* Rendered Booked Classes on top */}
+                      {/* Rendered Booked Classes on top with Distinctive Color Coding */}
                       {daySchedules.map((slot) => {
+                        const isMatchesFilter = isSlotMatchingTypeFilter(slot, selectedClassTypeFilter);
                         const startMin = getMinutesFromTime(slot.time);
                         const endMin = startMin + (slot.duration || 60);
                         const topPx = (startMin / 30) * ROW_HEIGHT;
                         const heightPx = Math.max(32, (slot.duration / 30) * ROW_HEIGHT - 3);
-                        const colorInfo = getColorStyle(slot.color);
+                        const colorInfo = getSlotColorStyle(slot);
                         const isSlotCompleted =
                           isToday && (slot.completedTodayDate === todayStr || nowMinutes >= endMin);
+
+                        if (!isMatchesFilter) {
+                          return null; // filtered out
+                        }
 
                         return (
                           <div
@@ -692,11 +936,22 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
                                 >
                                   {isSlotCompleted ? `✓ ${slot.studentName}` : slot.studentName}
                                 </span>
+
+                                {/* Distinctive Icon for Class Type */}
                                 {slot.classType === 'online' && (
-                                  <Video className="w-2.5 h-2.5 flex-shrink-0 opacity-80" />
+                                  <span title="أونلاين 🌐">
+                                    <Video className="w-2.5 h-2.5 flex-shrink-0 text-sky-300" />
+                                  </span>
                                 )}
-                                {slot.classType === 'center' && (
-                                  <Building className="w-2.5 h-2.5 flex-shrink-0 opacity-80" />
+                                {slot.classType === 'trial' && (
+                                  <span title="حصة تجريبية ✨">
+                                    <Sparkles className="w-2.5 h-2.5 flex-shrink-0 text-amber-300" />
+                                  </span>
+                                )}
+                                {(slot.classType === 'in_person' || slot.classType === 'private' || slot.classType === 'center' || !slot.classType) && (
+                                  <span title="حضور شخصي 👤">
+                                    <UserCheck className="w-2.5 h-2.5 flex-shrink-0 text-emerald-300" />
+                                  </span>
                                 )}
                               </div>
                               <span className="text-[10px] opacity-90 font-mono block mt-0.5">
@@ -705,8 +960,10 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
                             </div>
 
                             {heightPx > 45 && (
-                              <div className="flex items-center justify-between text-[9px] opacity-80">
-                                <span className="truncate">{slot.locationOrLink || ''}</span>
+                              <div className="flex items-center justify-between text-[9px] opacity-90 font-medium">
+                                <span className="truncate">
+                                  {slot.classType === 'trial' ? '⭐ تجريبية' : slot.locationOrLink || (slot.classType === 'online' ? '🌐 أونلاين' : '👤 شخصي')}
+                                </span>
                                 {isSlotCompleted && (
                                   <span className="text-emerald-300 font-bold">تمت ✅</span>
                                 )}
@@ -724,9 +981,60 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
         </div>
       )}
 
-      {/* VIEW 2: LIST VIEW (Filtered by day) */}
+      {/* VIEW 2: LIST VIEW (Filtered by day and class type) */}
       {viewMode === 'list' && (
         <div className="space-y-3">
+          {/* Class Types Filter for List View */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+            <button
+              type="button"
+              onClick={() => setSelectedClassTypeFilter('all')}
+              className={`px-3 py-1 rounded-xl font-bold transition whitespace-nowrap cursor-pointer ${
+                selectedClassTypeFilter === 'all'
+                  ? 'bg-purple-600 text-white shadow'
+                  : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+              }`}
+            >
+              كافة الأنواع ({schedules.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedClassTypeFilter('online')}
+              className={`px-2.5 py-1 rounded-xl font-bold transition whitespace-nowrap cursor-pointer border flex items-center gap-1 ${
+                selectedClassTypeFilter === 'online'
+                  ? 'bg-sky-500/30 border-sky-400 text-sky-200'
+                  : 'bg-slate-900 border-slate-800 text-sky-300 hover:text-white'
+              }`}
+            >
+              <Video className="w-3 h-3 text-sky-400" />
+              <span>أونلاين ({onlineSlotsCount})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedClassTypeFilter('in_person')}
+              className={`px-2.5 py-1 rounded-xl font-bold transition whitespace-nowrap cursor-pointer border flex items-center gap-1 ${
+                selectedClassTypeFilter === 'in_person'
+                  ? 'bg-emerald-500/30 border-emerald-400 text-emerald-200'
+                  : 'bg-slate-900 border-slate-800 text-emerald-300 hover:text-white'
+              }`}
+            >
+              <UserCheck className="w-3 h-3 text-emerald-400" />
+              <span>حضور شخصي ({inPersonSlotsCount})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedClassTypeFilter('trial')}
+              className={`px-2.5 py-1 rounded-xl font-bold transition whitespace-nowrap cursor-pointer border flex items-center gap-1 ${
+                selectedClassTypeFilter === 'trial'
+                  ? 'bg-amber-500/30 border-amber-400 text-amber-200'
+                  : 'bg-slate-900 border-slate-800 text-amber-300 hover:text-white'
+              }`}
+            >
+              <Sparkles className="w-3 h-3 text-amber-400" />
+              <span>حصة تجريبية ({trialSlotsCount})</span>
+            </button>
+          </div>
+
           {/* Days Filter Pills */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
             <button
@@ -737,11 +1045,11 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
                   : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
               }`}
             >
-              الكل ({schedules.length})
+              كافة الأيام
             </button>
 
             {WEEK_DAYS.map((day) => {
-              const count = schedules.filter((s) => s.dayOfWeek === day.dayIndex).length;
+              const count = schedules.filter((s) => s.dayOfWeek === day.dayIndex && isSlotMatchingTypeFilter(s, selectedClassTypeFilter)).length;
               const isToday = day.dayIndex === todayIndex;
               return (
                 <button
@@ -768,7 +1076,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
             <div className="rounded-2xl bg-slate-900/50 border border-slate-800 p-8 text-center">
               <Calendar className="w-10 h-10 mx-auto text-purple-400/60 mb-2" />
               <p className="text-sm font-bold text-slate-200">
-                {selectedDayFilter === 'all' ? 'لا توجد مواعيد مسجلة' : 'لا توجد حصص في هذا اليوم'}
+                {selectedDayFilter === 'all' ? 'لا توجد مواعيد مسجلة تطابق الفلتر' : 'لا توجد حصص في هذا اليوم تطابق الفلتر'}
               </p>
               <button
                 onClick={handleOpenAddDefault}
@@ -781,7 +1089,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
           ) : (
             <div className="space-y-2">
               {filteredListSchedules.map((slot) => {
-                const colorInfo = getColorStyle(slot.color);
+                const colorInfo = getSlotColorStyle(slot);
                 const dayObj = WEEK_DAYS.find((d) => d.dayIndex === slot.dayOfWeek);
                 const isTodaySlot = slot.dayOfWeek === todayIndex;
                 const [slotH, slotM] = slot.time.split(':').map(Number);
@@ -1009,6 +1317,17 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-3 overflow-y-auto pr-1">
+              {/* Conflict Error Alert (منع تعارض المواعيد) */}
+              {conflictError && (
+                <div className="rounded-2xl bg-rose-950/80 border border-rose-500/50 p-3 flex items-start gap-2.5 text-rose-200 text-xs animate-shake shadow-lg">
+                  <AlertCircle className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1 leading-relaxed">
+                    <p className="font-bold text-rose-300 mb-0.5">تعارض في المواعيد!</p>
+                    <p className="text-[11px] text-rose-200">{conflictError}</p>
+                  </div>
+                </div>
+              )}
+
               {/* Student Picker */}
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">
@@ -1166,40 +1485,57 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
 
               {/* Class Type */}
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">نوع الحصة</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5 flex items-center justify-between">
+                  <span>تصنيف ونوع الحصة *</span>
+                  <span className="text-[10px] text-purple-300 font-normal">يحدد اللون والوسم الافتراضي بالجدول</span>
+                </label>
                 <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
-                    onClick={() => setFormClassType('private')}
-                    className={`py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer ${
-                      formClassType === 'private'
-                        ? 'bg-purple-600/30 border-purple-400 text-purple-200'
-                        : 'bg-slate-800/60 border-slate-700 text-slate-400'
-                    }`}
-                  >
-                    برايفيت
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFormClassType('online')}
-                    className={`py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                    onClick={() => handleClassTypeChange('online')}
+                    className={`p-2.5 rounded-2xl text-xs font-bold border transition cursor-pointer flex flex-col items-center justify-center gap-1 text-center ${
                       formClassType === 'online'
-                        ? 'bg-blue-600/30 border-blue-400 text-blue-200'
-                        : 'bg-slate-800/60 border-slate-700 text-slate-400'
+                        ? 'bg-sky-500/25 border-sky-400 text-sky-200 ring-2 ring-sky-400/40 shadow-lg scale-[1.02]'
+                        : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-sky-300 hover:border-sky-500/30'
                     }`}
                   >
-                    أونلاين
+                    <div className="flex items-center gap-1">
+                      <Video className="w-3.5 h-3.5 text-sky-400" />
+                      <span>أونلاين</span>
+                    </div>
+                    <span className="text-[9px] opacity-75 font-normal">عبر الإنترنت 🌐</span>
                   </button>
+
                   <button
                     type="button"
-                    onClick={() => setFormClassType('center')}
-                    className={`py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer ${
-                      formClassType === 'center'
-                        ? 'bg-amber-600/30 border-amber-400 text-amber-200'
-                        : 'bg-slate-800/60 border-slate-700 text-slate-400'
+                    onClick={() => handleClassTypeChange('in_person')}
+                    className={`p-2.5 rounded-2xl text-xs font-bold border transition cursor-pointer flex flex-col items-center justify-center gap-1 text-center ${
+                      formClassType === 'in_person' || formClassType === 'private' || formClassType === 'center'
+                        ? 'bg-emerald-500/25 border-emerald-400 text-emerald-200 ring-2 ring-emerald-400/40 shadow-lg scale-[1.02]'
+                        : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-emerald-300 hover:border-emerald-500/30'
                     }`}
                   >
-                    سنتر
+                    <div className="flex items-center gap-1">
+                      <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>حضور شخصي</span>
+                    </div>
+                    <span className="text-[9px] opacity-75 font-normal">منزل / سنتر 👤</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleClassTypeChange('trial')}
+                    className={`p-2.5 rounded-2xl text-xs font-bold border transition cursor-pointer flex flex-col items-center justify-center gap-1 text-center ${
+                      formClassType === 'trial'
+                        ? 'bg-amber-500/25 border-amber-400 text-amber-200 ring-2 ring-amber-400/40 shadow-lg scale-[1.02]'
+                        : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-amber-300 hover:border-amber-500/30 ring-1 ring-amber-400/20'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <span>حصة تجريبية</span>
+                    </div>
+                    <span className="text-[9px] opacity-75 font-normal">تقييم وتعارف ✨</span>
                   </button>
                 </div>
               </div>

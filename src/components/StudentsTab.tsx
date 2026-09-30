@@ -357,7 +357,10 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
       s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (s.whatsapp && s.whatsapp.includes(searchQuery)) ||
       s.subject.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesType = typeFilter === 'all' || s.classType === typeFilter;
+    const matchesType =
+      typeFilter === 'all' ||
+      s.classType === typeFilter ||
+      (typeFilter === 'in_person' && (s.classType === 'private' || s.classType === 'center' || !s.classType));
     const matchesPayment = paymentFilter === 'all' || s.paymentStatus === paymentFilter;
     return matchesSearch && matchesType && matchesPayment;
   });
@@ -378,7 +381,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     setFormName('');
     setFormWhatsapp('');
     setFormSubject(profile.subject || 'رياضيات');
-    setFormClassType('private');
+    setFormClassType('in_person');
     setFormHourlyRate(100);
     setFormLearningStyle('');
     setFormNotes('');
@@ -394,7 +397,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     setFormName(student.name);
     setFormWhatsapp(student.whatsapp || '');
     setFormSubject(student.subject);
-    setFormClassType(student.classType);
+    setFormClassType(student.classType || 'in_person');
     setFormHourlyRate(student.hourlyRate || (student.monthlyFee ? Math.round(student.monthlyFee / 4) : 100));
     setFormLearningStyle(student.learningStyle || '');
     setFormNotes(student.notes || '');
@@ -724,27 +727,30 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     window.open(url, '_blank');
   };
 
-  const getClassTypeBadge = (type: ClassType) => {
+  const getClassTypeBadge = (type?: ClassType) => {
     switch (type) {
       case 'online':
         return (
-          <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-blue-950/70 border border-blue-500/30 text-blue-300">
-            <Video className="w-3 h-3" />
-            <span>أونلاين</span>
+          <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-sky-950/80 border border-sky-500/40 text-sky-300 font-bold shadow-sm">
+            <Video className="w-3 h-3 text-sky-400" />
+            <span>أونلاين 🌐</span>
           </span>
         );
-      case 'center':
+      case 'trial':
         return (
-          <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-amber-950/70 border border-amber-500/30 text-amber-300">
-            <Building className="w-3 h-3" />
-            <span>سنتر</span>
+          <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-amber-950/80 border border-amber-500/50 text-amber-300 font-bold shadow-sm ring-1 ring-amber-400/30">
+            <Sparkles className="w-3 h-3 text-amber-400" />
+            <span>حصة تجريبية ✨</span>
           </span>
         );
+      case 'in_person':
       case 'private':
+      case 'center':
+      default:
         return (
-          <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-purple-950/70 border border-purple-500/30 text-purple-300">
-            <UserCheck className="w-3 h-3" />
-            <span>برايفيت</span>
+          <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold shadow-sm">
+            <UserCheck className="w-3 h-3 text-emerald-400" />
+            <span>{type === 'center' ? 'سنتر 🏫' : 'حضور شخصي 👤'}</span>
           </span>
         );
     }
@@ -786,17 +792,22 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
             <Filter className="w-3 h-3" />
             <span>النوع:</span>
           </span>
-          {(['all', 'private', 'online', 'center'] as const).map((t) => (
+          {[
+            { id: 'all', label: 'الكل' },
+            { id: 'online', label: 'أونلاين 🌐' },
+            { id: 'in_person', label: 'حضور شخصي 👤' },
+            { id: 'trial', label: 'حصة تجريبية ✨' },
+          ].map((t) => (
             <button
-              key={t}
-              onClick={() => setTypeFilter(t)}
+              key={t.id}
+              onClick={() => setTypeFilter(t.id as any)}
               className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer whitespace-nowrap ${
-                typeFilter === t
+                typeFilter === t.id
                   ? 'bg-purple-600 text-white shadow'
                   : 'bg-slate-800/80 text-slate-400 hover:text-white'
               }`}
             >
-              {t === 'all' ? 'الكل' : t === 'private' ? 'برايفيت' : t === 'online' ? 'أونلاين' : 'سنتر'}
+              {t.label}
             </button>
           ))}
 
@@ -1007,29 +1018,81 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">المادة</label>
-                  <input
-                    type="text"
-                    value={formSubject}
-                    onChange={(e) => setFormSubject(e.target.value)}
-                    placeholder="مثال: رياضيات"
-                    required
-                    className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">نوع الحصة</label>
-                  <select
-                    value={formClassType}
-                    onChange={(e) => setFormClassType(e.target.value as ClassType)}
-                    className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 cursor-pointer"
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">المادة الدراسية *</label>
+                <input
+                  type="text"
+                  value={formSubject}
+                  onChange={(e) => setFormSubject(e.target.value)}
+                  placeholder="مثال: رياضيات / فيزياء / لغة إنجليزية"
+                  required
+                  className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
+                />
+              </div>
+
+              {/* Class Type Classification */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5 flex items-center justify-between">
+                  <span>تصنيف نوع الحصة *</span>
+                  <span className="text-[10px] text-purple-300 font-normal">يحدد وسم الحصة ولونها الافتراضي</span>
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormClassType('online');
+                      setFormColor('cyan');
+                    }}
+                    className={`p-2.5 rounded-2xl text-xs font-bold border transition cursor-pointer flex flex-col items-center justify-center gap-1 text-center ${
+                      formClassType === 'online'
+                        ? 'bg-sky-500/25 border-sky-400 text-sky-200 ring-2 ring-sky-400/40 shadow-lg scale-[1.02]'
+                        : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-sky-300 hover:border-sky-500/30'
+                    }`}
                   >
-                    <option value="private">برايفيت (خاص)</option>
-                    <option value="online">أونلاين</option>
-                    <option value="center">سنتر / مجموعة</option>
-                  </select>
+                    <div className="flex items-center gap-1">
+                      <Video className="w-3.5 h-3.5 text-sky-400" />
+                      <span>أونلاين</span>
+                    </div>
+                    <span className="text-[9px] opacity-75 font-normal">عبر الإنترنت 🌐</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormClassType('in_person');
+                      setFormColor('emerald');
+                    }}
+                    className={`p-2.5 rounded-2xl text-xs font-bold border transition cursor-pointer flex flex-col items-center justify-center gap-1 text-center ${
+                      formClassType === 'in_person' || formClassType === 'private' || formClassType === 'center'
+                        ? 'bg-emerald-500/25 border-emerald-400 text-emerald-200 ring-2 ring-emerald-400/40 shadow-lg scale-[1.02]'
+                        : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-emerald-300 hover:border-emerald-500/30'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1">
+                      <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>حضور شخصي</span>
+                    </div>
+                    <span className="text-[9px] opacity-75 font-normal">منزل / سنتر 👤</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormClassType('trial');
+                      setFormColor('amber');
+                    }}
+                    className={`p-2.5 rounded-2xl text-xs font-bold border transition cursor-pointer flex flex-col items-center justify-center gap-1 text-center ${
+                      formClassType === 'trial'
+                        ? 'bg-amber-500/25 border-amber-400 text-amber-200 ring-2 ring-amber-400/40 shadow-lg scale-[1.02]'
+                        : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-amber-300 hover:border-amber-500/30 ring-1 ring-amber-400/20'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <span>حصة تجريبية</span>
+                    </div>
+                    <span className="text-[9px] opacity-75 font-normal">تقييم وتعارف ✨</span>
+                  </button>
                 </div>
               </div>
 

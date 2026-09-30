@@ -158,32 +158,34 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   const totalStudents = students.length;
 
   // Class types distribution for active students
-  const privateCount = students.filter((s) => s.classType === 'private').length;
+  const inPersonCount = students.filter(
+    (s) => s.classType === 'in_person' || s.classType === 'private' || s.classType === 'center' || !s.classType
+  ).length;
   const onlineCount = students.filter((s) => s.classType === 'online').length;
-  const centerCount = students.filter((s) => s.classType === 'center').length;
+  const trialCount = students.filter((s) => s.classType === 'trial').length;
 
   const classTypeData = [
     {
-      name: 'برايفيت (خاص)',
-      shortName: 'برايفيت',
-      value: privateCount,
-      color: '#a855f7',
+      name: 'حضور شخصي (مباشر)',
+      shortName: 'شخصي 👤',
+      value: inPersonCount,
+      color: '#10b981',
     },
     {
       name: 'أونلاين (عن بعد)',
-      shortName: 'أونلاين',
+      shortName: 'أونلاين 🌐',
       value: onlineCount,
-      color: '#38bdf8',
+      color: '#0284c7',
     },
     {
-      name: 'سنتر (مجموعة)',
-      shortName: 'سنتر',
-      value: centerCount,
+      name: 'حصة تجريبية (تقييم)',
+      shortName: 'تجريبية ✨',
+      value: trialCount,
       color: '#f59e0b',
     },
   ];
 
-  const hasChartData = privateCount > 0 || onlineCount > 0 || centerCount > 0;
+  const hasChartData = inPersonCount > 0 || onlineCount > 0 || trialCount > 0;
 
   const handleStartClassSubmit = async (sendWhatsApp: boolean) => {
     if (!selectedStudentId || !classTopic.trim()) return;
@@ -258,27 +260,30 @@ export const HomeTab: React.FC<HomeTabProps> = ({
     setTimeout(() => setCopiedClassReport(false), 2000);
   };
 
-  const getClassTypeBadge = (type: ClassType) => {
+  const getClassTypeBadge = (type?: ClassType) => {
     switch (type) {
       case 'online':
         return (
-          <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-blue-950/70 border border-blue-500/30 text-blue-300">
-            <Video className="w-3 h-3" />
-            <span>أونلاين</span>
+          <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-sky-950/80 border border-sky-500/40 text-sky-300 font-bold shadow-sm">
+            <Video className="w-3 h-3 text-sky-400" />
+            <span>أونلاين 🌐</span>
           </span>
         );
-      case 'center':
+      case 'trial':
         return (
-          <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-amber-950/70 border border-amber-500/30 text-amber-300">
-            <Building className="w-3 h-3" />
-            <span>سنتر</span>
+          <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-amber-950/80 border border-amber-500/50 text-amber-300 font-bold shadow-sm ring-1 ring-amber-400/30">
+            <Sparkles className="w-3 h-3 text-amber-400" />
+            <span>حصة تجريبية ✨</span>
           </span>
         );
+      case 'in_person':
       case 'private':
+      case 'center':
+      default:
         return (
-          <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-purple-950/70 border border-purple-500/30 text-purple-300">
-            <UserCheck className="w-3 h-3" />
-            <span>برايفيت</span>
+          <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold shadow-sm">
+            <UserCheck className="w-3 h-3 text-emerald-400" />
+            <span>{type === 'center' ? 'سنتر 🏫' : 'حضور شخصي 👤'}</span>
           </span>
         );
     }
@@ -667,10 +672,12 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                 const fullPhone = cleanPhone.startsWith('01') ? '2' + cleanPhone : cleanPhone;
                 const classTypeAr =
                   item.classType === 'online'
-                    ? 'أونلاين (عن بُعد)'
+                    ? 'أونلاين (عن بُعد 🌐)'
+                    : item.classType === 'trial'
+                    ? 'حصة تجريبية ✨'
                     : item.classType === 'center'
-                    ? 'في السنتر (مجموعة)'
-                    : 'برايفيت (حضور خاص)';
+                    ? 'في السنتر (مجموعة 🏫)'
+                    : 'حضور شخصي 👤';
                 const msg =
                   `👋 مرحباً ولي أمر الطالب/ـة: *${item.studentName}*\n\n` +
                   `🔔 نود تذكيركم بأن موعد حصة *${matchedStudent.subject || profile.subject}* مع الأستاذ/ـة *${profile.name}* ستبدأ بعد *15 دقيقة* (الساعة ${item.time}).\n` +
