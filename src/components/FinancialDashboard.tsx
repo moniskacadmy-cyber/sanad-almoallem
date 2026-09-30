@@ -37,6 +37,7 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
   onBackToApp,
   onOpenStudentDetails,
 }) => {
+  const currency = profile.currency || 'ج.م';
   const [loadingLessons, setLoadingLessons] = useState(true);
   const [lessonsMap, setLessonsMap] = useState<Record<string, LessonLog[]>>({});
   const [searchQuery, setSearchQuery] = useState('');
@@ -163,7 +164,7 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
     const lessonsListText = unsettledLessons
       .map(
         (l, i) =>
-          `  ${i + 1}. [${l.date}] ${l.topic} (${l.duration || 60} دقيقة) - ${l.cost || Math.round(((l.duration || 60) / 60) * item.hourlyRate)} ج.م`
+          `  ${i + 1}. [${l.date}] ${l.topic} (${l.duration || 60} دقيقة) - ${l.cost || Math.round(((l.duration || 60) / 60) * item.hourlyRate)} ${currency}`
       )
       .join('\n');
 
@@ -174,9 +175,9 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
       `👨‍🏫 إعداد المعلم: أ. ${profile.name}\n` +
       `📅 التاريخ: ${new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}\n\n` +
       `📊 تفاصيل الحساب الحالي:\n` +
-      `• سعر الساعة: ${item.hourlyRate} ج.م/ساعة\n` +
+      `• سعر الساعة: ${item.hourlyRate} ${currency}/ساعة\n` +
       `• عدد الساعات المنفذة: ${item.pendingHours} ساعة (${unsettledLessons.length} حصص)\n` +
-      `• إجمالي المستحقات المطلوبة: ${item.pendingAmount} ج.م 💰\n\n` +
+      `• إجمالي المستحقات المطلوبة: ${item.pendingAmount} ${currency} 💰\n\n` +
       (lessonsListText ? `📋 تفاصيل الحصص المنفذة غير المصفاة:\n${lessonsListText}\n\n` : '') +
       `شاكرين ومقدرين لكم حسن التعاون والاهتمام الدائم 🌟`;
 
@@ -236,7 +237,7 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
           <div>
             <div className="flex items-baseline gap-1">
               <span className="text-xl font-black text-white font-mono">{totalMonthEarnings.toLocaleString()}</span>
-              <span className="text-xs text-amber-300 font-bold">ج.م</span>
+              <span className="text-xs text-amber-300 font-bold">{currency}</span>
             </div>
             <p className="text-[10px] text-purple-300/80 mt-0.5">محسوبة لكافة الطلاب لشهر {currentMonthName}</p>
           </div>
@@ -270,7 +271,7 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
           <div>
             <div className="flex items-baseline gap-1">
               <span className="text-xl font-black text-amber-300 font-mono">{totalPendingDues.toLocaleString()}</span>
-              <span className="text-xs text-amber-400 font-bold">ج.م</span>
+              <span className="text-xs text-amber-400 font-bold">{currency}</span>
             </div>
             <p className="text-[10px] text-slate-400 mt-0.5">مبالغ بانتظار استلام الأجر والتصفية</p>
           </div>
@@ -287,7 +288,7 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
           <div>
             <div className="flex items-baseline gap-1">
               <span className="text-xl font-black text-emerald-400 font-mono">{totalCollectedDues.toLocaleString()}</span>
-              <span className="text-xs text-emerald-300 font-bold">ج.م</span>
+              <span className="text-xs text-emerald-300 font-bold">{currency}</span>
             </div>
             <p className="text-[10px] text-slate-400 mt-0.5">تم تصفية حسابها واستلامها بالفعل</p>
           </div>
@@ -348,7 +349,7 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
           </h3>
           {totalPendingDues > 0 && (
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-              إجمالي المعلق: {totalPendingDues.toLocaleString()} ج.م
+              إجمالي المعلق: {totalPendingDues.toLocaleString()} {currency}
             </span>
           )}
         </div>
@@ -384,7 +385,7 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
                       </span>
                     </div>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      سعر الساعة: <span className="font-bold text-amber-300 font-mono">{item.hourlyRate} ج.م/ساعة</span>
+                      سعر الساعة: <span className="font-bold text-amber-300 font-mono">{item.hourlyRate} {currency}/ساعة</span>
                       {st.whatsapp && ` • ${st.whatsapp}`}
                     </p>
                   </div>
@@ -393,7 +394,7 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
                   {hasPending ? (
                     <div className="text-right">
                       <span className="inline-block text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono">
-                        {item.pendingAmount.toLocaleString()} ج.م
+                        {item.pendingAmount.toLocaleString()} {currency}
                       </span>
                       <span className="block text-[9px] text-amber-400/80 mt-0.5">مستحقات معلقة</span>
                     </div>
@@ -421,7 +422,7 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
                   <div>
                     <span className="text-[10px] text-slate-400 block">المحصل سابقاً</span>
                     <span className="font-bold text-emerald-400 font-mono text-xs">
-                      {item.collectedAmount.toLocaleString()} <span className="text-[9px] text-slate-400">ج.م</span>
+                      {item.collectedAmount.toLocaleString()} <span className="text-[9px] text-slate-400">{currency}</span>
                     </span>
                   </div>
                 </div>
@@ -436,7 +437,7 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
                       className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition cursor-pointer shadow flex items-center justify-center gap-1.5 active:scale-98"
                     >
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>تصفية الحساب ({item.pendingAmount} ج.م)</span>
+                      <span>تصفية الحساب ({item.pendingAmount} {currency})</span>
                     </button>
                   ) : (
                     <button

@@ -77,6 +77,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [editName, setEditName] = useState(profile.name);
   const [editWhatsapp, setEditWhatsapp] = useState(profile.whatsapp);
   const [editSubject, setEditSubject] = useState(profile.subject);
+  const [editCurrency, setEditCurrency] = useState(profile.currency || 'ج.م');
   const [savingProfile, setSavingProfile] = useState(false);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
 
@@ -227,6 +228,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         name: editName.trim(),
         whatsapp: editWhatsapp.trim(),
         subject: editSubject.trim(),
+        currency: editCurrency.trim(),
       });
       setShowEditProfile(false);
     } catch (err) {
@@ -436,6 +438,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               setEditName(profile.name);
               setEditWhatsapp(profile.whatsapp);
               setEditSubject(profile.subject);
+              setEditCurrency(profile.currency || 'ج.م');
               setShowEditProfile(true);
             }}
             className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer"
@@ -445,14 +448,19 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </button>
         </div>
 
-        <div className="pt-2 border-t border-slate-800 grid grid-cols-2 gap-2 text-xs text-slate-300">
-          <div className="flex items-center gap-1.5">
-            <Mail className="w-3.5 h-3.5 text-slate-400" />
+        <div className="pt-2 border-t border-slate-800 grid grid-cols-3 gap-2 text-xs text-slate-300">
+          <div className="flex items-center gap-1.5 col-span-1">
+            <Mail className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
             <span className="truncate">{profile.email}</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <Phone className="w-3.5 h-3.5 text-slate-400" />
+          <div className="flex items-center gap-1.5 col-span-1">
+            <Phone className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
             <span dir="ltr">{profile.whatsapp}</span>
+          </div>
+          <div className="flex items-center gap-1.5 col-span-1 justify-end">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-950/80 border border-purple-500/30 text-purple-300 font-bold whitespace-nowrap">
+              العملة: {profile.currency || 'ج.م'}
+            </span>
           </div>
         </div>
       </div>
@@ -881,6 +889,26 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                   required
                   className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">العملة المفضلة</label>
+                <select
+                  value={editCurrency}
+                  onChange={(e) => setEditCurrency(e.target.value)}
+                  required
+                  className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
+                >
+                  <option value="ج.م">ج.م (جنيه مصري)</option>
+                  <option value="ر.س">ر.س (ريال سعودي)</option>
+                  <option value="د.إ">د.إ (درهم إماراتي)</option>
+                  <option value="د.ك">د.ك (دينار كويتي)</option>
+                  <option value="د.أ">د.أ (دينار أردني)</option>
+                  <option value="ر.ق">ر.ق (ريال قطري)</option>
+                  <option value="ر.ع">ر.ع (ريال عماني)</option>
+                  <option value="ب.د">ب.د (دينار بحريني)</option>
+                  <option value="$">$ (دولار أمريكي)</option>
+                </select>
               </div>
 
               <div className="pt-2">

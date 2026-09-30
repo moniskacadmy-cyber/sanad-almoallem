@@ -280,6 +280,7 @@ export async function updateTeacherProfile(teacherId: string, updates: {
   name?: string;
   whatsapp?: string;
   subject?: string;
+  currency?: string;
 }) {
   const path = `teachers/${teacherId}`;
   try {

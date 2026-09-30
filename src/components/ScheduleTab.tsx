@@ -187,9 +187,14 @@ export const TIME_SLOTS = Array.from({ length: 48 }, (_, i) => {
 
 export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, schedules }) => {
   const todayIndex = new Date().getDay();
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'month' | 'list'>('grid');
   const [selectedDayFilter, setSelectedDayFilter] = useState<number | 'all'>(todayIndex);
   const [selectedClassTypeFilter, setSelectedClassTypeFilter] = useState<'all' | 'online' | 'in_person' | 'trial'>('all');
+
+  // Monthly Calendar View States
+  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
+  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
+  const [selectedDayInMonth, setSelectedDayInMonth] = useState<number | null>(new Date().getDate());
 
   // Modals state
   const [showAddModal, setShowAddModal] = useState(false);
@@ -493,13 +498,13 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
   };
 
   // Helper to format minutes from time string "HH:MM"
-  export const getMinutesFromTime = (timeStr: string) => {
+  const getMinutesFromTime = (timeStr: string) => {
     const [h, m] = timeStr.split(':').map(Number);
     return (h || 0) * 60 + (m || 0);
   };
 
   // Format end time from start and duration
-  export const getEndTimeFormatted = (start: string, durationMin: number) => {
+  const getEndTimeFormatted = (start: string, durationMin: number) => {
     const total = getMinutesFromTime(start) + durationMin;
     const endH = Math.floor(total / 60) % 24;
     const endM = total % 60;
@@ -599,9 +604,20 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
                   ? 'bg-purple-600 text-white shadow'
                   : 'text-slate-400 hover:text-white'
               }`}
-              title="عرض الشبكة الأسبوعية"
+              title="الجدول الأسبوعي"
             >
               <LayoutGrid className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('month')}
+              className={`p-1.5 rounded-lg transition cursor-pointer ${
+                viewMode === 'month'
+                  ? 'bg-purple-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="التقويم الشهري"
+            >
+              <Calendar className="w-4 h-4" />
             </button>
             <button
               onClick={() => setViewMode('list')}
@@ -980,6 +996,468 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
           </div>
         </div>
       )}
+
+      {/* VIEW 1.5: MONTHLY CALENDAR VIEW */}
+      {viewMode === 'month' && (() => {
+        const ARABIC_MONTHS = [
+          'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+          'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
+        ];
+
+        const MONTH_WEEK_DAYS = [
+          { dayIndex: 6, name: 'السبت' },
+          { dayIndex: 0, name: 'الأحد' },
+          { dayIndex: 1, name: 'الإثنين' },
+          { dayIndex: 2, name: 'الثلاثاء' },
+          { dayIndex: 3, name: 'الأربعاء' },
+          { dayIndex: 4, name: 'الخميس' },
+          { dayIndex: 5, name: 'الجمعة' },
+        ];
+
+        const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
+        const totalDays = getDaysInMonth(currentYear, currentMonth);
+        const firstDayOfWeek = new Date(currentYear, currentMonth, 1).getDay(); // 0-6
+
+        // Padding cells before the 1st of month to align with Saturday start
+        // Sun=0, Mon=1, Tue=2, Wed=3, Thu=4, Fri=5, Sat=6
+        // Sat(6) = 0 offset, Sun(0) = 1 offset, ..., Fri(5) = 6 offset
+        const paddingOffset = (firstDayOfWeek + 1) % 7;
+
+        // Compute Month-level metrics
+        let monthTotalClasses = 0;
+        let monthOnlineCount = 0;
+        let monthInPersonCount = 0;
+        let monthTrialCount = 0;
+        const activeDaysSet = new Set<number>();
+
+        for (let d = 1; d <= totalDays; d++) {
+          const dateObj = new Date(currentYear, currentMonth, d);
+          const dow = dateObj.getDay();
+          const daySchedules = schedules.filter((s) => s.dayOfWeek === dow && isSlotMatchingTypeFilter(s, selectedClassTypeFilter));
+
+          if (daySchedules.length > 0) {
+            monthTotalClasses += daySchedules.length;
+            activeDaysSet.add(d);
+
+            daySchedules.forEach((s) => {
+              if (s.classType === 'online') monthOnlineCount++;
+              else if (s.classType === 'trial') monthTrialCount++;
+              else monthInPersonCount++;
+            });
+          }
+        }
+
+        // Navigate month handlers
+        const handlePrevMonth = () => {
+          if (currentMonth === 0) {
+            setCurrentMonth(11);
+            setCurrentYear(currentYear - 1);
+          } else {
+            setCurrentMonth(currentMonth - 1);
+          }
+          setSelectedDayInMonth(1);
+        };
+
+        const handleNextMonth = () => {
+          if (currentMonth === 11) {
+            setCurrentMonth(0);
+            setCurrentYear(currentYear + 1);
+          } else {
+            setCurrentMonth(currentMonth + 1);
+          }
+          setSelectedDayInMonth(1);
+        };
+
+        const handleJumpToToday = () => {
+          const t = new Date();
+          setCurrentYear(t.getFullYear());
+          setCurrentMonth(t.getMonth());
+          setSelectedDayInMonth(t.getDate());
+        };
+
+        // Selected Day Details
+        const selectedDateObject = selectedDayInMonth ? new Date(currentYear, currentMonth, selectedDayInMonth) : null;
+        const selectedDayOfWeekIndex = selectedDateObject ? selectedDateObject.getDay() : -1;
+        const selectedDayArabicName = selectedDateObject
+          ? ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'][selectedDayOfWeekIndex]
+          : '';
+
+        const selectedDaySchedules = selectedDayOfWeekIndex !== -1
+          ? schedules
+              .filter((s) => s.dayOfWeek === selectedDayOfWeekIndex && isSlotMatchingTypeFilter(s, selectedClassTypeFilter))
+              .sort((a, b) => a.time.localeCompare(b.time))
+          : [];
+
+        return (
+          <div className="space-y-4 text-right">
+            {/* Class Types Filter Banner inside Month View */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+              <button
+                type="button"
+                onClick={() => setSelectedClassTypeFilter('all')}
+                className={`px-3 py-1 rounded-xl font-bold transition whitespace-nowrap cursor-pointer ${
+                  selectedClassTypeFilter === 'all'
+                    ? 'bg-purple-600 text-white shadow'
+                    : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                كافة الأنواع ({schedules.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedClassTypeFilter('online')}
+                className={`px-2.5 py-1 rounded-xl font-bold transition whitespace-nowrap cursor-pointer border flex items-center gap-1 ${
+                  selectedClassTypeFilter === 'online'
+                    ? 'bg-sky-500/30 border-sky-400 text-sky-200'
+                    : 'bg-slate-900 border-slate-800 text-sky-300 hover:text-white'
+                }`}
+              >
+                <Video className="w-3 h-3 text-sky-400" />
+                <span>أونلاين ({onlineSlotsCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedClassTypeFilter('in_person')}
+                className={`px-2.5 py-1 rounded-xl font-bold transition whitespace-nowrap cursor-pointer border flex items-center gap-1 ${
+                  selectedClassTypeFilter === 'in_person'
+                    ? 'bg-emerald-500/30 border-emerald-400 text-emerald-200'
+                    : 'bg-slate-900 border-slate-800 text-emerald-300 hover:text-white'
+                }`}
+              >
+                <UserCheck className="w-3 h-3 text-emerald-400" />
+                <span>شخصي ({inPersonSlotsCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedClassTypeFilter('trial')}
+                className={`px-2.5 py-1 rounded-xl font-bold transition whitespace-nowrap cursor-pointer border flex items-center gap-1 ${
+                  selectedClassTypeFilter === 'trial'
+                    ? 'bg-amber-500/30 border-amber-400 text-amber-200'
+                    : 'bg-slate-900 border-slate-800 text-amber-300 hover:text-white'
+                }`}
+              >
+                <Sparkles className="w-3 h-3 text-amber-400" />
+                <span>تجريبية ({trialSlotsCount})</span>
+              </button>
+            </div>
+
+            {/* Monthly Navigation Header */}
+            <div className="flex items-center justify-between bg-slate-900/90 border border-purple-500/20 rounded-2xl p-3.5 shadow-lg">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePrevMonth}
+                  className="p-1.5 rounded-xl bg-slate-850 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-purple-300 transition cursor-pointer"
+                  title="الشهر السابق"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+                <span className="text-sm font-black text-white min-w-[90px] text-center font-mono">
+                  {ARABIC_MONTHS[currentMonth]} {currentYear}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleNextMonth}
+                  className="p-1.5 rounded-xl bg-slate-850 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-purple-300 transition cursor-pointer"
+                  title="الشهر التالي"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleJumpToToday}
+                  className="px-3 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition border border-slate-700 cursor-pointer active:scale-95"
+                >
+                  اليوم
+                </button>
+              </div>
+            </div>
+
+            {/* Calendar Main Grid Container */}
+            <div className="rounded-3xl bg-slate-900/80 border border-purple-500/20 shadow-2xl p-3 overflow-hidden">
+              {/* Day of Week Headers */}
+              <div className="grid grid-cols-7 gap-1 border-b border-purple-500/10 pb-2 mb-1.5 text-center text-[11px] font-bold text-slate-400">
+                {MONTH_WEEK_DAYS.map((day) => (
+                  <div key={day.dayIndex} className="py-1">
+                    {day.name}
+                  </div>
+                ))}
+              </div>
+
+              {/* Day Cells Grid */}
+              <div className="grid grid-cols-7 gap-1.5">
+                {/* 1. Padding offset cells */}
+                {Array.from({ length: paddingOffset }).map((_, i) => (
+                  <div
+                    key={`pad-${i}`}
+                    className="aspect-square rounded-xl bg-slate-950/20 border border-transparent opacity-20"
+                  />
+                ))}
+
+                {/* 2. Actual Month Days */}
+                {Array.from({ length: totalDays }).map((_, i) => {
+                  const dayNum = i + 1;
+                  const dateObj = new Date(currentYear, currentMonth, dayNum);
+                  const dow = dateObj.getDay();
+                  const isToday =
+                    dayNum === new Date().getDate() &&
+                    currentMonth === new Date().getMonth() &&
+                    currentYear === new Date().getFullYear();
+                  const isSelected = selectedDayInMonth === dayNum;
+
+                  // Find schedules on this day of week
+                  const daySchedules = schedules
+                    .filter((s) => s.dayOfWeek === dow && isSlotMatchingTypeFilter(s, selectedClassTypeFilter))
+                    .sort((a, b) => a.time.localeCompare(b.time));
+
+                  return (
+                    <div
+                      key={`day-${dayNum}`}
+                      onClick={() => setSelectedDayInMonth(dayNum)}
+                      className={`aspect-square rounded-xl border p-1 relative flex flex-col justify-between transition cursor-pointer select-none ${
+                        isToday
+                          ? 'bg-purple-950/30 border-purple-500/80 ring-1 ring-purple-400'
+                          : isSelected
+                          ? 'bg-slate-800 border-purple-500/40'
+                          : 'bg-slate-950/60 border-slate-800/80 hover:bg-slate-850 hover:border-slate-700'
+                      }`}
+                    >
+                      {/* Day Number and Badges */}
+                      <div className="flex items-center justify-between">
+                        <span
+                          className={`text-xs font-mono font-black ${
+                            isToday ? 'text-amber-300' : isSelected ? 'text-purple-300' : 'text-slate-300'
+                          }`}
+                        >
+                          {dayNum}
+                        </span>
+                        {isToday && (
+                          <span className="text-[8px] bg-purple-500 text-white font-bold px-1 rounded-full scale-90">
+                            اليوم
+                          </span>
+                        )}
+                        {daySchedules.length > 0 && !isToday && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                        )}
+                      </div>
+
+                      {/* Day scheduled slots preview */}
+                      <div className="space-y-0.5 mt-auto max-h-[72%] overflow-hidden flex flex-col justify-end">
+                        {daySchedules.slice(0, 2).map((s) => {
+                          const col = getSlotColorStyle(s);
+                          return (
+                            <div
+                              key={s.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setViewingScheduleDetails(s);
+                              }}
+                              style={{
+                                backgroundColor: col.bg,
+                                borderColor: col.border,
+                                color: col.text,
+                              }}
+                              className="text-[8px] font-bold py-0.5 px-1 rounded-lg border truncate flex items-center justify-between scale-[0.98] origin-bottom hover:scale-[1.03] transition"
+                              title={`${s.studentName} (${s.time})`}
+                            >
+                              <span className="truncate">{s.studentName}</span>
+                              <span className="opacity-80 font-mono text-[7px] mr-1">{s.time}</span>
+                            </div>
+                          );
+                        })}
+                        {daySchedules.length > 2 && (
+                          <span className="text-[7px] text-purple-400 font-bold text-center block leading-none pt-0.5">
+                            +{daySchedules.length - 2} حصص أخرى
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Monthly statistics summary */}
+            <div className="grid grid-cols-4 gap-2 text-center text-xs">
+              <div className="p-3 rounded-2xl bg-slate-900 border border-slate-800">
+                <span className="text-[10px] text-slate-400 block">إجمالي حصص الشهر</span>
+                <span className="font-bold text-purple-300 font-mono text-sm block mt-1">
+                  {monthTotalClasses} حصة مجدولة
+                </span>
+              </div>
+              <div className="p-3 rounded-2xl bg-slate-900 border border-slate-800">
+                <span className="text-[10px] text-slate-400 block">حصص أونلاين 🌐</span>
+                <span className="font-bold text-sky-400 font-mono text-sm block mt-1">
+                  {monthOnlineCount} حصة
+                </span>
+              </div>
+              <div className="p-3 rounded-2xl bg-slate-900 border border-slate-800">
+                <span className="text-[10px] text-slate-400 block">حضور شخصي 👤</span>
+                <span className="font-bold text-emerald-400 font-mono text-sm block mt-1">
+                  {monthInPersonCount} حصة
+                </span>
+              </div>
+              <div className="p-3 rounded-2xl bg-slate-900 border border-slate-800">
+                <span className="text-[10px] text-slate-400 block">حصص تجريبية ✨</span>
+                <span className="font-bold text-amber-400 font-mono text-sm block mt-1">
+                  {monthTrialCount} حصة
+                </span>
+              </div>
+            </div>
+
+            {/* Selected Day Breakdown Schedule */}
+            {selectedDayInMonth && (
+              <div className="rounded-3xl bg-slate-900/90 border border-purple-500/20 p-4 space-y-3.5 shadow-xl text-right">
+                <div className="flex items-center justify-between border-b border-purple-500/10 pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-purple-600/20 text-purple-300 flex items-center justify-center border border-purple-500/30">
+                      <Calendar className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black text-white">
+                        حصص ومواعيد يوم {selectedDayArabicName} {selectedDayInMonth} {ARABIC_MONTHS[currentMonth]}
+                      </h3>
+                      <p className="text-[10px] text-slate-400">
+                        {selectedDaySchedules.length > 0
+                          ? `لديك عدد ${selectedDaySchedules.length} حصة مجدولة في هذا اليوم`
+                          : 'لا توجد حصص مجدولة لهذا اليوم حالياً'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleCellClick(selectedDayOfWeekIndex, '16:00')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition active:scale-95 shadow cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>إضافة حصة اليوم</span>
+                  </button>
+                </div>
+
+                {selectedDaySchedules.length === 0 ? (
+                  <div className="py-6 text-center text-xs text-slate-400 bg-slate-950/40 rounded-2xl border border-slate-800/80">
+                    لا توجد حصص مجدولة في هذا اليوم المختار 🌟
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {selectedDaySchedules.map((slot) => {
+                      const colorInfo = getSlotColorStyle(slot);
+                      const [slotH, slotM] = slot.time.split(':').map(Number);
+                      const startMin = (slotH || 0) * 60 + (slotM || 0);
+                      const endMin = startMin + (slot.duration || 60);
+                      const isTodaySlot =
+                        new Date().getDate() === selectedDayInMonth &&
+                        new Date().getMonth() === currentMonth &&
+                        new Date().getFullYear() === currentYear;
+                      const isExplicitlyCompleted = slot.completedTodayDate === todayStr;
+                      const isPastTime = isTodaySlot && nowMinutes >= endMin;
+                      const isCompleted = isExplicitlyCompleted || isPastTime;
+
+                      return (
+                        <div
+                          key={slot.id}
+                          style={{
+                            borderColor: isCompleted ? 'rgba(16, 185, 129, 0.4)' : colorInfo.border,
+                          }}
+                          className={`rounded-2xl bg-slate-950/80 p-3.5 border transition hover:border-purple-500/40 flex items-center justify-between gap-3 ${
+                            isCompleted ? 'opacity-85 bg-emerald-950/10' : ''
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            {/* Color Dot Indicator */}
+                            <div
+                              style={{ backgroundColor: colorInfo.hex }}
+                              className="w-3 h-3 rounded-full flex-shrink-0 animate-pulse"
+                            />
+
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h4 className={`text-sm font-bold text-white ${isCompleted ? 'line-through text-slate-400 decoration-emerald-400' : ''}`}>
+                                  {slot.studentName}
+                                </h4>
+                                {getClassTypeBadge(slot.classType)}
+                                {isCompleted && (
+                                  <span className="text-[10px] bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <span>تمت الحصة</span>
+                                    <Check className="w-3 h-3" />
+                                  </span>
+                                )}
+                              </div>
+
+                              <p className="text-xs text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap">
+                                <span className="flex items-center gap-1 text-slate-300">
+                                  <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                  <span className="font-mono">{slot.time}</span>
+                                </span>
+                                <span>•</span>
+                                <span>المدة: {slot.duration || 60} دقيقة</span>
+                                {slot.locationOrLink && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="truncate max-w-[150px]" title={slot.locationOrLink}>
+                                      📍 {slot.locationOrLink}
+                                    </span>
+                                  </>
+                                )}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            {isTodaySlot && (
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  try {
+                                    await toggleScheduleCompletedToday(profile.id, slot.id, !isExplicitlyCompleted);
+                                  } catch (err) {
+                                    console.error('Error toggling complete status', err);
+                                  }
+                                }}
+                                className={`p-1.5 rounded-xl border text-[11px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                                  isExplicitlyCompleted
+                                    ? 'bg-purple-950 border-purple-500/40 text-purple-300'
+                                    : 'bg-emerald-950 border-emerald-500/40 text-emerald-300 hover:bg-emerald-900'
+                                }`}
+                                title={isExplicitlyCompleted ? 'إلغاء تحديد الإكمال' : 'تسجيل حضور / تمت الحصة'}
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">
+                                  {isExplicitlyCompleted ? 'إلغاء الإكمال' : 'تسجيل حضور'}
+                                </span>
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => handleOpenEdit(slot)}
+                              className="p-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white transition cursor-pointer"
+                              title="تعديل الحصة"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+
+                            <button
+                              onClick={() => handleDelete(slot.id)}
+                              className="p-1.5 rounded-xl bg-slate-900 border border-slate-800 text-rose-400 hover:text-rose-300 transition cursor-pointer"
+                              title="حذف الحصة"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* VIEW 2: LIST VIEW (Filtered by day and class type) */}
       {viewMode === 'list' && (

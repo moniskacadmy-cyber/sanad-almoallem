@@ -19,6 +19,7 @@ export interface TeacherProfile {
   trialStartDate: any; // Firestore Timestamp
   trialEndDate: any;   // Firestore Timestamp
   subscriptionExpiresAt: any; // Firestore Timestamp
+  currency?: string; // العملة المفضلة (مثال: ج.م، ر.س، د.إ)
   createdAt: any;
   updatedAt: any;
 }

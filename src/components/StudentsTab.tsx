@@ -79,6 +79,7 @@ interface StudentsTabProps {
 }
 
 export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, schedules = [] }) => {
+  const currency = profile?.currency || 'ج.م';
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | ClassType>('all');
   const [paymentFilter, setPaymentFilter] = useState<'all' | PaymentStatus>('all');
@@ -702,7 +703,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     const lessonsListText = unsettledLessons
       .map(
         (l, i) =>
-          `  ${i + 1}. [${l.date}] ${l.topic} (${l.duration || 60} دقيقة) - ${l.cost || Math.round(((l.duration || 60) / 60) * hourlyRate)} ج.م`
+          `  ${i + 1}. [${l.date}] ${l.topic} (${l.duration || 60} دقيقة) - ${l.cost || Math.round(((l.duration || 60) / 60) * hourlyRate)} ${currency}`
       )
       .join('\n');
 
@@ -713,9 +714,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
       `👨‍🏫 إعداد المعلم: أ. ${profile.name}\n` +
       `📅 التاريخ: ${new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}\n\n` +
       `📊 تفاصيل المستحقات الحالية:\n` +
-      `• سعر الساعة: ${hourlyRate} ج.م/ساعة\n` +
+      `• سعر الساعة: ${hourlyRate} ${currency}/ساعة\n` +
       `• عدد الساعات المنفذة: ${pendingHours} ساعة (${unsettledLessons.length} حصص غير مصفاة)\n` +
-      `• إجمالي المستحقات المطلوبة: ${pendingAmount} ج.م 💰\n\n` +
+      `• إجمالي المستحقات المطلوبة: ${pendingAmount} ${currency} 💰\n\n` +
       (lessonsListText ? `📋 تفاصيل الحصص المنفذة غير المصفاة:\n${lessonsListText}\n\n` : '') +
       `شاكرين ومقدرين لكم حسن التعاون والاهتمام الدائم 🌟`;
 
@@ -886,7 +887,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                     <p className="text-xs text-slate-400 mt-1">
                       مادة: <span className="text-purple-300 font-medium">{s.subject}</span> •{' '}
                       <span className="text-amber-300 font-bold font-mono">
-                        المستحقات: {pendingAmount} ج.م ({pendingHours} ساعة)
+                        المستحقات: {pendingAmount} {currency} ({pendingHours} ساعة)
                       </span>
                       {s.learningStyle && (
                         <span className="mr-2 text-[11px] text-purple-300/80 truncate max-w-[150px] inline-block align-middle">
@@ -895,7 +896,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                       )}
                     </p>
                     <p className="text-[10px] text-slate-500 mt-0.5 font-mono">
-                      سعر الساعة: {hourlyRate} ج.م • إجمالي الساعات: {totalHours} س ({sLessons.length} حصص)
+                      سعر الساعة: {hourlyRate} {currency} • إجمالي الساعات: {totalHours} س ({sLessons.length} حصص)
                     </p>
                   </div>
 
@@ -910,7 +911,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                         title="مستحقات معلقة - اضغط لتفاصيل الحساب والتصفية"
                       >
                         <Clock className="w-3 h-3 text-amber-400" />
-                        <span>مستحق: {pendingAmount} ج.م</span>
+                        <span>مستحق: {pendingAmount} {currency}</span>
                       </span>
                     ) : (
                       <span
@@ -1112,7 +1113,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                     className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
                   />
                   <span className="absolute left-3 top-2 text-xs text-slate-400 pointer-events-none">
-                    ج.م / ساعة
+                    {currency} / ساعة
                   </span>
                 </div>
               </div>
@@ -1468,14 +1469,14 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                       </div>
                       <div>
                         <span className="text-xs font-bold text-white block">حسابات ومستحقات الطالب</span>
-                        <span className="text-[10px] text-emerald-300 font-semibold">سعر الساعة: {hourlyRate} ج.م/ساعة</span>
+                        <span className="text-[10px] text-emerald-300 font-semibold">سعر الساعة: {hourlyRate} {currency}/ساعة</span>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-1.5">
                       {pendingAmount > 0 ? (
                         <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-950 border border-amber-500/40 text-amber-300 shadow">
-                          مستحق: {pendingAmount} ج.م ⏳
+                          مستحق: {pendingAmount} {currency} ⏳
                         </span>
                       ) : (
                         <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-950 border border-emerald-500/40 text-emerald-300 shadow">
@@ -1489,7 +1490,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                     <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
                       <span className="text-[10px] text-slate-400 block">المستحقات المعلقة</span>
                       <span className="font-bold text-amber-300 font-mono text-sm block mt-0.5">
-                        {pendingAmount} ج.م
+                        {pendingAmount} {currency}
                       </span>
                       <span className="text-[9px] text-slate-400">({pendingHours} ساعة غير مصفاة)</span>
                     </div>
@@ -1497,7 +1498,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                     <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
                       <span className="text-[10px] text-slate-400 block">المبالغ المحصلة</span>
                       <span className="font-bold text-emerald-400 font-mono text-sm block mt-0.5">
-                        {collectedAmount} ج.م
+                        {collectedAmount} {currency}
                       </span>
                       <span className="text-[9px] text-emerald-300/80">تم تصفيتها سابقاً</span>
                     </div>
