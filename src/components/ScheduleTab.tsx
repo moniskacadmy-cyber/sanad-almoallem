@@ -48,7 +48,7 @@ export function getColorStyle(colorId?: string) {
 }
 
 // 7 Days of the week in Arabic starting with Saturday
-const WEEK_DAYS = [
+export const WEEK_DAYS = [
   { dayIndex: 6, name: 'السبت', short: 'السبت' },
   { dayIndex: 0, name: 'الأحد', short: 'الأحد' },
   { dayIndex: 1, name: 'الإثنين', short: 'الإثنين' },
@@ -59,15 +59,15 @@ const WEEK_DAYS = [
 ];
 
 // 48 Time slots (24 hours x 30-min intervals)
-const ROW_HEIGHT = 44; // pixels per 30 minutes
-const TIME_SLOTS = Array.from({ length: 48 }, (_, i) => {
+export const ROW_HEIGHT = 44; // pixels per 30 minutes
+export const TIME_SLOTS = Array.from({ length: 48 }, (_, i) => {
   const hours = Math.floor(i / 2);
   const minutes = (i % 2) * 30;
   const time24 = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
   const period = hours < 12 ? 'ص' : 'م';
   const displayHour = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
   const displayMin = minutes === 0 ? '00' : '30';
-  const label = `${displayHour}:${displayMin} ${period}`;
+  const label = `${displayHour.toString().padStart(2, '0')}:${displayMin} ${period}`;
   return {
     index: i,
     time24,

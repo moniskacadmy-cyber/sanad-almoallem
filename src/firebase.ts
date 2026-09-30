@@ -369,7 +369,7 @@ export async function adminGetAllTeachers(): Promise<TeacherProfile[]> {
 export async function adminSaveSubscription(params: {
   email: string;
   name?: string;
-  durationType: 'monthly' | 'three_months' | 'six_months' | 'yearly' | 'custom';
+  durationType: 'trial' | 'monthly' | 'three_months' | 'six_months' | 'yearly' | 'custom';
   customEndDate?: string; // YYYY-MM-DD
   isActive?: boolean;
 }): Promise<{ success: boolean; message: string; teacherFound: boolean }> {
@@ -381,7 +381,10 @@ export async function adminSaveSubscription(params: {
   let newExpiryDate: Date;
   let planName: SubscriptionPlan = 'monthly';
 
-  if (params.durationType === 'monthly') {
+  if (params.durationType === 'trial') {
+    newExpiryDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    planName = 'none';
+  } else if (params.durationType === 'monthly') {
     newExpiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     planName = 'monthly';
   } else if (params.durationType === 'three_months') {

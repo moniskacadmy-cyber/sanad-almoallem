@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TeacherProfile, Student, LessonLog, ClassType, PaymentStatus } from '../types';
+import { TeacherProfile, Student, LessonLog, ClassType, PaymentStatus, ScheduleSlot } from '../types';
 import {
   addStudent,
   updateStudent,
@@ -8,7 +8,16 @@ import {
   subscribeToStudentLessons,
   addLessonLog,
   deleteLessonLog,
+  addSchedule,
+  updateSchedule,
+  deleteSchedule,
 } from '../firebase';
+import {
+  WEEK_DAYS,
+  TIME_SLOTS,
+  CLASS_COLORS,
+  getColorStyle,
+} from './ScheduleTab';
 import {
   UserPlus,
   Search,
@@ -37,14 +46,34 @@ import {
   Brain,
   Send,
   HelpCircle,
+  Clock,
+  Palette,
+  Plus,
+  ChevronDown,
 } from 'lucide-react';
+
+interface FormScheduleRow {
+  id: string;
+  dayOfWeek: number;
+  time: string;
+  duration: number;
+}
+
+export const DURATION_OPTIONS = [
+  { value: 30, label: '30 دقيقة' },
+  { value: 45, label: '45 دقيقة' },
+  { value: 60, label: '60 دقيقة' },
+  { value: 90, label: '90 دقيقة' },
+  { value: 120, label: '120 دقيقة' },
+];
 
 interface StudentsTabProps {
   profile: TeacherProfile;
   students: Student[];
+  schedules?: ScheduleSlot[];
 }
 
-export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) => {
+export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, schedules = [] }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | ClassType>('all');
   const [paymentFilter, setPaymentFilter] = useState<'all' | PaymentStatus>('all');
@@ -67,6 +96,166 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
   const [formLearningStyle, setFormLearningStyle] = useState('');
   const [formNotes, setFormNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Schedules state for Add Student modal
+  const [formSchedules, setFormSchedules] = useState<FormScheduleRow[]>([]);
+  const [formColor, setFormColor] = useState('purple');
+
+  // Schedules state inside Student Details modal
+  const [showAddScheduleInsideProfile, setShowAddScheduleInsideProfile] = useState(false);
+  const [newSchedDay, setNewSchedDay] = useState<number>(6); // Saturday
+  const [newSchedTime, setNewSchedTime] = useState('16:00'); // 04:00 PM
+  const [newSchedDuration, setNewSchedDuration] = useState<number>(60);
+  const [newSchedClassType, setNewSchedClassType] = useState<ClassType>('private');
+  const [newSchedColor, setNewSchedColor] = useState('purple');
+  const [savingSchedInProfile, setSavingSchedInProfile] = useState(false);
+  const [isManagingSchedules, setIsManagingSchedules] = useState(false);
+
+  // Edit schedule state inside Student Details modal
+  const [editingScheduleSlot, setEditingScheduleSlot] = useState<ScheduleSlot | null>(null);
+  const [editSchedDay, setEditSchedDay] = useState<number>(6);
+  const [editSchedTime, setEditSchedTime] = useState('16:00');
+  const [editSchedDuration, setEditSchedDuration] = useState<number>(60);
+  const [editSchedClassType, setEditSchedClassType] = useState<ClassType>('private');
+  const [editSchedColor, setEditSchedColor] = useState('purple');
+
+  // Helper row management for Add Student modal
+  const handleAddScheduleRow = () => {
+    setFormSchedules((prev) => [
+      ...prev,
+      {
+        id: Math.random().toString(),
+        dayOfWeek: 6, // السبت
+        time: '16:00', // 04:00 م
+        duration: 60,
+      },
+    ]);
+  };
+
+  const handleRemoveScheduleRow = (rowId: string) => {
+    setFormSchedules((prev) => prev.filter((r) => r.id !== rowId));
+  };
+
+  const handleUpdateScheduleRow = (rowId: string, updates: Partial<FormScheduleRow>) => {
+    setFormSchedules((prev) =>
+      prev.map((r) => (r.id === rowId ? { ...r, ...updates } : r))
+    );
+  };
+
+  const formatSlotTime = (timeStr: string) => {
+    const slot = TIME_SLOTS.find((t) => t.time24 === timeStr);
+    return slot ? slot.label : timeStr;
+  };
+
+  const getDayName = (dayIndex: number) => {
+    const d = WEEK_DAYS.find((w) => w.dayIndex === dayIndex);
+    return d ? d.name : '';
+  };
+
+  // Helper to format schedule display in exact Arabic format
+  // Example: السبت الساعة 04:00 مساءً (60 دقيقة) - أونلاين
+  const formatScheduleDisplayArabic = (slot: {
+    dayOfWeek: number;
+    time: string;
+    duration?: number;
+    classType?: ClassType;
+  }) => {
+    const day = WEEK_DAYS.find((d) => d.dayIndex === slot.dayOfWeek);
+    const dayName = day ? day.name : 'السبت';
+    const [hStr, mStr] = (slot.time || '16:00').split(':');
+    const h = parseInt(hStr, 10) || 0;
+    const m = parseInt(mStr, 10) || 0;
+    const period = h < 12 ? 'صباحاً' : 'مساءً';
+    const displayHour = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    const timeFormatted = `${displayHour.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${period}`;
+    const dur = slot.duration || 60;
+    const classTypeStr =
+      slot.classType === 'online'
+        ? 'أونلاين'
+        : slot.classType === 'center'
+        ? 'سنتر'
+        : 'برايفيت';
+    return `${dayName} الساعة ${timeFormatted} (${dur} دقيقة) - ${classTypeStr}`;
+  };
+
+  // Actions for managing schedules directly inside Student Details Modal
+  const handleAddScheduleForProfileStudent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProfileStudent) return;
+    setSavingSchedInProfile(true);
+    try {
+      await addSchedule(profile.id, {
+        studentId: selectedProfileStudent.id,
+        studentName: selectedProfileStudent.name,
+        dayOfWeek: Number(newSchedDay),
+        time: newSchedTime,
+        duration: Number(newSchedDuration) || 60,
+        recurrence: 'weekly',
+        classType: newSchedClassType,
+        color: newSchedColor || selectedProfileStudent.color || 'purple',
+      });
+      setShowAddScheduleInsideProfile(false);
+      // Reset default values
+      setNewSchedDay(6);
+      setNewSchedTime('16:00');
+      setNewSchedDuration(60);
+    } catch (err) {
+      console.error('Error adding schedule in profile', err);
+    } finally {
+      setSavingSchedInProfile(false);
+    }
+  };
+
+  const handleStartEditScheduleSlot = (slot: ScheduleSlot) => {
+    setEditingScheduleSlot(slot);
+    setEditSchedDay(slot.dayOfWeek);
+    setEditSchedTime(slot.time);
+    setEditSchedDuration(slot.duration || 60);
+    setEditSchedClassType(slot.classType || 'private');
+    setEditSchedColor(slot.color || selectedProfileStudent?.color || 'purple');
+    setShowAddScheduleInsideProfile(false);
+  };
+
+  const handleSaveEditScheduleSlot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingScheduleSlot) return;
+    setSavingSchedInProfile(true);
+    try {
+      await updateSchedule(profile.id, editingScheduleSlot.id, {
+        dayOfWeek: Number(editSchedDay),
+        time: editSchedTime,
+        duration: Number(editSchedDuration) || 60,
+        classType: editSchedClassType,
+        color: editSchedColor,
+      });
+      setEditingScheduleSlot(null);
+    } catch (err) {
+      console.error('Error updating schedule slot', err);
+    } finally {
+      setSavingSchedInProfile(false);
+    }
+  };
+
+  const handleDeleteScheduleSlot = async (slotId: string) => {
+    try {
+      await deleteSchedule(profile.id, slotId);
+      if (editingScheduleSlot?.id === slotId) {
+        setEditingScheduleSlot(null);
+      }
+    } catch (err) {
+      console.error('Error deleting schedule slot', err);
+    }
+  };
+
+  // Sync selectedProfileStudent if updated in parent list
+  useEffect(() => {
+    if (selectedProfileStudent) {
+      const updated = students.find((s) => s.id === selectedProfileStudent.id);
+      if (updated) {
+        setSelectedProfileStudent(updated);
+      }
+    }
+  }, [students]);
 
   // New Lesson form inside Student Profile
   const [showAddLessonInsideProfile, setShowAddLessonInsideProfile] = useState(false);
@@ -112,6 +301,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
     setFormMonthlyFee(300);
     setFormLearningStyle('');
     setFormNotes('');
+    setFormSchedules([]);
+    setFormColor('purple');
     setShowAddModal(true);
   };
 
@@ -124,6 +315,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
     setFormMonthlyFee(student.monthlyFee || 0);
     setFormLearningStyle(student.learningStyle || '');
     setFormNotes(student.notes || '');
+    setFormColor(student.color || 'purple');
+    setFormSchedules([]);
     setShowAddModal(true);
   };
 
@@ -142,9 +335,10 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
           monthlyFee: Number(formMonthlyFee) || 0,
           learningStyle: formLearningStyle.trim(),
           notes: formNotes.trim(),
+          color: formColor,
         });
       } else {
-        await addStudent(profile.id, {
+        const newStudentId = await addStudent(profile.id, {
           name: formName.trim(),
           whatsapp: formWhatsapp.trim(),
           subject: formSubject.trim(),
@@ -153,7 +347,24 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
           paymentStatus: 'unpaid',
           learningStyle: formLearningStyle.trim(),
           notes: formNotes.trim(),
+          color: formColor,
         });
+
+        // Automatically save weekly schedules to timetable
+        if (newStudentId && formSchedules.length > 0) {
+          for (const s of formSchedules) {
+            await addSchedule(profile.id, {
+              studentId: newStudentId,
+              studentName: formName.trim(),
+              dayOfWeek: Number(s.dayOfWeek),
+              time: s.time,
+              duration: Number(s.duration) || 60,
+              recurrence: 'weekly',
+              classType: formClassType,
+              color: formColor,
+            });
+          }
+        }
       }
       setShowAddModal(false);
     } catch (err) {
@@ -615,6 +826,136 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
                 />
               </div>
 
+              {/* SECTION: Weekly Class Schedules (Optional) - مواعيد الحصص الأسبوعية (اختياري) */}
+              {!editingStudent && (
+                <div className="pt-3 border-t border-purple-900/40 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-amber-300" />
+                        <span>مواعيد الحصص الأسبوعية (اختياري)</span>
+                      </h4>
+                      <p className="text-[10px] text-purple-300/80">
+                        تُسقط الحصص تلقائياً في الجدول الشبكي
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddScheduleRow}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 border border-purple-400/40 text-purple-200 text-xs font-bold transition cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ إضافة موعد للحصة</span>
+                    </button>
+                  </div>
+
+                  {/* Color Palette Selector for Student */}
+                  <div className="bg-slate-950/70 p-2.5 rounded-2xl border border-slate-800 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-300 font-medium flex items-center gap-1">
+                        <Palette className="w-3 h-3 text-purple-400" />
+                        <span>لون الحصة / الطالب في الجدول:</span>
+                      </span>
+                      <span className="text-purple-300 font-bold">
+                        {getColorStyle(formColor).name}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 overflow-x-auto py-1">
+                      {CLASS_COLORS.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => setFormColor(c.id)}
+                          className={`w-6 h-6 rounded-full border-2 transition cursor-pointer flex-shrink-0 flex items-center justify-center ${
+                            formColor === c.id ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-70 hover:opacity-100'
+                          }`}
+                          style={{ backgroundColor: c.hex }}
+                          title={c.name}
+                        >
+                          {formColor === c.id && <Check className="w-3 h-3 text-white" />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Schedule Rows */}
+                  {formSchedules.length > 0 && (
+                    <div className="space-y-2">
+                      {formSchedules.map((row, idx) => (
+                        <div
+                          key={row.id}
+                          className="rounded-2xl bg-slate-950 p-2.5 border border-purple-500/30 space-y-2 text-right relative shadow-md"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-amber-300">
+                              موعد الحصة #{idx + 1}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveScheduleRow(row.id)}
+                              className="p-1 rounded-lg text-slate-400 hover:text-rose-400 transition cursor-pointer"
+                              title="حذف هذا الموعد"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-2">
+                            {/* Day */}
+                            <div>
+                              <label className="block text-[10px] text-slate-400 mb-1">اليوم</label>
+                              <select
+                                value={row.dayOfWeek}
+                                onChange={(e) => handleUpdateScheduleRow(row.id, { dayOfWeek: Number(e.target.value) })}
+                                className="w-full rounded-xl bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs text-white focus:outline-none focus:border-purple-400 cursor-pointer"
+                              >
+                                {WEEK_DAYS.map((d) => (
+                                  <option key={d.dayIndex} value={d.dayIndex}>
+                                    {d.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            {/* Start Time (12-hour 30-min intervals) */}
+                            <div>
+                              <label className="block text-[10px] text-slate-400 mb-1">وقت البداية</label>
+                              <select
+                                value={row.time}
+                                onChange={(e) => handleUpdateScheduleRow(row.id, { time: e.target.value })}
+                                className="w-full rounded-xl bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs text-white focus:outline-none focus:border-purple-400 cursor-pointer"
+                              >
+                                {TIME_SLOTS.map((t) => (
+                                  <option key={t.time24} value={t.time24}>
+                                    {t.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            {/* Duration */}
+                            <div>
+                              <label className="block text-[10px] text-slate-400 mb-1">المدة</label>
+                              <select
+                                value={row.duration}
+                                onChange={(e) => handleUpdateScheduleRow(row.id, { duration: Number(e.target.value) })}
+                                className="w-full rounded-xl bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs text-white focus:outline-none focus:border-purple-400 cursor-pointer"
+                              >
+                                {DURATION_OPTIONS.map((opt) => (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="pt-2">
                 <button
                   type="submit"
@@ -825,6 +1166,384 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
                 </div>
               </div>
             </div>
+
+            {/* SECTION: 📅 مواعيد الحصص الأسبوعية */}
+            {(() => {
+              const studentSchedules = schedules.filter(
+                (sched) => sched.studentId === selectedProfileStudent.id
+              );
+              return (
+                <div className="rounded-2xl bg-slate-950/80 border border-purple-500/30 p-3.5 space-y-3 shadow-lg">
+                  {/* Card Header with prominent title & buttons */}
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-amber-300" />
+                      <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <span>📅 مواعيد الحصص الأسبوعية</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-900/60 border border-purple-500/40 text-purple-200">
+                          {studentSchedules.length > 0
+                            ? `${studentSchedules.length} مواعيد`
+                            : 'لا توجد مواعيد'}
+                        </span>
+                      </h4>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      {studentSchedules.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsManagingSchedules(!isManagingSchedules);
+                            setShowAddScheduleInsideProfile(false);
+                            setEditingScheduleSlot(null);
+                          }}
+                          className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold transition cursor-pointer border ${
+                            isManagingSchedules
+                              ? 'bg-amber-600/30 text-amber-300 border-amber-500/50'
+                              : 'bg-slate-800 text-slate-300 hover:text-white border-slate-700'
+                          }`}
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                          <span>✏️ تعديل المواعيد</span>
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowAddScheduleInsideProfile(!showAddScheduleInsideProfile);
+                          setEditingScheduleSlot(null);
+                          setIsManagingSchedules(false);
+                          setNewSchedColor(selectedProfileStudent.color || 'purple');
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition cursor-pointer shadow"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>+ إضافة موعد</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Form for adding a new schedule */}
+                  {showAddScheduleInsideProfile && (
+                    <form
+                      onSubmit={handleAddScheduleForProfileStudent}
+                      className="p-3 rounded-2xl bg-slate-900 border border-purple-500/40 space-y-2.5 text-right shadow-md"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-amber-300 flex items-center gap-1">
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>إضافة موعد حصة جديد لهذا الطالب</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowAddScheduleInsideProfile(false)}
+                          className="p-1 rounded-lg text-slate-400 hover:text-white"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2">
+                        {/* Day */}
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">اليوم</label>
+                          <select
+                            value={newSchedDay}
+                            onChange={(e) => setNewSchedDay(Number(e.target.value))}
+                            className="w-full rounded-xl bg-slate-950 border border-slate-700 px-2 py-1.5 text-xs text-white focus:outline-none focus:border-purple-400 cursor-pointer"
+                          >
+                            {WEEK_DAYS.map((d) => (
+                              <option key={d.dayIndex} value={d.dayIndex}>
+                                {d.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Start Time (12-hour 30-min intervals) */}
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">وقت البداية</label>
+                          <select
+                            value={newSchedTime}
+                            onChange={(e) => setNewSchedTime(e.target.value)}
+                            className="w-full rounded-xl bg-slate-950 border border-slate-700 px-2 py-1.5 text-xs text-white focus:outline-none focus:border-purple-400 cursor-pointer"
+                          >
+                            {TIME_SLOTS.map((t) => (
+                              <option key={t.time24} value={t.time24}>
+                                {t.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Duration */}
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">المدة</label>
+                          <select
+                            value={newSchedDuration}
+                            onChange={(e) => setNewSchedDuration(Number(e.target.value))}
+                            className="w-full rounded-xl bg-slate-950 border border-slate-700 px-2 py-1.5 text-xs text-white focus:outline-none focus:border-purple-400 cursor-pointer"
+                          >
+                            {DURATION_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">نوع الحصة</label>
+                          <select
+                            value={newSchedClassType}
+                            onChange={(e) => setNewSchedClassType(e.target.value as ClassType)}
+                            className="w-full rounded-xl bg-slate-950 border border-slate-700 px-2 py-1.5 text-xs text-white focus:outline-none focus:border-purple-400 cursor-pointer"
+                          >
+                            <option value="private">برايفيت (خاص)</option>
+                            <option value="online">أونلاين</option>
+                            <option value="center">سنتر / مجموعة</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">لون الحصة في الجدول</label>
+                          <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
+                            {CLASS_COLORS.map((c) => (
+                              <button
+                                key={c.id}
+                                type="button"
+                                onClick={() => setNewSchedColor(c.id)}
+                                className={`w-5 h-5 rounded-full border transition cursor-pointer flex-shrink-0 flex items-center justify-center ${
+                                  newSchedColor === c.id
+                                    ? 'border-white scale-110 shadow'
+                                    : 'border-transparent opacity-60 hover:opacity-100'
+                                }`}
+                                style={{ backgroundColor: c.hex }}
+                                title={c.name}
+                              >
+                                {newSchedColor === c.id && <Check className="w-2.5 h-2.5 text-white" />}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="submit"
+                          disabled={savingSchedInProfile}
+                          className="flex-1 rounded-xl bg-purple-600 hover:bg-purple-500 py-1.5 text-xs font-bold text-white transition disabled:opacity-50 cursor-pointer shadow"
+                        >
+                          {savingSchedInProfile ? 'جارٍ الحفظ...' : 'حفظ الموعد بالجدول'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowAddScheduleInsideProfile(false)}
+                          className="px-3 rounded-xl bg-slate-800 hover:bg-slate-700 py-1.5 text-xs font-semibold text-slate-300 transition cursor-pointer"
+                        >
+                          إلغاء
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* Form for editing a specific schedule slot */}
+                  {editingScheduleSlot && (
+                    <form
+                      onSubmit={handleSaveEditScheduleSlot}
+                      className="p-3 rounded-2xl bg-slate-900 border border-amber-500/40 space-y-2.5 text-right shadow-md"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-amber-300 flex items-center gap-1">
+                          <Edit2 className="w-3.5 h-3.5" />
+                          <span>تعديل موعد الحصة</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setEditingScheduleSlot(null)}
+                          className="p-1 rounded-lg text-slate-400 hover:text-white"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2">
+                        {/* Day */}
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">اليوم</label>
+                          <select
+                            value={editSchedDay}
+                            onChange={(e) => setEditSchedDay(Number(e.target.value))}
+                            className="w-full rounded-xl bg-slate-950 border border-slate-700 px-2 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400 cursor-pointer"
+                          >
+                            {WEEK_DAYS.map((d) => (
+                              <option key={d.dayIndex} value={d.dayIndex}>
+                                {d.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Start Time */}
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">وقت البداية</label>
+                          <select
+                            value={editSchedTime}
+                            onChange={(e) => setEditSchedTime(e.target.value)}
+                            className="w-full rounded-xl bg-slate-950 border border-slate-700 px-2 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400 cursor-pointer"
+                          >
+                            {TIME_SLOTS.map((t) => (
+                              <option key={t.time24} value={t.time24}>
+                                {t.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Duration */}
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">المدة</label>
+                          <select
+                            value={editSchedDuration}
+                            onChange={(e) => setEditSchedDuration(Number(e.target.value))}
+                            className="w-full rounded-xl bg-slate-950 border border-slate-700 px-2 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400 cursor-pointer"
+                          >
+                            {DURATION_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">نوع الحصة</label>
+                          <select
+                            value={editSchedClassType}
+                            onChange={(e) => setEditSchedClassType(e.target.value as ClassType)}
+                            className="w-full rounded-xl bg-slate-950 border border-slate-700 px-2 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400 cursor-pointer"
+                          >
+                            <option value="private">برايفيت (خاص)</option>
+                            <option value="online">أونلاين</option>
+                            <option value="center">سنتر / مجموعة</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-1">لون الحصة في الجدول</label>
+                          <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
+                            {CLASS_COLORS.map((c) => (
+                              <button
+                                key={c.id}
+                                type="button"
+                                onClick={() => setEditSchedColor(c.id)}
+                                className={`w-5 h-5 rounded-full border transition cursor-pointer flex-shrink-0 flex items-center justify-center ${
+                                  editSchedColor === c.id
+                                    ? 'border-white scale-110 shadow'
+                                    : 'border-transparent opacity-60 hover:opacity-100'
+                                }`}
+                                style={{ backgroundColor: c.hex }}
+                                title={c.name}
+                              >
+                                {editSchedColor === c.id && <Check className="w-2.5 h-2.5 text-white" />}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="submit"
+                          disabled={savingSchedInProfile}
+                          className="flex-1 rounded-xl bg-amber-600 hover:bg-amber-500 py-1.5 text-xs font-bold text-white transition disabled:opacity-50 cursor-pointer shadow"
+                        >
+                          {savingSchedInProfile ? 'جارٍ الحفظ...' : 'حفظ التعديلات في الجدول'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingScheduleSlot(null)}
+                          className="px-3 rounded-xl bg-slate-800 hover:bg-slate-700 py-1.5 text-xs font-semibold text-slate-300 transition cursor-pointer"
+                        >
+                          إلغاء
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* List of Student Schedules */}
+                  {studentSchedules.length === 0 ? (
+                    <div className="py-3 px-3 text-center rounded-xl bg-slate-900/60 border border-dashed border-slate-700/80">
+                      <p className="text-xs text-slate-400">
+                        لا توجد مواعيد محددة لهذا الطالب في الجدول الأسبوعي حالياً.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowAddScheduleInsideProfile(true);
+                          setNewSchedColor(selectedProfileStudent.color || 'purple');
+                        }}
+                        className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 text-xs font-bold transition cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>+ إضافة موعد للحصة الآن</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {isManagingSchedules && (
+                        <p className="text-[11px] text-amber-300/90 bg-amber-950/40 border border-amber-500/30 p-2 rounded-xl">
+                          اضغط على أيقونة التعديل ✏️ لتعديل موعد الحصة أو مدتها، أو أيقونة السلة 🗑️ لحذف الموعد من الجدول.
+                        </p>
+                      )}
+                      {studentSchedules.map((slot) => {
+                        const colorInfo = getColorStyle(slot.color || selectedProfileStudent.color);
+                        return (
+                          <div
+                            key={slot.id}
+                            className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-purple-500/40 transition group"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="w-3 h-3 rounded-full flex-shrink-0 shadow-sm"
+                                style={{ backgroundColor: colorInfo.hex }}
+                              />
+                              <span className="text-xs font-medium text-slate-100">
+                                {formatScheduleDisplayArabic(slot)}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditScheduleSlot(slot)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-slate-800 transition cursor-pointer"
+                                title="تعديل الموعد"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteScheduleSlot(slot.id)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition cursor-pointer"
+                                title="حذف الموعد"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Add Lesson Form inside profile */}
             {showAddLessonInsideProfile && (

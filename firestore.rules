@@ -90,7 +90,8 @@ service cloud.firestore {
         data.subject is string && data.subject.size() <= 100 &&
         data.classType in ['online', 'center', 'private'] &&
         data.monthlyFee is number &&
-        data.paymentStatus in ['paid', 'unpaid'];
+        data.paymentStatus in ['paid', 'unpaid'] &&
+        (!('color' in data) || (data.color is string && data.color.size() <= 50));
     }
 
     // Lesson validation
@@ -108,6 +109,7 @@ service cloud.firestore {
         data.studentName is string && data.studentName.size() <= 100 &&
         data.dayOfWeek is number && data.dayOfWeek >= 0 && data.dayOfWeek <= 6 &&
         data.time is string && data.time.size() <= 20 &&
+        (!('duration' in data) || (data.duration is number && data.duration >= 15 && data.duration <= 300)) &&
         data.recurrence in ['daily', 'weekly', 'monthly', 'once'] &&
         data.classType in ['online', 'center', 'private'] &&
         (!('color' in data) || (data.color is string && data.color.size() <= 50));

@@ -46,7 +46,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToApp }) =
   // Form State: Add / Activate Teacher
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
-  const [durationChoice, setDurationChoice] = useState<'monthly' | 'three_months' | 'yearly' | 'custom'>('monthly');
+  const [durationChoice, setDurationChoice] = useState<'trial' | 'monthly' | 'three_months' | 'yearly' | 'custom'>('monthly');
   const [customEndDate, setCustomEndDate] = useState('');
   const [isSubmittingNew, setIsSubmittingNew] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -363,8 +363,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToApp }) =
               </label>
               <div className="grid grid-cols-2 gap-2">
                 {[
+                  { id: 'trial', label: 'فترة تجريبية (7 أيام)', price: 'مجاناً 🎁' },
                   { id: 'monthly', label: 'شهر (30 يوم)', price: '50 ج' },
-                  { id: 'three_months', label: '3 أشهر (90 يوم)', price: '140 ج' },
                   { id: 'yearly', label: 'سنة (365 يوم)', price: '450 ج' },
                   { id: 'custom', label: 'تحديد تاريخ باليوم 📅', price: 'مخصص' },
                 ].map((plan) => (

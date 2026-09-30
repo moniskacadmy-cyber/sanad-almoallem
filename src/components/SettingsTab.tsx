@@ -20,6 +20,10 @@ import {
   CheckCircle2,
   ShieldAlert,
   Smartphone,
+  Lock,
+  Eye,
+  EyeOff,
+  AlertCircle,
 } from 'lucide-react';
 
 interface SettingsTabProps {
@@ -47,6 +51,27 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [editSubject, setEditSubject] = useState(profile.subject);
   const [savingProfile, setSavingProfile] = useState(false);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
+
+  // Admin Passcode Modal State
+  const [showAdminPinModal, setShowAdminPinModal] = useState(false);
+  const [adminPinInput, setAdminPinInput] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
+
+  const handleVerifyAdminPin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (adminPinInput.trim() === '2882026') {
+      setShowAdminPinModal(false);
+      setAdminPinInput('');
+      setPinError(null);
+      if (onOpenAdminDashboard) {
+        onOpenAdminDashboard();
+      }
+    } else {
+      setPinError('رمز الدخول غير صحيح');
+      setAdminPinInput('');
+    }
+  };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -225,6 +250,29 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         </button>
       </div>
 
+      {/* Admin Panel Option */}
+      <div className="rounded-2xl bg-gradient-to-r from-purple-950/70 via-slate-900 to-indigo-950/60 border border-purple-500/30 p-4 space-y-2.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30 shadow-inner">
+              <ShieldAlert className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white">لوحة الإدارة (Admin Panel)</h3>
+              <p className="text-xs text-purple-200/80">إدارة المعلمين وتفعيل وتمديد الاشتراكات</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowAdminPinModal(true)}
+            className="px-3.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black transition cursor-pointer shadow-md shadow-amber-500/20 flex items-center gap-1.5 active:scale-98"
+          >
+            <Lock className="w-3.5 h-3.5" />
+            <span>دخول</span>
+          </button>
+        </div>
+      </div>
+
       {/* PWA Install Component */}
       <div className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-4 space-y-2">
         <div className="flex items-center gap-2">
@@ -338,6 +386,82 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                   {savingProfile ? 'جارٍ الحفظ...' : 'حفظ التغييرات'}
                 </button>
               </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Passcode Modal */}
+      {showAdminPinModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 text-right">
+          <div className="w-full max-w-sm bg-gradient-to-b from-slate-900 to-slate-950 border border-purple-500/40 rounded-3xl p-6 shadow-2xl relative space-y-4">
+            <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30">
+                  <ShieldAlert className="w-4 h-4" />
+                </div>
+                <h3 className="text-sm font-bold text-white">دخول لوحة الإدارة</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAdminPinModal(false);
+                  setPinError(null);
+                  setAdminPinInput('');
+                }}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              يرجى إدخال رمز المرور السري للتحقق والدخول إلى لوحة إدارة المعلمين والاشتراكات:
+            </p>
+
+            {pinError && (
+              <div className="p-3 rounded-2xl bg-rose-950/90 border border-rose-500/50 text-rose-200 text-xs font-bold flex items-center gap-2 animate-bounce">
+                <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400" />
+                <span>{pinError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleVerifyAdminPin} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                  رمز المرور السري (Admin Passcode)
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    autoFocus
+                    required
+                    value={adminPinInput}
+                    onChange={(e) => {
+                      setAdminPinInput(e.target.value);
+                      if (pinError) setPinError(null);
+                    }}
+                    placeholder="••••••••"
+                    className="w-full text-center tracking-widest text-base font-black rounded-xl bg-slate-950 border border-purple-500/40 px-3 py-2.5 text-white placeholder-slate-600 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute left-3 top-3 text-slate-400 hover:text-white transition cursor-pointer"
+                    title={showPassword ? 'إخفاء الرمز' : 'إظهار الرمز'}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs transition cursor-pointer shadow-lg shadow-amber-600/30 flex items-center justify-center gap-2 active:scale-98"
+              >
+                <Lock className="w-4 h-4" />
+                <span>تحقق ودخول لوحة الإدارة</span>
+              </button>
             </form>
           </div>
         </div>

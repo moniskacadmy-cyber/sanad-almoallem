@@ -46,6 +46,7 @@ export interface Student {
   lastPaymentMonth?: string;
   learningStyle?: string;
   notes?: string;
+  color?: string;
   createdAt: any;
   updatedAt: any;
 }
