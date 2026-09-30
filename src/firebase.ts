@@ -36,6 +36,7 @@ import {
   LibraryItem,
   SubscriptionPlan,
   SubscriptionStatus,
+  BackupData,
 } from './types';
 
 const app = initializeApp(firebaseConfig);
@@ -1002,3 +1003,186 @@ export async function seedDefaultLibraryItems(teacherId: string) {
     await addLibraryItem(teacherId, t);
   }
 }
+
+// Backup & Data Export / Import Operations
+export async function fetchAllStudentLessons(
+  teacherId: string,
+  students: Student[]
+): Promise<Record<string, LessonLog[]>> {
+  const allLessons: Record<string, LessonLog[]> = {};
+  for (const student of students) {
+    const path = `teachers/${teacherId}/students/${student.id}/lessons`;
+    try {
+      const snap = await getDocs(
+        collection(db, 'teachers', teacherId, 'students', student.id, 'lessons')
+      );
+      allLessons[student.id] = snap.docs.map((d) => ({
+        ...(d.data() as LessonLog),
+        id: d.id,
+      }));
+    } catch (err) {
+      console.warn(`Could not fetch lessons for student ${student.id}:`, err);
+      allLessons[student.id] = [];
+    }
+  }
+  return allLessons;
+}
+
+export async function importFullTeacherBackup(
+  teacherId: string,
+  backup: BackupData
+): Promise<{
+  studentsCount: number;
+  schedulesCount: number;
+  lessonsCount: number;
+  libraryCount: number;
+}> {
+  let studentsCount = 0;
+  let schedulesCount = 0;
+  let lessonsCount = 0;
+  let libraryCount = 0;
+
+  // 1. Import Students
+  if (Array.isArray(backup.students)) {
+    for (const st of backup.students) {
+      const path = `teachers/${teacherId}/students/${st.id}`;
+      try {
+        const studentDocRef = doc(db, 'teachers', teacherId, 'students', st.id);
+        await setDoc(
+          studentDocRef,
+          {
+            name: st.name || '',
+            whatsapp: st.whatsapp || '',
+            subject: st.subject || '',
+            classType: st.classType || 'private',
+            monthlyFee: Number(st.monthlyFee) || 0,
+            paymentStatus: st.paymentStatus || 'unpaid',
+            lastPaymentMonth: st.lastPaymentMonth || '',
+            learningStyle: st.learningStyle || '',
+            notes: st.notes || '',
+            color: st.color || 'purple',
+            id: st.id,
+            teacherId,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+        studentsCount++;
+      } catch (err) {
+        console.error('Error importing student:', err);
+      }
+    }
+  }
+
+  // 2. Import Schedules
+  if (Array.isArray(backup.schedules)) {
+    for (const sc of backup.schedules) {
+      const path = `teachers/${teacherId}/schedules/${sc.id}`;
+      try {
+        const schedDocRef = doc(db, 'teachers', teacherId, 'schedules', sc.id);
+        await setDoc(
+          schedDocRef,
+          {
+            studentId: sc.studentId || '',
+            studentName: sc.studentName || '',
+            dayOfWeek: Number(sc.dayOfWeek) || 0,
+            time: sc.time || '16:00',
+            duration: Number(sc.duration) || 60,
+            recurrence: sc.recurrence || 'weekly',
+            classType: sc.classType || 'private',
+            color: sc.color || 'purple',
+            locationOrLink: sc.locationOrLink || '',
+            id: sc.id,
+            teacherId,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+        schedulesCount++;
+      } catch (err) {
+        console.error('Error importing schedule:', err);
+      }
+    }
+  }
+
+  // 3. Import Lessons
+  if (backup.lessons && typeof backup.lessons === 'object') {
+    for (const [studentId, logs] of Object.entries(backup.lessons)) {
+      if (Array.isArray(logs)) {
+        for (const log of logs) {
+          const path = `teachers/${teacherId}/students/${studentId}/lessons/${log.id}`;
+          try {
+            const lessonDocRef = doc(
+              db,
+              'teachers',
+              teacherId,
+              'students',
+              studentId,
+              'lessons',
+              log.id
+            );
+            await setDoc(
+              lessonDocRef,
+              {
+                date: log.date || new Date().toISOString().slice(0, 10),
+                topic: log.topic || '',
+                homework: log.homework || '',
+                attendance: log.attendance || 'present',
+                rating: Number(log.rating) || 5,
+                notes: log.notes || '',
+                id: log.id,
+                studentId,
+                teacherId,
+                createdAt: serverTimestamp(),
+              },
+              { merge: true }
+            );
+            lessonsCount++;
+          } catch (err) {
+            console.error('Error importing lesson log:', err);
+          }
+        }
+      }
+    }
+  }
+
+  // 4. Import Library Items
+  if (Array.isArray(backup.libraryItems)) {
+    for (const item of backup.libraryItems) {
+      const path = `teachers/${teacherId}/library/${item.id}`;
+      try {
+        const libDocRef = doc(db, 'teachers', teacherId, 'library', item.id);
+        await setDoc(
+          libDocRef,
+          {
+            title: item.title || '',
+            type: item.type || 'summary',
+            subject: item.subject || '',
+            content: item.content || '',
+            fileName: item.fileName || '',
+            fileSize: item.fileSize || '',
+            fileData: item.fileData || '',
+            id: item.id,
+            teacherId,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+        libraryCount++;
+      } catch (err) {
+        console.error('Error importing library item:', err);
+      }
+    }
+  }
+
+  return {
+    studentsCount,
+    schedulesCount,
+    lessonsCount,
+    libraryCount,
+  };
+}
+

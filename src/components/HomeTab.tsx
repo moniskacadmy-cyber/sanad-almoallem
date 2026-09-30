@@ -525,11 +525,46 @@ export const HomeTab: React.FC<HomeTabProps> = ({
             {todayClasses.map((item) => {
               const matchedStudent = students.find((s) => s.id === item.studentId);
               const colorInfo = getColorStyle(item.color);
+
+              // Calculate if class is starting soon (within 30 mins)
+              let isUpcomingSoon = false;
+              let diffMins = 0;
+              if (item.time && item.time.includes(':')) {
+                const [slotH, slotM] = item.time.split(':').map(Number);
+                const slotTotalMinutes = slotH * 60 + slotM;
+                const nowTotalMinutes = now.getHours() * 60 + now.getMinutes();
+                diffMins = slotTotalMinutes - nowTotalMinutes;
+                isUpcomingSoon = diffMins > 0 && diffMins <= 30;
+              }
+
+              // Build pre-filled 15-minute reminder message for WhatsApp
+              let whatsappReminderUrl = '';
+              if (matchedStudent?.whatsapp) {
+                const cleanPhone = matchedStudent.whatsapp.replace(/[^0-9]/g, '');
+                const fullPhone = cleanPhone.startsWith('01') ? '2' + cleanPhone : cleanPhone;
+                const classTypeAr =
+                  item.classType === 'online'
+                    ? 'أونلاين (عن بُعد)'
+                    : item.classType === 'center'
+                    ? 'في السنتر (مجموعة)'
+                    : 'برايفيت (حضور خاص)';
+                const msg =
+                  `👋 مرحباً ولي أمر الطالب/ـة: *${item.studentName}*\n\n` +
+                  `🔔 نود تذكيركم بأن موعد حصة *${matchedStudent.subject || profile.subject}* مع الأستاذ/ـة *${profile.name}* ستبدأ بعد *15 دقيقة* (الساعة ${item.time}).\n` +
+                  `📌 نوع الحصة: ${classTypeAr}\n` +
+                  (item.locationOrLink ? `🔗 الرابط / المكان: ${item.locationOrLink}\n` : '') +
+                  `\nنتمنى له/لها حصة دراسية موفقة وممتعة! 📚✨\n` +
+                  `— منصة سند المعلم`;
+                whatsappReminderUrl = `https://wa.me/${fullPhone}?text=${encodeURIComponent(msg)}`;
+              }
+
               return (
                 <div
                   key={item.id}
                   style={{ borderColor: colorInfo.border }}
-                  className="rounded-2xl bg-slate-900/80 border p-3.5 flex items-center justify-between hover:border-purple-400/50 transition shadow-md"
+                  className={`rounded-2xl bg-slate-900/80 border p-3.5 flex items-center justify-between hover:border-purple-400/50 transition shadow-md ${
+                    isUpcomingSoon ? 'ring-1 ring-amber-500/50 shadow-amber-950/30' : ''
+                  }`}
                 >
                   <div className="flex items-center gap-3">
                     <div
@@ -539,9 +574,14 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                       <span style={{ color: colorInfo.text }}>{item.time}</span>
                     </div>
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h4 className="text-sm font-bold text-white">{item.studentName}</h4>
                         {getClassTypeBadge(item.classType)}
+                        {isUpcomingSoon && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse font-bold">
+                            خلال {diffMins} دقيقة ⏰
+                          </span>
+                        )}
                       </div>
                       <p className="text-xs text-slate-400 mt-0.5">
                         المدة: {item.duration} دقيقة {item.locationOrLink && `• ${item.locationOrLink}`}
@@ -550,15 +590,20 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                   </div>
 
                   <div className="flex items-center gap-1.5">
-                    {matchedStudent?.whatsapp && (
+                    {whatsappReminderUrl && (
                       <a
-                        href={`https://wa.me/${matchedStudent.whatsapp.replace(/[^0-9]/g, '')}`}
+                        href={whatsappReminderUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="p-2 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-900/50 transition"
-                        title="واتساب الطالب"
+                        className={`p-2 rounded-xl border transition flex items-center gap-1 ${
+                          isUpcomingSoon
+                            ? 'bg-emerald-600 border-emerald-400 text-white shadow-lg shadow-emerald-950/50 animate-pulse'
+                            : 'bg-emerald-950/60 border-emerald-500/30 text-emerald-400 hover:bg-emerald-900/50'
+                        }`}
+                        title="إرسال تذكير الحصة (قبل 15 دقيقة) عبر واتساب"
                       >
                         <MessageCircle className="w-4 h-4" />
+                        {isUpcomingSoon && <span className="text-[10px] font-bold hidden sm:inline">تذكير</span>}
                       </a>
                     )}
                     <button

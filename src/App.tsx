@@ -34,7 +34,15 @@ import {
   Loader2,
   Clock,
   MessageCircle,
+  Bell,
+  X,
 } from 'lucide-react';
+import {
+  getStoredReminderSettings,
+  showBrowserNotification,
+  playNotificationChime,
+  checkRemindersApi,
+} from './services/reminderService';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -133,6 +141,67 @@ export default function App() {
       unsubLibrary();
     };
   }, [currentUser, profile?.id]);
+
+  // Automated 15-Minute Class Reminders Periodic Check
+  const [activeReminderAlert, setActiveReminderAlert] = useState<{
+    studentName: string;
+    classTime: string;
+    whatsappUrl?: string;
+    studentPhone?: string;
+    subject?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!profile || !schedules || schedules.length === 0) return;
+    const settings = getStoredReminderSettings();
+    if (!settings.enabled) return;
+
+    let isMounted = true;
+
+    const performCheck = async () => {
+      try {
+        const res = await checkRemindersApi({
+          teacher: profile,
+          schedules,
+          students,
+          minutesBefore: settings.minutesBefore || 15,
+        });
+
+        if (isMounted && res.matchedReminders && res.matchedReminders.length > 0) {
+          const first = res.matchedReminders[0];
+          setActiveReminderAlert({
+            studentName: first.studentName,
+            classTime: first.classTime,
+            whatsappUrl: first.whatsappUrl,
+            studentPhone: first.recipientPhone,
+            subject: first.subject,
+          });
+
+          if (settings.soundEnabled) {
+            playNotificationChime();
+          }
+          if (settings.notifyTeacher) {
+            showBrowserNotification(
+              '🔔 تذكير بحصة قادمة!',
+              `حصة الطالب/ـة ${first.studentName} تبدأ بعد ${settings.minutesBefore || 15} دقيقة (الساعة ${first.classTime}).`
+            );
+          }
+        }
+      } catch (err) {
+        console.warn('Background reminder check error:', err);
+      }
+    };
+
+    // Initial check
+    performCheck();
+
+    // Check periodically every 60 seconds
+    const timer = setInterval(performCheck, 60 * 1000);
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+    };
+  }, [profile?.id, schedules, students]);
 
   // Direct URL access: /admin (Protected by AdminSecretGate)
   if (currentPath === '/admin') {
@@ -265,6 +334,46 @@ export default function App() {
             </div>
           </div>
         </header>
+
+        {/* Active Class 15-Minute Reminder Banner */}
+        {activeReminderAlert && (
+          <div className="bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-900 border-b border-emerald-500/50 px-3.5 py-2.5 flex items-center justify-between text-xs text-white shadow-xl">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/40 flex-shrink-0 animate-bounce">
+                <Bell className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="font-bold text-emerald-300">
+                  حصة {activeReminderAlert.studentName} تبدأ بعد 15 دقيقة! ⏰
+                </p>
+                <p className="text-[10px] text-slate-300">
+                  الساعة {activeReminderAlert.classTime} {activeReminderAlert.subject ? `• ${activeReminderAlert.subject}` : ''}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {activeReminderAlert.whatsappUrl && (
+                <a
+                  href={activeReminderAlert.whatsappUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] transition flex items-center gap-1 shadow"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span>تذكير واتساب 💬</span>
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => setActiveReminderAlert(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white transition cursor-pointer"
+                title="إخفاء التنبيه"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Persistent Warning Bar for Near Expiry (when popup was dismissed) */}
         {isNearExpiry && dismissNearExpiry && (

@@ -120,8 +120,21 @@ service cloud.firestore {
       let data = incoming();
       return data.teacherId == teacherId &&
         data.title is string && data.title.size() >= 2 && data.title.size() <= 200 &&
-        data.type in ['lesson_plan', 'quiz', 'summary'] &&
-        data.content is string && data.content.size() <= 10000;
+        data.type in ['lesson_plan', 'quiz', 'summary', 'pdf', 'image', 'book'] &&
+        data.content is string && data.content.size() <= 60000 &&
+        (!('fileName' in data) || (data.fileName is string && data.fileName.size() <= 300)) &&
+        (!('fileSize' in data) || (data.fileSize is string && data.fileSize.size() <= 50));
+    }
+
+    // Reminder log validation
+    function isValidReminder(teacherId) {
+      let data = incoming();
+      return data.teacherId == teacherId &&
+        data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 100 &&
+        data.classTime is string && data.classTime.size() <= 30 &&
+        data.target in ['parent', 'teacher'] &&
+        data.status in ['sent', 'scheduled', 'delivered'] &&
+        data.messageText is string && data.messageText.size() <= 2500;
     }
 
     // Admins collection
@@ -183,6 +196,16 @@ service cloud.firestore {
                                  (isTeacherOwner(teacherId) || isAdmin()) &&
                                  isValidLibraryItem(teacherId);
         allow delete: if isValidId(teacherId) && isValidId(itemId) &&
+                         (isTeacherOwner(teacherId) || isAdmin());
+      }
+
+      // Subcollection: Reminders
+      match /reminders/{reminderId} {
+        allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+        allow create, update: if isValidId(teacherId) && isValidId(reminderId) &&
+                                 (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isValidReminder(teacherId);
+        allow delete: if isValidId(teacherId) && isValidId(reminderId) &&
                          (isTeacherOwner(teacherId) || isAdmin());
       }
     }

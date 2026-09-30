@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { TeacherProfile, LibraryItem } from '../types';
+import { TeacherProfile, LibraryItem, LibraryItemType } from '../types';
 import {
   addLibraryItem,
   updateLibraryItem,
@@ -20,6 +20,17 @@ import {
   Award,
   Sparkles,
   MessageCircle,
+  Upload,
+  FileUp,
+  Image as ImageIcon,
+  File,
+  Eye,
+  RefreshCw,
+  Send,
+  Lightbulb,
+  CheckCircle2,
+  AlertCircle,
+  ExternalLink,
 } from 'lucide-react';
 
 interface LibraryTabProps {
@@ -28,297 +39,806 @@ interface LibraryTabProps {
 }
 
 export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems }) => {
-  const [filterType, setFilterType] = useState<'all' | 'lesson_plan' | 'quiz' | 'summary'>('all');
-  const [showAddModal, setShowAddModal] = useState(false);
+  // Tab view: Sources & AI vs Templates
+  const [activeSection, setActiveSection] = useState<'sources_ai' | 'templates'>('sources_ai');
+
+  // AI Assistant State
+  const [question, setQuestion] = useState('');
+  const [isAskingAI, setIsAskingAI] = useState(false);
+  const [aiAnswer, setAiAnswer] = useState<string | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [copiedAnswer, setCopiedAnswer] = useState(false);
+
+  // Sources Modal State
+  const [showAddSourceModal, setShowAddSourceModal] = useState(false);
+  const [sourceTitle, setSourceTitle] = useState('');
+  const [sourceType, setSourceType] = useState<LibraryItemType>('pdf');
+  const [sourceSubject, setSourceSubject] = useState(profile.subject || 'عام');
+  const [sourceContent, setSourceContent] = useState('');
+  const [sourceFileName, setSourceFileName] = useState('');
+  const [sourceFileSize, setSourceFileSize] = useState('');
+  const [sourceFileData, setSourceFileData] = useState<string | undefined>(undefined);
+  const [isSavingSource, setIsSavingSource] = useState(false);
+
+  // Preview Modal
+  const [previewingSource, setPreviewingSource] = useState<LibraryItem | null>(null);
+
+  // Templates Management State
+  const [showAddTemplateModal, setShowAddTemplateModal] = useState(false);
   const [editingItem, setEditingItem] = useState<LibraryItem | null>(null);
   const [viewingItem, setViewingItem] = useState<LibraryItem | null>(null);
+  const [templateFilter, setTemplateFilter] = useState<'all' | 'lesson_plan' | 'quiz' | 'summary'>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Form Fields
-  const [formTitle, setFormTitle] = useState('');
-  const [formType, setFormType] = useState<'lesson_plan' | 'quiz' | 'summary'>('lesson_plan');
-  const [formSubject, setFormSubject] = useState(profile.subject || 'عام');
-  const [formContent, setFormContent] = useState('');
+  // Filter items into sources vs templates
+  const sources = libraryItems.filter(
+    (item) => item.type === 'pdf' || item.type === 'image' || item.type === 'book'
+  );
 
-  const filteredItems = libraryItems.filter((item) => {
-    if (filterType === 'all') return true;
-    return item.type === filterType;
+  const templates = libraryItems.filter(
+    (item) => item.type === 'lesson_plan' || item.type === 'quiz' || item.type === 'summary'
+  );
+
+  const filteredTemplates = templates.filter((t) => {
+    if (templateFilter === 'all') return true;
+    return t.type === templateFilter;
   });
 
-  const handleOpenAdd = () => {
-    setEditingItem(null);
-    setFormTitle('');
-    setFormType('lesson_plan');
-    setFormSubject(profile.subject || 'عام');
-    setFormContent('');
-    setShowAddModal(true);
-  };
+  // Handle Ask Gemini AI
+  const handleAskAI = async (customPrompt?: string) => {
+    const promptToSend = (customPrompt || question).trim();
+    if (!promptToSend || isAskingAI) return;
 
-  const handleOpenEdit = (item: LibraryItem) => {
-    setEditingItem(item);
-    setFormTitle(item.title);
-    setFormType(item.type);
-    setFormSubject(item.subject || profile.subject || 'عام');
-    setFormContent(item.content);
-    setShowAddModal(true);
-  };
+    if (customPrompt) {
+      setQuestion(customPrompt);
+    }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formTitle.trim() || !formContent.trim()) return;
-    setIsSubmitting(true);
+    setIsAskingAI(true);
+    setAiError(null);
+    setAiAnswer(null);
 
     try {
-      if (editingItem) {
-        await updateLibraryItem(profile.id, editingItem.id, {
-          title: formTitle.trim(),
-          type: formType,
-          subject: formSubject.trim(),
-          content: formContent.trim(),
-        });
-      } else {
-        await addLibraryItem(profile.id, {
-          title: formTitle.trim(),
-          type: formType,
-          subject: formSubject.trim(),
-          content: formContent.trim(),
-        });
+      // Gather context from all uploaded teacher sources
+      const sourcesContext = sources.map((s) => ({
+        title: s.title,
+        type: s.type === 'pdf' ? 'كتاب / ملف PDF' : s.type === 'image' ? 'صورة منهج' : 'مرجع تدريس',
+        content: s.content || s.title,
+      }));
+
+      const res = await fetch('/api/ai/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: promptToSend,
+          teacherName: profile.name,
+          subject: profile.subject,
+          sources: sourcesContext,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'فشل في استلام الإجابة من الذكاء الاصطناعي');
       }
-      setShowAddModal(false);
-    } catch (err) {
-      console.error('Error saving library item', err);
+
+      setAiAnswer(data.answer);
+    } catch (err: any) {
+      console.error('Error asking AI:', err);
+      setAiError(err.message || 'حدث خطأ أثناء التواصل مع نموذج الذكاء الاصطناعي.');
     } finally {
-      setIsSubmitting(false);
+      setIsAskingAI(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm('هل أنت متأكد من حذف هذا النموذج؟')) {
-      try {
-        await deleteLibraryItem(profile.id, id);
-        if (viewingItem?.id === id) setViewingItem(null);
-      } catch (err) {
-        console.error('Error deleting library item', err);
-      }
-    }
+  // Copy AI response
+  const handleCopyAnswer = () => {
+    if (!aiAnswer) return;
+    navigator.clipboard.writeText(aiAnswer);
+    setCopiedAnswer(true);
+    setTimeout(() => setCopiedAnswer(false), 2000);
   };
 
-  const handleCopyContent = (item: LibraryItem) => {
-    navigator.clipboard.writeText(item.content);
-    setCopiedId(item.id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  const handleWhatsAppShare = (item: LibraryItem) => {
-    const text = encodeURIComponent(`*${item.title}*\n\n${item.content}`);
+  // Share AI response to WhatsApp
+  const handleShareAnswerWhatsApp = () => {
+    if (!aiAnswer) return;
+    const text = encodeURIComponent(`*سؤال المعلم:*\n${question}\n\n*إجابة المساعد الذكي (سند المعلم):*\n\n${aiAnswer}`);
     window.open(`https://wa.me/?text=${text}`, '_blank');
   };
 
+  // Handle File Upload for Sources (PDF or Images)
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const sizeInKB = Math.round(file.size / 1024);
+    const sizeStr = sizeInKB > 1024 ? `${(sizeInKB / 1024).toFixed(1)} MB` : `${sizeInKB} KB`;
+
+    setSourceFileName(file.name);
+    setSourceFileSize(sizeStr);
+
+    if (!sourceTitle) {
+      setSourceTitle(file.name.replace(/\.[^/.]+$/, ''));
+    }
+
+    if (file.type.includes('pdf')) {
+      setSourceType('pdf');
+      // For PDFs, store file name and note in content
+      if (!sourceContent) {
+        setSourceContent(`ملف كتاب / منهج بصيغة PDF: ${file.name} (${sizeStr})`);
+      }
+    } else if (file.type.startsWith('image/')) {
+      setSourceType('image');
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const base64 = event.target?.result as string;
+        setSourceFileData(base64);
+        if (!sourceContent) {
+          setSourceContent(`صورة لدرس / صفحة من المنهج: ${file.name}`);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Save new Source
+  const handleSaveSource = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sourceTitle.trim()) return;
+
+    setIsSavingSource(true);
+    try {
+      await addLibraryItem(profile.id, {
+        title: sourceTitle.trim(),
+        type: sourceType,
+        subject: sourceSubject.trim(),
+        content: sourceContent.trim() || `مصدر تعليمي: ${sourceTitle.trim()}`,
+        fileName: sourceFileName.trim() || undefined,
+        fileSize: sourceFileSize.trim() || undefined,
+        fileData: sourceFileData || undefined,
+      });
+
+      setShowAddSourceModal(false);
+      setSourceTitle('');
+      setSourceContent('');
+      setSourceFileName('');
+      setSourceFileSize('');
+      setSourceFileData(undefined);
+    } catch (err) {
+      console.error('Error saving source:', err);
+    } finally {
+      setIsSavingSource(false);
+    }
+  };
+
+  // Delete Item
+  const handleDeleteItem = async (id: string, name: string) => {
+    if (window.confirm(`هل أنت متأكد من حذف "${name}"؟`)) {
+      try {
+        await deleteLibraryItem(profile.id, id);
+        if (previewingSource?.id === id) setPreviewingSource(null);
+        if (viewingItem?.id === id) setViewingItem(null);
+      } catch (err) {
+        console.error('Error deleting library item:', err);
+      }
+    }
+  };
+
+  // Seed default templates
   const handleRestoreDefaults = async () => {
     if (window.confirm('هل تريد إضافة النماذج المقترحة الافتراضية إلى مكتبتك؟')) {
       await seedDefaultLibraryItems(profile.id);
     }
   };
 
-  const getTypeBadge = (type: string) => {
-    switch (type) {
-      case 'lesson_plan':
-        return (
-          <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-indigo-950/70 border border-indigo-500/30 text-indigo-300">
-            <FileText className="w-3 h-3" />
-            <span>تحضير درس</span>
-          </span>
-        );
-      case 'quiz':
-        return (
-          <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-amber-950/70 border border-amber-500/30 text-amber-300">
-            <HelpCircle className="w-3 h-3" />
-            <span>اختبار قصير (Quiz)</span>
-          </span>
-        );
-      case 'summary':
-        return (
-          <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/70 border border-emerald-500/30 text-emerald-300">
-            <Award className="w-3 h-3" />
-            <span>تقرير متابعة</span>
-          </span>
-        );
-    }
-  };
-
   return (
-    <div className="space-y-4 pb-20">
-      {/* Header */}
+    <div className="space-y-4 pb-20 select-none">
+      {/* Top Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-bold text-white">مكتبتي ({libraryItems.length})</h2>
-          <p className="text-xs text-slate-400">نماذج تحضير الحصص، بنوك الأسئلة والاختبارات القصيرة</p>
-        </div>
-        <button
-          onClick={handleOpenAdd}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-950/50 active:scale-95 transition cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>إضافة نموذج</span>
-        </button>
-      </div>
-
-      {/* Filter Tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-        <button
-          onClick={() => setFilterType('all')}
-          className={`px-3 py-1.5 rounded-xl font-bold transition whitespace-nowrap cursor-pointer ${
-            filterType === 'all'
-              ? 'bg-purple-600 text-white shadow'
-              : 'bg-slate-900/80 text-slate-400 hover:text-white border border-slate-800'
-          }`}
-        >
-          الكل ({libraryItems.length})
-        </button>
-        <button
-          onClick={() => setFilterType('lesson_plan')}
-          className={`px-3 py-1.5 rounded-xl font-bold transition whitespace-nowrap cursor-pointer ${
-            filterType === 'lesson_plan'
-              ? 'bg-purple-600 text-white shadow'
-              : 'bg-slate-900/80 text-slate-400 hover:text-white border border-slate-800'
-          }`}
-        >
-          تحضير الدروس
-        </button>
-        <button
-          onClick={() => setFilterType('quiz')}
-          className={`px-3 py-1.5 rounded-xl font-bold transition whitespace-nowrap cursor-pointer ${
-            filterType === 'quiz'
-              ? 'bg-purple-600 text-white shadow'
-              : 'bg-slate-900/80 text-slate-400 hover:text-white border border-slate-800'
-          }`}
-        >
-          الاختبارات القصيرة
-        </button>
-        <button
-          onClick={() => setFilterType('summary')}
-          className={`px-3 py-1.5 rounded-xl font-bold transition whitespace-nowrap cursor-pointer ${
-            filterType === 'summary'
-              ? 'bg-purple-600 text-white shadow'
-              : 'bg-slate-900/80 text-slate-400 hover:text-white border border-slate-800'
-          }`}
-        >
-          تقارير المتابعة
-        </button>
-      </div>
-
-      {/* Library Items List */}
-      {filteredItems.length === 0 ? (
-        <div className="rounded-2xl bg-slate-900/50 border border-slate-800 p-8 text-center">
-          <BookOpen className="w-10 h-10 mx-auto text-purple-400/60 mb-2" />
-          <p className="text-sm font-bold text-slate-200">لا توجد نماذج محفوظة في هذا القسم</p>
-          <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
-            يمكنك إنشاء نموذج مخصص أو استعادة النماذج الجاهزة المقترحة.
+          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <span>مكتبتي - مصادر التدريس الخاصة بك</span>
+          </h2>
+          <p className="text-xs text-slate-400">
+            المساعد الذكي لمناهجك ومستودع الكتب والتحضيرات
           </p>
-          <div className="mt-4 flex items-center justify-center gap-2">
-            <button
-              onClick={handleOpenAdd}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-purple-600 text-white text-xs font-bold hover:bg-purple-500 transition cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>إضافة نموذج جديد</span>
-            </button>
-            <button
-              onClick={handleRestoreDefaults}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 text-purple-300 text-xs font-bold hover:bg-slate-700 transition cursor-pointer"
-            >
-              <Sparkles className="w-4 h-4 text-amber-300" />
-              <span>استعادة النماذج الجاهزة</span>
-            </button>
-          </div>
         </div>
-      ) : (
-        <div className="space-y-3">
-          {filteredItems.map((item) => (
-            <div
-              key={item.id}
-              className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-4 hover:border-purple-400/40 transition"
-            >
-              <div className="flex items-start justify-between mb-2">
+
+        <div className="flex items-center gap-1.5">
+          <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-purple-900/60 border border-purple-500/30 text-purple-300 text-xs font-bold">
+            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+            <span>Gemini AI</span>
+          </span>
+        </div>
+      </div>
+
+      {/* Navigation Sub-Tabs: AI & Sources vs Templates */}
+      <div className="flex items-center gap-2 p-1 rounded-2xl bg-slate-900 border border-purple-500/20 text-xs">
+        <button
+          type="button"
+          onClick={() => setActiveSection('sources_ai')}
+          className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl font-bold transition cursor-pointer ${
+            activeSection === 'sources_ai'
+              ? 'bg-purple-600 text-white shadow-md'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 text-amber-300" />
+          <span>المساعد الذكي والمصادر ({sources.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSection('templates')}
+          className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl font-bold transition cursor-pointer ${
+            activeSection === 'templates'
+              ? 'bg-purple-600 text-white shadow-md'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <FileText className="w-4 h-4" />
+          <span>نماذج التحضير والاختبارات ({templates.length})</span>
+        </button>
+      </div>
+
+      {/* SECTION 1: AI ASSISTANT & SOURCES (Default & Main View) */}
+      {activeSection === 'sources_ai' && (
+        <div className="space-y-4">
+          {/* CARD: ✨ اسأل مصادرك (AI Assistant / Ask Library) */}
+          <div className="rounded-2xl bg-gradient-to-br from-purple-950/60 via-slate-900 to-indigo-950/60 border border-purple-500/35 p-4 space-y-3.5 shadow-xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-purple-600/30 text-amber-300 flex items-center justify-center border border-purple-400/30 shadow">
+                  <Sparkles className="w-4 h-4" />
+                </div>
                 <div>
-                  <div className="flex items-center gap-2">
-                    <h3
-                      onClick={() => setViewingItem(item)}
-                      className="text-sm font-bold text-white hover:text-purple-300 cursor-pointer transition"
-                    >
-                      {item.title}
-                    </h3>
-                    {getTypeBadge(item.type)}
-                  </div>
-                  {item.subject && (
-                    <p className="text-[11px] text-purple-300/80 mt-0.5">مادة: {item.subject}</p>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => handleCopyContent(item)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-400 hover:bg-slate-800 transition cursor-pointer"
-                    title="نسخ المحتوى"
-                  >
-                    {copiedId === item.id ? (
-                      <Check className="w-4 h-4 text-emerald-400" />
-                    ) : (
-                      <Copy className="w-4 h-4" />
-                    )}
-                  </button>
-                  <button
-                    onClick={() => handleWhatsAppShare(item)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-400 hover:bg-slate-800 transition cursor-pointer"
-                    title="مشاركة عبر واتساب"
-                  >
-                    <MessageCircle className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleOpenEdit(item)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
-                    title="تعديل"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(item.id)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition cursor-pointer"
-                    title="حذف"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+                    <span>✨ اسأل مصادرك</span>
+                  </h3>
+                  <p className="text-[11px] text-purple-200/80">
+                    مساعد تدريس ذكي يستند إلى كتبك ومناهجك المرفوعة
+                  </p>
                 </div>
               </div>
 
-              {/* Snippet preview */}
-              <div
-                onClick={() => setViewingItem(item)}
-                className="cursor-pointer rounded-xl bg-slate-950/60 p-2.5 text-xs text-slate-300 font-mono whitespace-pre-wrap line-clamp-3 leading-relaxed border border-slate-800/80 hover:border-slate-700"
-              >
-                {item.content}
-              </div>
+              {sources.length > 0 ? (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-300">
+                  📚 متصل بـ {sources.length} مصادر
+                </span>
+              ) : (
+                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
+                  إجابات عامة بدون مصادر
+                </span>
+              )}
             </div>
-          ))}
+
+            {/* Question Textarea */}
+            <div className="space-y-2">
+              <textarea
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                placeholder="مثلاً: اشرح لي الفرق بين present perfect و past simple بطريقة مناسبة لطالب مستوى A2"
+                rows={3}
+                className="w-full rounded-2xl bg-slate-950/90 border border-purple-500/30 p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400 leading-relaxed"
+              />
+
+              {/* Quick Question Chips */}
+              <div className="flex flex-wrap gap-1.5 text-[11px]">
+                {[
+                  '💡 اشرح قاعدة بطريقة مبسطة',
+                  '📝 اقترح 5 أسئلة تدريبية مع الإجابة',
+                  '⏱️ خطة درس لمدة 45 دقيقة',
+                  '🎯 نشاط صفي تفاعلي ممتع',
+                ].map((chip) => (
+                  <button
+                    key={chip}
+                    type="button"
+                    onClick={() => {
+                      const baseQuestion = chip.replace(/^[^\s]+\s/, '');
+                      setQuestion(`${baseQuestion} لطلابي في مادة ${profile.subject}: `);
+                    }}
+                    className="px-2.5 py-1 rounded-xl bg-purple-900/40 hover:bg-purple-800/60 border border-purple-500/30 text-purple-200 transition cursor-pointer text-[10px]"
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
+
+              {/* Submit Button */}
+              <button
+                type="button"
+                disabled={!question.trim() || isAskingAI}
+                onClick={() => handleAskAI()}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold transition shadow-lg shadow-purple-950/50 cursor-pointer disabled:opacity-50 active:scale-98"
+              >
+                {isAskingAI ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>جارٍ تحليل المصادر والتفكير...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" />
+                    <span>اسأل</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Error Message */}
+            {aiError && (
+              <div className="p-3 rounded-2xl bg-rose-950/80 border border-rose-500/40 text-rose-200 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400" />
+                <span>{aiError}</span>
+              </div>
+            )}
+
+            {/* AI Answer Box */}
+            {aiAnswer && (
+              <div className="rounded-2xl bg-slate-950 border border-purple-500/40 p-3.5 space-y-3 shadow-inner">
+                <div className="flex items-center justify-between border-b border-purple-900/40 pb-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-amber-300">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>إجابة المساعد الذكي:</span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleCopyAnswer}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 border border-slate-700 hover:bg-slate-800 text-slate-300 text-[10px] font-semibold transition cursor-pointer"
+                    >
+                      {copiedAnswer ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-400" />
+                          <span>تم النسخ</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          <span>نسخ</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleShareAnswerWhatsApp}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-950/80 border border-emerald-500/40 hover:bg-emerald-900 text-emerald-300 text-[10px] font-semibold transition cursor-pointer"
+                    >
+                      <MessageCircle className="w-3 h-3" />
+                      <span>واتساب</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAiAnswer(null)}
+                      className="p-1 rounded-lg text-slate-500 hover:text-white transition cursor-pointer"
+                      title="مسح الإجابة"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="text-xs text-slate-100 whitespace-pre-wrap leading-relaxed space-y-2 select-text font-sans">
+                  {aiAnswer}
+                </div>
+
+                {sources.length > 0 && (
+                  <div className="pt-2 border-t border-slate-800/80 text-[10px] text-purple-300/80 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    <span>تم تضمين {sources.length} من مصادرك وكتبك المرفوعة في صياغة الإجابة.</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* CARD: مصادر التدريس الخاصة بك (Sources Section) */}
+          <div className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <span>مصادر التدريس الخاصة بك</span>
+                  <span className="text-[10px] px-2 py-0.2 rounded-full bg-purple-950 text-purple-300 border border-purple-500/30">
+                    {sources.length} مصادر
+                  </span>
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  ملفات PDF وصور ومناهج يعتمد عليها الذكاء الاصطناعي في إجاباته
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSourceTitle('');
+                  setSourceContent('');
+                  setSourceFileName('');
+                  setSourceFileSize('');
+                  setSourceFileData(undefined);
+                  setSourceType('pdf');
+                  setShowAddSourceModal(true);
+                }}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition cursor-pointer shadow-md shadow-purple-950/50 active:scale-98"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ إضافة مصدر</span>
+              </button>
+            </div>
+
+            {/* Sources List */}
+            {sources.length === 0 ? (
+              <div className="py-6 px-4 text-center rounded-2xl bg-slate-950/60 border border-dashed border-slate-800 space-y-2">
+                <div className="w-12 h-12 rounded-2xl bg-purple-950/50 text-purple-400 flex items-center justify-center mx-auto border border-purple-500/20">
+                  <FileUp className="w-6 h-6" />
+                </div>
+                <h4 className="text-xs font-bold text-white">لم تقم برفع مصادر أو كتب بعد</h4>
+                <p className="text-[11px] text-slate-400 max-w-xs mx-auto leading-relaxed">
+                  ارفع كتب المناهج (PDF)، صور الدروس، أو المذكرات الخاصة بك ليجيب المساعد الذكي بدقة متناهية بناءً على مراجعك المعتمدة!
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowAddSourceModal(true)}
+                  className="mt-1 inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 text-xs font-bold transition cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ إضافة أول مصدر الآن</span>
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {sources.map((src) => (
+                  <div
+                    key={src.id}
+                    className="flex items-center justify-between p-3 rounded-2xl bg-slate-950 border border-slate-800 hover:border-purple-500/30 transition group"
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-purple-900/30 text-purple-300 flex items-center justify-center border border-purple-500/30 flex-shrink-0">
+                        {src.type === 'pdf' ? (
+                          <File className="w-4 h-4 text-rose-400" />
+                        ) : src.type === 'image' ? (
+                          <ImageIcon className="w-4 h-4 text-teal-400" />
+                        ) : (
+                          <BookOpen className="w-4 h-4 text-amber-400" />
+                        )}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-xs font-bold text-white truncate group-hover:text-purple-300 transition">
+                          {src.title}
+                        </h4>
+                        <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                          <span>
+                            {src.type === 'pdf' ? 'ملف PDF 📕' : src.type === 'image' ? 'صورة درس 🖼️' : 'مرجع كتاب 📚'}
+                          </span>
+                          {src.fileSize && <span>• {src.fileSize}</span>}
+                          {src.subject && <span>• {src.subject}</span>}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewingSource(src)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                        title="معاينة المصدر"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteItem(src.id, src.title)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition cursor-pointer"
+                        title="حذف المصدر"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* View Item Detail Modal */}
-      {viewingItem && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="w-full max-w-lg bg-slate-900 border border-purple-500/30 rounded-3xl p-5 shadow-2xl text-right max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-purple-900/40 pb-3 mb-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-base font-bold text-white">{viewingItem.title}</h3>
-                  {getTypeBadge(viewingItem.type)}
+      {/* SECTION 2: TEMPLATES & LESSON PREP (Secondary View) */}
+      {activeSection === 'templates' && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <span>نماذج التحضير والاختبارات</span>
+              <span className="text-[10px] px-2 py-0.2 rounded-full bg-purple-950 text-purple-300 border border-purple-500/30">
+                {templates.length}
+              </span>
+            </h3>
+
+            <button
+              type="button"
+              onClick={handleRestoreDefaults}
+              className="text-[11px] text-purple-300 hover:text-purple-200 underline cursor-pointer"
+            >
+              استعادة النماذج الافتراضية
+            </button>
+          </div>
+
+          {/* Filter Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+            {(['all', 'lesson_plan', 'quiz', 'summary'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTemplateFilter(t)}
+                className={`px-3 py-1.5 rounded-xl font-bold transition whitespace-nowrap cursor-pointer ${
+                  templateFilter === t
+                    ? 'bg-purple-600 text-white shadow-md'
+                    : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                {t === 'all'
+                  ? 'الكل'
+                  : t === 'lesson_plan'
+                  ? 'تحضير درس'
+                  : t === 'quiz'
+                  ? 'اختبارات قصيرة'
+                  : 'تقارير أولياء الأمور'}
+              </button>
+            ))}
+          </div>
+
+          {/* Templates Cards Grid */}
+          <div className="space-y-2">
+            {filteredTemplates.map((item) => (
+              <div
+                key={item.id}
+                className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-3.5 space-y-2 hover:border-purple-400/40 transition"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-purple-400" />
+                    <h4 className="text-xs font-bold text-white">{item.title}</h4>
+                  </div>
+                  <span className="text-[10px] text-purple-300 px-2 py-0.5 rounded-full bg-purple-950/70 border border-purple-500/30">
+                    {item.type === 'lesson_plan' ? 'تحضير' : item.type === 'quiz' ? 'اختبار' : 'تقرير'}
+                  </span>
                 </div>
-                {viewingItem.subject && (
-                  <p className="text-xs text-purple-300 mt-0.5">مادة: {viewingItem.subject}</p>
-                )}
+
+                <p className="text-xs text-slate-300 line-clamp-2 leading-relaxed">
+                  {item.content}
+                </p>
+
+                <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setViewingItem(item)}
+                    className="text-purple-400 hover:text-purple-300 font-bold text-[11px] cursor-pointer"
+                  >
+                    عرض التفاصيل والنسخ ←
+                  </button>
+
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(item.content);
+                        setCopiedId(item.id);
+                        setTimeout(() => setCopiedId(null), 2000);
+                      }}
+                      className="p-1 rounded-lg text-slate-400 hover:text-white transition cursor-pointer"
+                      title="نسخ النص"
+                    >
+                      {copiedId === item.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteItem(item.id, item.title)}
+                      className="p-1 rounded-lg text-slate-400 hover:text-rose-400 transition cursor-pointer"
+                      title="حذف"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: إضافة مصدر جديد (Add Source Modal) */}
+      {showAddSourceModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-slate-900 border border-purple-500/30 rounded-3xl p-5 shadow-2xl text-right max-h-[92vh] flex flex-col space-y-3.5">
+            <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
+              <div className="flex items-center gap-2">
+                <FileUp className="w-5 h-5 text-purple-400" />
+                <h3 className="text-base font-bold text-white">إضافة مصدر أو كتاب جديد</h3>
               </div>
               <button
+                type="button"
+                onClick={() => setShowAddSourceModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveSource} className="space-y-3 overflow-y-auto pr-0.5">
+              {/* File Upload Box */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  رفع ملف أو صورة (PDF أو صورة المنهج)
+                </label>
+                <div className="rounded-2xl border-2 border-dashed border-purple-500/30 bg-slate-950/70 p-4 text-center hover:border-purple-400 transition relative">
+                  <input
+                    type="file"
+                    accept=".pdf,image/*"
+                    onChange={handleFileUpload}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                  <div className="space-y-1">
+                    <Upload className="w-6 h-6 text-purple-400 mx-auto" />
+                    <p className="text-xs text-slate-200 font-bold">
+                      {sourceFileName ? `تم اختيار: ${sourceFileName}` : 'اضغط لاختيار ملف PDF أو صورة المنهج'}
+                    </p>
+                    <p className="text-[10px] text-slate-500">
+                      يدعم الكتب والملازم والملخصات وصور صفحات الدروس
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Source Title */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  عنوان المصدر / اسم الكتاب *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={sourceTitle}
+                  onChange={(e) => setSourceTitle(e.target.value)}
+                  placeholder="مثال: كتاب المعاصر - رياضيات الصف الثالث الإعدادي"
+                  className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {/* Source Type */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">نوع المصدر</label>
+                  <select
+                    value={sourceType}
+                    onChange={(e) => setSourceType(e.target.value as LibraryItemType)}
+                    className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 cursor-pointer"
+                  >
+                    <option value="pdf">ملف كتاب PDF 📕</option>
+                    <option value="image">صورة صفحة / درس 🖼️</option>
+                    <option value="book">ملخص منهج / مذكرة 📚</option>
+                  </select>
+                </div>
+
+                {/* Subject */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">المادة</label>
+                  <input
+                    type="text"
+                    value={sourceSubject}
+                    onChange={(e) => setSourceSubject(e.target.value)}
+                    placeholder="مثال: رياضيات"
+                    className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
+                  />
+                </div>
+              </div>
+
+              {/* Description or Content Notes */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  ملاحظات أو نبذة عن محتوى المصدر (يستخدمها الذكاء الاصطناعي)
+                </label>
+                <textarea
+                  value={sourceContent}
+                  onChange={(e) => setSourceContent(e.target.value)}
+                  placeholder="مثال: يحتوي هذا الملف على شرح الوحدة الأولى كاملة مع قواعد الأزمنة وأسئلة الاختبارات المقترحة..."
+                  rows={3}
+                  className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 leading-relaxed"
+                />
+              </div>
+
+              {/* Image Preview if uploaded */}
+              {sourceFileData && (
+                <div className="rounded-xl border border-slate-700 overflow-hidden max-h-36">
+                  <img src={sourceFileData} alt="Preview" className="w-full h-full object-cover" />
+                </div>
+              )}
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={isSavingSource || !sourceTitle.trim()}
+                  className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition cursor-pointer shadow-lg shadow-purple-950/50 disabled:opacity-50"
+                >
+                  {isSavingSource ? 'جارٍ الحفظ في مكتبتك...' : 'حفظ المصدر في مكتبتي'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: معاينة المصدر (Preview Source Modal) */}
+      {previewingSource && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-slate-900 border border-purple-500/40 rounded-3xl p-5 shadow-2xl text-right max-h-[90vh] flex flex-col space-y-3">
+            <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-purple-400" />
+                <h3 className="text-sm font-bold text-white truncate">{previewingSource.title}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewingSource(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 overflow-y-auto flex-1 text-xs">
+              <div className="flex items-center gap-2 text-slate-400 text-[11px]">
+                <span className="px-2 py-0.5 rounded-md bg-purple-950 border border-purple-500/30 text-purple-300">
+                  {previewingSource.type === 'pdf' ? 'ملف PDF' : previewingSource.type === 'image' ? 'صورة' : 'كتاب'}
+                </span>
+                {previewSourceDetail(previewingSource)}
+              </div>
+
+              {previewingSource.fileData && (
+                <div className="rounded-xl overflow-hidden border border-slate-800">
+                  <img src={previewingSource.fileData} alt={previewingSource.title} className="w-full object-contain max-h-72" />
+                </div>
+              )}
+
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-slate-200 whitespace-pre-wrap leading-relaxed">
+                {previewingSource.content}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setQuestion(`بناءً على مصدري (${previewingSource.title}): `);
+                  setPreviewingSource(null);
+                  setActiveSection('sources_ai');
+                }}
+                className="flex-1 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span>اسأل الذكاء الاصطناعي عن هذا المصدر</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPreviewingSource(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition cursor-pointer"
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: View Template Details */}
+      {viewingItem && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-slate-900 border border-purple-500/40 rounded-3xl p-5 shadow-2xl text-right max-h-[90vh] flex flex-col space-y-3">
+            <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
+              <h3 className="text-sm font-bold text-white">{viewingItem.title}</h3>
+              <button
+                type="button"
                 onClick={() => setViewingItem(null)}
                 className="p-1 rounded-lg text-slate-400 hover:text-white"
               >
@@ -326,141 +846,41 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto bg-slate-950/80 rounded-2xl p-4 text-xs text-slate-200 font-mono whitespace-pre-wrap leading-relaxed border border-slate-800 select-text">
+            <div className="flex-1 overflow-y-auto bg-slate-950 p-3.5 rounded-2xl border border-slate-800 text-xs text-slate-200 whitespace-pre-wrap leading-relaxed select-text font-mono">
               {viewingItem.content}
             </div>
 
-            <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handleCopyContent(viewingItem)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition cursor-pointer"
-                >
-                  {copiedId === viewingItem.id ? (
-                    <>
-                      <Check className="w-4 h-4 text-emerald-300" />
-                      <span>تم النسخ للحافظة!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4" />
-                      <span>نسخ النص كاملاً</span>
-                    </>
-                  )}
-                </button>
-                <button
-                  onClick={() => handleWhatsAppShare(viewingItem)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer"
-                >
-                  <MessageCircle className="w-4 h-4" />
-                  <span>مشاركة بالواتساب</span>
-                </button>
-              </div>
-
+            <div className="flex items-center gap-2 pt-2">
               <button
+                type="button"
                 onClick={() => {
-                  const toEdit = viewingItem;
-                  setViewingItem(null);
-                  handleOpenEdit(toEdit);
+                  navigator.clipboard.writeText(viewingItem.content);
+                  setCopiedId(viewingItem.id);
+                  setTimeout(() => setCopiedId(null), 2000);
                 }}
-                className="p-2 text-slate-400 hover:text-white transition cursor-pointer"
-                title="تعديل"
+                className="flex-1 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
               >
-                <Edit2 className="w-4 h-4" />
+                {copiedId === viewingItem.id ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                <span>{copiedId === viewingItem.id ? 'تم النسخ بنجاح!' : 'نسخ النص بالكامل'}</span>
               </button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Add / Edit Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-slate-900 border border-purple-500/30 rounded-3xl p-5 shadow-2xl text-right">
-            <div className="flex items-center justify-between border-b border-purple-900/40 pb-3 mb-4">
-              <h3 className="text-base font-bold text-white">
-                {editingItem ? 'تعديل النموذج' : 'إضافة نموذج جديد'}
-              </h3>
               <button
-                onClick={() => setShowAddModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white"
+                type="button"
+                onClick={() => setViewingItem(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition cursor-pointer"
               >
-                <X className="w-5 h-5" />
+                إغلاق
               </button>
             </div>
-
-            <form onSubmit={handleSubmit} className="space-y-3.5">
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  عنوان النموذج *
-                </label>
-                <input
-                  type="text"
-                  value={formTitle}
-                  onChange={(e) => setFormTitle(e.target.value)}
-                  placeholder="مثال: تحضير درس الأفعال الخمسة أو اختبار الوحدة الأولى"
-                  required
-                  className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
-                    تصنيف النموذج
-                  </label>
-                  <select
-                    value={formType}
-                    onChange={(e) =>
-                      setFormType(e.target.value as 'lesson_plan' | 'quiz' | 'summary')
-                    }
-                    className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 cursor-pointer"
-                  >
-                    <option value="lesson_plan">تحضير درس</option>
-                    <option value="quiz">اختبار قصير (Quiz)</option>
-                    <option value="summary">تقرير متابعة</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">المادة</label>
-                  <input
-                    type="text"
-                    value={formSubject}
-                    onChange={(e) => setFormSubject(e.target.value)}
-                    placeholder="مثال: لغة عربية"
-                    className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  محتوى النموذج والأسئلة *
-                </label>
-                <textarea
-                  value={formContent}
-                  onChange={(e) => setFormContent(e.target.value)}
-                  placeholder="اكتب أو الصق نص التحضير أو أسئلة الاختبار هنا بالتفصيل..."
-                  rows={8}
-                  required
-                  className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-purple-400"
-                />
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="w-full rounded-xl bg-purple-600 hover:bg-purple-500 py-2.5 text-xs font-bold text-white transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-lg shadow-purple-950/50"
-                >
-                  {isSubmitting ? 'جارٍ الحفظ...' : editingItem ? 'حفظ التعديلات' : 'إضافة للمكتبة'}
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}
     </div>
   );
 };
+
+function previewSourceDetail(item: LibraryItem) {
+  if (item.fileName) return <span>ملف: {item.fileName}</span>;
+  if (item.fileSize) return <span>حجم: {item.fileSize}</span>;
+  return null;
+}

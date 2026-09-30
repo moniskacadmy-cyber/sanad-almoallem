@@ -80,15 +80,31 @@ export interface ScheduleSlot {
   updatedAt: any;
 }
 
+export type LibraryItemType = 'lesson_plan' | 'quiz' | 'summary' | 'pdf' | 'image' | 'book';
+
 export interface LibraryItem {
   id: string;
   teacherId: string;
   title: string;
-  type: 'lesson_plan' | 'quiz' | 'summary';
+  type: LibraryItemType;
   subject?: string;
   content: string;
+  fileName?: string;
+  fileSize?: string;
+  fileData?: string;
   createdAt: any;
   updatedAt: any;
+}
+
+export interface BackupData {
+  version: number;
+  exportedAt: string;
+  app: string;
+  profile: TeacherProfile;
+  students: Student[];
+  schedules: ScheduleSlot[];
+  lessons: Record<string, LessonLog[]>; // studentId -> LessonLog[]
+  libraryItems: LibraryItem[];
 }
 
 export interface AdminStats {
@@ -96,4 +112,35 @@ export interface AdminStats {
   activeSubscribers: number;
   inTrial: number;
   expired: number;
+}
+
+export type ReminderTarget = 'parent' | 'teacher';
+export type ReminderStatus = 'sent' | 'scheduled' | 'delivered';
+
+export interface ReminderLog {
+  id: string;
+  teacherId: string;
+  studentId: string;
+  studentName: string;
+  target: ReminderTarget;
+  recipientPhone: string;
+  recipientName: string;
+  classTime: string;
+  classType: ClassType;
+  subject: string;
+  locationOrLink?: string;
+  status: ReminderStatus;
+  messageText: string;
+  whatsappUrl: string;
+  sentAt: string;
+  minutesBefore: number;
+}
+
+export interface ReminderSettings {
+  enabled: boolean;
+  minutesBefore: number; // 15
+  notifyTeacher: boolean;
+  notifyParent: boolean;
+  soundEnabled: boolean;
+  autoOpenWhatsApp?: boolean;
 }

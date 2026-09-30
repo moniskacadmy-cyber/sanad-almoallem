@@ -1,0 +1,200 @@
+import { ScheduleSlot, Student, TeacherProfile, ReminderLog, ReminderSettings } from '../types';
+
+const REMINDER_SETTINGS_KEY = 'sanad_reminder_settings';
+const DEFAULT_SETTINGS: ReminderSettings = {
+  enabled: true,
+  minutesBefore: 15,
+  notifyTeacher: true,
+  notifyParent: true,
+  soundEnabled: true,
+  autoOpenWhatsApp: false,
+};
+
+// Play a pleasant two-tone audio alert using Web Audio API
+export function playNotificationChime() {
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+
+    const now = ctx.currentTime;
+    // Tone 1: 587.33 Hz (D5)
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(587.33, now);
+    gain1.gain.setValueAtTime(0.18, now);
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.35);
+
+    // Tone 2: 880 Hz (A5)
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(880, now + 0.15);
+    gain2.gain.setValueAtTime(0.2, now + 0.15);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.15);
+    osc2.stop(now + 0.6);
+  } catch (e) {
+    console.warn('Web Audio chime could not play:', e);
+  }
+}
+
+// Request Native Web Notification Permission
+export async function requestBrowserNotificationPermission(): Promise<NotificationPermission> {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return 'denied';
+  }
+  try {
+    const permission = await Notification.requestPermission();
+    return permission;
+  } catch (err) {
+    console.error('Error requesting notification permission:', err);
+    return 'denied';
+  }
+}
+
+// Show OS/Browser Notification
+export function showBrowserNotification(title: string, body: string, icon = '/icons/icon-192x192.png') {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return;
+  }
+  if (Notification.permission === 'granted') {
+    try {
+      const notif = new Notification(title, {
+        body,
+        icon,
+        dir: 'rtl',
+        badge: icon,
+        tag: 'class-reminder',
+      });
+      notif.onclick = () => {
+        window.focus();
+        notif.close();
+      };
+    } catch (e) {
+      console.warn('Failed to display browser notification:', e);
+    }
+  }
+}
+
+// Get saved reminder settings
+export function getStoredReminderSettings(): ReminderSettings {
+  if (typeof window === 'undefined') return DEFAULT_SETTINGS;
+  try {
+    const stored = localStorage.getItem(REMINDER_SETTINGS_KEY);
+    if (!stored) return DEFAULT_SETTINGS;
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(stored) };
+  } catch (e) {
+    return DEFAULT_SETTINGS;
+  }
+}
+
+// Save reminder settings
+export function storeReminderSettings(settings: ReminderSettings) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(REMINDER_SETTINGS_KEY, JSON.stringify(settings));
+  } catch (e) {
+    console.error('Failed to store reminder settings:', e);
+  }
+}
+
+// Call /api/reminders/check with the teacher's current schedules and local time
+export async function checkRemindersApi(params: {
+  teacher: TeacherProfile;
+  schedules: ScheduleSlot[];
+  students: Student[];
+  minutesBefore?: number;
+}): Promise<{
+  success: boolean;
+  checkedCount: number;
+  remindersSent: number;
+  matchedReminders: ReminderLog[];
+}> {
+  try {
+    const response = await fetch('/api/reminders/check', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        teacherId: params.teacher.id,
+        teacherName: params.teacher.name,
+        teacherWhatsapp: params.teacher.whatsapp,
+        schedules: params.schedules,
+        students: params.students,
+        clientTime: new Date().toISOString(),
+        minutesBefore: params.minutesBefore || 15,
+      }),
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || 'فشل فحص جدول التذكيرات.');
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (err: any) {
+    console.error('checkRemindersApi error:', err);
+    return {
+      success: false,
+      checkedCount: 0,
+      remindersSent: 0,
+      matchedReminders: [],
+    };
+  }
+}
+
+// Fetch Cron status and logs from server
+export async function fetchCronStatusApi(): Promise<{
+  isRunning: boolean;
+  intervalMinutes: number;
+  lastRun: string | null;
+  nextRun: string | null;
+  totalDispatched: number;
+  recentLogs: ReminderLog[];
+}> {
+  try {
+    const res = await fetch('/api/reminders/status');
+    if (!res.ok) throw new Error('فشل جلب حالة Cron Job.');
+    return await res.json();
+  } catch (e) {
+    return {
+      isRunning: true,
+      intervalMinutes: 15,
+      lastRun: null,
+      nextRun: null,
+      totalDispatched: 0,
+      recentLogs: [],
+    };
+  }
+}
+
+// Trigger manual test reminder
+export async function triggerTestReminderApi(params: {
+  studentName: string;
+  teacherName: string;
+  subject: string;
+  classTime: string;
+  studentWhatsapp: string;
+  teacherWhatsapp: string;
+  locationOrLink?: string;
+}) {
+  const res = await fetch('/api/reminders/trigger-test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    throw new Error('فشل إرسال التذكير التجريبي.');
+  }
+  return await res.json();
+}

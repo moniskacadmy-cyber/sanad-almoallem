@@ -98,15 +98,18 @@
     },
     "LibraryItem": {
       "title": "LibraryItem",
-      "description": "Preparation template or quiz in teacher library.",
+      "description": "Preparation template, curriculum book, or quiz in teacher library.",
       "type": "object",
       "properties": {
         "id": { "type": "string", "maxLength": 128 },
         "teacherId": { "type": "string", "maxLength": 128 },
         "title": { "type": "string", "minLength": 2, "maxLength": 200 },
-        "type": { "type": "string", "enum": ["lesson_plan", "quiz", "summary"] },
+        "type": { "type": "string", "enum": ["lesson_plan", "quiz", "summary", "pdf", "image", "book"] },
         "subject": { "type": "string", "maxLength": 100 },
-        "content": { "type": "string", "maxLength": 10000 },
+        "content": { "type": "string", "maxLength": 50000 },
+        "fileName": { "type": "string", "maxLength": 200 },
+        "fileSize": { "type": "string", "maxLength": 50 },
+        "fileData": { "type": "string", "maxLength": 500000 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
@@ -126,6 +129,27 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "email", "isActive", "subscriptionEndDate"]
+    },
+    "Reminder": {
+      "title": "Reminder",
+      "description": "Automated reminder log for upcoming classes.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "teacherId": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 100 },
+        "target": { "type": "string", "enum": ["parent", "teacher"] },
+        "recipientPhone": { "type": "string", "maxLength": 30 },
+        "recipientName": { "type": "string", "maxLength": 100 },
+        "classTime": { "type": "string", "maxLength": 20 },
+        "status": { "type": "string", "enum": ["sent", "scheduled", "delivered"] },
+        "messageText": { "type": "string", "maxLength": 2000 },
+        "whatsappUrl": { "type": "string", "maxLength": 1000 },
+        "minutesBefore": { "type": "number" },
+        "sentAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "teacherId", "studentName", "target", "classTime", "status", "messageText", "sentAt"]
     }
   },
   "firestore": {
@@ -156,6 +180,10 @@
     "/teachers/{teacherId}/library/{itemId}": {
       "schema": { "$ref": "#/entities/LibraryItem" },
       "description": "Stores preparation plans and quiz templates."
+    },
+    "/teachers/{teacherId}/reminders/{reminderId}": {
+      "schema": { "$ref": "#/entities/Reminder" },
+      "description": "Stores automated class reminder logs."
     }
   }
 }
