@@ -11,6 +11,7 @@ import {
   addSchedule,
   updateSchedule,
   deleteSchedule,
+  addLibraryItem,
 } from '../firebase';
 import {
   WEEK_DAYS,
@@ -85,7 +86,24 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const [studentLessons, setStudentLessons] = useState<LessonLog[]>([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<Student | null>(null);
   const [showMonthlyReportModal, setShowMonthlyReportModal] = useState(false);
+  const [reportEditableText, setReportEditableText] = useState('');
   const [copiedReport, setCopiedReport] = useState(false);
+
+  // Lesson Prep Modal State (Edit Before Send Modal)
+  const [showLessonPrepModal, setShowLessonPrepModal] = useState(false);
+  const [prepTopicInput, setPrepTopicInput] = useState('');
+  const [prepEditableText, setPrepEditableText] = useState('');
+  const [copiedPrep, setCopiedPrep] = useState(false);
+  const [isSavingPrepToLibrary, setIsSavingPrepToLibrary] = useState(false);
+  const [prepSavedNotice, setPrepSavedNotice] = useState(false);
+
+  // Collapsible sections state (Closed by default to save space)
+  const [isAddStudentLearningStyleOpen, setIsAddStudentLearningStyleOpen] = useState(false);
+  const [isAddStudentNotesOpen, setIsAddStudentNotesOpen] = useState(false);
+  const [isProfileLearningStyleOpen, setIsProfileLearningStyleOpen] = useState(false);
+  const [isProfileNotesOpen, setIsProfileNotesOpen] = useState(false);
+  const [profileNotes, setProfileNotes] = useState('');
+  const [savingNotes, setSavingNotes] = useState(false);
 
   // Form fields for Add/Edit Student
   const [formName, setFormName] = useState('');
@@ -275,11 +293,32 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
       return;
     }
     setProfileLearningStyle(selectedProfileStudent.learningStyle || '');
+    setProfileNotes(selectedProfileStudent.notes || '');
+    setIsProfileLearningStyleOpen(false);
+    setIsProfileNotesOpen(false);
     const unsub = subscribeToStudentLessons(profile.id, selectedProfileStudent.id, (lessons) => {
       setStudentLessons(lessons);
     });
     return () => unsub();
   }, [profile.id, selectedProfileStudent]);
+
+  const handleSaveProfileNotes = async () => {
+    if (!selectedProfileStudent) return;
+    setSavingNotes(true);
+    try {
+      await updateStudent(profile.id, selectedProfileStudent.id, {
+        notes: profileNotes.trim(),
+      });
+      setSelectedProfileStudent({
+        ...selectedProfileStudent,
+        notes: profileNotes.trim(),
+      });
+    } catch (e) {
+      console.error('Error saving profile notes:', e);
+    } finally {
+      setSavingNotes(false);
+    }
+  };
 
   // Filter students
   const filteredStudents = students.filter((s) => {
@@ -292,6 +331,17 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     return matchesSearch && matchesType && matchesPayment;
   });
 
+  const handleOpenStudentProfile = (s: Student) => {
+    setSelectedProfileStudent(s);
+    setProfileLearningStyle(s.learningStyle || '');
+    setProfileNotes(s.notes || '');
+    setIsProfileLearningStyleOpen(false); // Collapsed / closed by default
+    setIsProfileNotesOpen(false); // Collapsed / closed by default
+    setIsManagingSchedules(false);
+    setShowAddScheduleInsideProfile(false);
+    setEditingScheduleSlot(null);
+  };
+
   const handleOpenAddModal = () => {
     setEditingStudent(null);
     setFormName('');
@@ -301,6 +351,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     setFormMonthlyFee(300);
     setFormLearningStyle('');
     setFormNotes('');
+    setIsAddStudentLearningStyleOpen(false);
+    setIsAddStudentNotesOpen(false);
     setFormSchedules([]);
     setFormColor('purple');
     setShowAddModal(true);
@@ -315,6 +367,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     setFormMonthlyFee(student.monthlyFee || 0);
     setFormLearningStyle(student.learningStyle || '');
     setFormNotes(student.notes || '');
+    setIsAddStudentLearningStyleOpen(false);
+    setIsAddStudentNotesOpen(false);
     setFormColor(student.color || 'purple');
     setFormSchedules([]);
     setShowAddModal(true);
@@ -459,22 +513,116 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     );
   };
 
+  const handleOpenMonthlyReport = () => {
+    const text = generateMonthlyReportText();
+    setReportEditableText(text);
+    setShowMonthlyReportModal(true);
+  };
+
   const handleSendMonthlyReport = () => {
     if (!selectedProfileStudent) return;
-    const text = generateMonthlyReportText();
+    const textToSend = reportEditableText || generateMonthlyReportText();
     const cleanPhone = selectedProfileStudent.whatsapp ? selectedProfileStudent.whatsapp.replace(/[^0-9]/g, '') : '';
     const phoneParam = cleanPhone ? (cleanPhone.startsWith('0') ? '2' + cleanPhone : cleanPhone) : '';
     const url = phoneParam
-      ? `https://wa.me/${phoneParam}?text=${encodeURIComponent(text)}`
-      : `https://wa.me/?text=${encodeURIComponent(text)}`;
+      ? `https://wa.me/${phoneParam}?text=${encodeURIComponent(textToSend)}`
+      : `https://wa.me/?text=${encodeURIComponent(textToSend)}`;
     window.open(url, '_blank');
   };
 
   const handleCopyReport = () => {
-    const text = generateMonthlyReportText();
-    navigator.clipboard.writeText(text);
+    const textToCopy = reportEditableText || generateMonthlyReportText();
+    navigator.clipboard.writeText(textToCopy);
     setCopiedReport(true);
     setTimeout(() => setCopiedReport(false), 2500);
+  };
+
+  const handleResetReportToDefault = () => {
+    setReportEditableText(generateMonthlyReportText());
+  };
+
+  // Generate Lesson Preparation for WhatsApp & Library (Edit Before Send)
+  const generateLessonPrepText = (topicCustom?: string) => {
+    if (!selectedProfileStudent) return '';
+    const topic = topicCustom !== undefined ? topicCustom : prepTopicInput.trim() || 'موضوع الدرس القادم';
+    const dateFormatted = new Intl.DateTimeFormat('ar-EG', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }).format(new Date());
+
+    return (
+      `السلام عليكم ورحمة الله وبركاته 🌷\n` +
+      `📋 بطاقة تحضير وخطة الحصة الدراسية\n\n` +
+      `👤 الطالب/ـة: ${selectedProfileStudent.name}\n` +
+      `📚 المادة: ${selectedProfileStudent.subject}\n` +
+      `👨‍🏫 إعداد المعلم: أ. ${profile.name}\n` +
+      `📅 التاريخ: ${dateFormatted}\n` +
+      `🎯 عنوان الدرس: ${topic}\n` +
+      (selectedProfileStudent.learningStyle ? `💡 نمط التعلم المخصص: ${selectedProfileStudent.learningStyle}\n` : '') +
+      `\n` +
+      `1️⃣ الأهداف التعليمية:\n` +
+      `• استيعاب المفاهيم والمصطلحات الأساسية لدرس (${topic}).\n` +
+      `• التدرب على حل أمثلة ونماذج تطبيقية متنوعة.\n` +
+      `• التأكد من إتقان الطالب للمهارات المطلوبة قبل نهاية الحصة.\n\n` +
+      `2️⃣ خطة سير الحصة:\n` +
+      `• مراجعة سريعة لما تم في الحصة السابقة (5 إلى 10 دقائق).\n` +
+      `• الشرح التفاعلي المبسط وطرح الأمثلة (25 دقيقة).\n` +
+      `• حل تمارين تطبيقية وتقييم الفهم الفوري (15 دقيقة).\n\n` +
+      `3️⃣ الواجب والتكليفات المنزلية:\n` +
+      `• حل التمارين المحددة ومراجعة الملاحظات.\n\n` +
+      `مع خالص تمنياتنا بالتفوق والنجاح المستمر دائماً 🌟`
+    );
+  };
+
+  const handleOpenLessonPrep = () => {
+    if (!selectedProfileStudent) return;
+    const defaultTopic = 'موضوع الدرس القادم';
+    setPrepTopicInput(defaultTopic);
+    setPrepEditableText(generateLessonPrepText(defaultTopic));
+    setShowLessonPrepModal(true);
+  };
+
+  const handleUpdatePrepTopic = (newTopic: string) => {
+    setPrepTopicInput(newTopic);
+    setPrepEditableText(generateLessonPrepText(newTopic));
+  };
+
+  const handleSendLessonPrepWhatsApp = () => {
+    if (!selectedProfileStudent) return;
+    const textToSend = prepEditableText || generateLessonPrepText();
+    const cleanPhone = selectedProfileStudent.whatsapp ? selectedProfileStudent.whatsapp.replace(/[^0-9]/g, '') : '';
+    const phoneParam = cleanPhone ? (cleanPhone.startsWith('0') ? '2' + cleanPhone : cleanPhone) : '';
+    const url = phoneParam
+      ? `https://wa.me/${phoneParam}?text=${encodeURIComponent(textToSend)}`
+      : `https://wa.me/?text=${encodeURIComponent(textToSend)}`;
+    window.open(url, '_blank');
+  };
+
+  const handleCopyLessonPrep = () => {
+    const textToCopy = prepEditableText || generateLessonPrepText();
+    navigator.clipboard.writeText(textToCopy);
+    setCopiedPrep(true);
+    setTimeout(() => setCopiedPrep(false), 2500);
+  };
+
+  const handleSavePrepToLibrary = async () => {
+    if (!selectedProfileStudent || !prepEditableText.trim()) return;
+    setIsSavingPrepToLibrary(true);
+    try {
+      await addLibraryItem(profile.id, {
+        title: `تحضير: ${prepTopicInput.trim() || 'درس جديد'} - للطالب ${selectedProfileStudent.name}`,
+        type: 'lesson_plan',
+        subject: selectedProfileStudent.subject,
+        content: prepEditableText.trim(),
+      });
+      setPrepSavedNotice(true);
+      setTimeout(() => setPrepSavedNotice(false), 3000);
+    } catch (e) {
+      console.error('Error saving prep to library', e);
+    } finally {
+      setIsSavingPrepToLibrary(false);
+    }
   };
 
   // Payment Reminder WhatsApp Generator
@@ -620,7 +768,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
               <div className="flex items-start justify-between">
                 {/* Student Info Clickable */}
                 <div
-                  onClick={() => setSelectedProfileStudent(s)}
+                  onClick={() => handleOpenStudentProfile(s)}
                   className="cursor-pointer flex-1"
                 >
                   <div className="flex items-center gap-2">
@@ -684,7 +832,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                     </span>
                   )}
                   <button
-                    onClick={() => setSelectedProfileStudent(s)}
+                    onClick={() => handleOpenStudentProfile(s)}
                     className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-950/60 border border-purple-500/30 text-purple-300 hover:bg-purple-900/50 transition cursor-pointer"
                   >
                     <BookOpen className="w-3.5 h-3.5" />
@@ -798,32 +946,94 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                 />
               </div>
 
-              {/* How does this student learn best (Learning Style & Smart Notes) */}
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
-                  <Brain className="w-3.5 h-3.5 text-amber-300" />
-                  <span>إزاي الطالب ده بيتعلم أحسن؟ (ملاحظات أسلوب التعلم) (اختياري)</span>
-                </label>
-                <textarea
-                  value={formLearningStyle}
-                  onChange={(e) => setFormLearningStyle(e.target.value)}
-                  placeholder="مثال: نمط بصري يفضل الرسوم التوضيحية، يحتاج تشجيع مستمر، يستوعب المسائل بالتطبيق العملي..."
-                  rows={2}
-                  className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
-                />
+              {/* Collapsible 1: إزاي الطالب ده بيتعلم أحسن؟ (Accordion - مغلق افتراضياً) */}
+              <div className="rounded-2xl border border-purple-500/25 bg-slate-900/60 overflow-hidden transition-all shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setIsAddStudentLearningStyleOpen(!isAddStudentLearningStyleOpen)}
+                  className="w-full p-3 flex items-center justify-between text-right cursor-pointer hover:bg-purple-950/30 transition"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-300 flex items-center justify-center flex-shrink-0">
+                      <Brain className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-white block">
+                        إزاي الطالب ده بيتعلم أحسن؟
+                      </span>
+                      <span className="text-[10px] text-purple-300/80">
+                        {formLearningStyle ? 'تم تدوين أسلوب التعلم ✏️' : 'ملاحظات أسلوب التعلم الذكية (اختياري)'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-slate-400">
+                    <span className="text-[10px] font-medium">
+                      {isAddStudentLearningStyleOpen ? 'إغلاق' : 'إضافة'}
+                    </span>
+                    <ChevronDown
+                      className={`w-4 h-4 transform transition-transform duration-200 ${
+                        isAddStudentLearningStyleOpen ? 'rotate-180 text-purple-400' : ''
+                      }`}
+                    />
+                  </div>
+                </button>
+
+                {isAddStudentLearningStyleOpen && (
+                  <div className="p-3 pt-0 border-t border-purple-900/30 space-y-2 mt-2">
+                    <textarea
+                      value={formLearningStyle}
+                      onChange={(e) => setFormLearningStyle(e.target.value)}
+                      placeholder="مثال: نمط بصري يفضل الرسوم التوضيحية، يحتاج تشجيع مستمر، يستوعب المسائل بالتطبيق العملي..."
+                      rows={2}
+                      className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
+                    />
+                  </div>
+                )}
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  ملاحظات إضافية (اختياري)
-                </label>
-                <textarea
-                  value={formNotes}
-                  onChange={(e) => setFormNotes(e.target.value)}
-                  placeholder="ملاحظات حول المواعيد أو متطلبات خاصة..."
-                  rows={2}
-                  className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
-                />
+              {/* Collapsible 2: الملاحظات الإضافية (Accordion - مغلق افتراضياً) */}
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/60 overflow-hidden transition-all shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setIsAddStudentNotesOpen(!isAddStudentNotesOpen)}
+                  className="w-full p-3 flex items-center justify-between text-right cursor-pointer hover:bg-slate-800/40 transition"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-slate-800 text-slate-300 flex items-center justify-center flex-shrink-0">
+                      <FileText className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-white block">
+                        ملاحظات إضافية
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        {formNotes ? 'يوجد ملاحظات مسجلة 📝' : 'ملاحظات حول المواعيد أو متطلبات خاصة (اختياري)'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-slate-400">
+                    <span className="text-[10px] font-medium">
+                      {isAddStudentNotesOpen ? 'إغلاق' : 'إضافة'}
+                    </span>
+                    <ChevronDown
+                      className={`w-4 h-4 transform transition-transform duration-200 ${
+                        isAddStudentNotesOpen ? 'rotate-180 text-purple-400' : ''
+                      }`}
+                    />
+                  </div>
+                </button>
+
+                {isAddStudentNotesOpen && (
+                  <div className="p-3 pt-0 border-t border-slate-800/60 space-y-2 mt-2">
+                    <textarea
+                      value={formNotes}
+                      onChange={(e) => setFormNotes(e.target.value)}
+                      placeholder="ملاحظات حول المواعيد أو متطلبات خاصة..."
+                      rows={2}
+                      className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* SECTION: Weekly Class Schedules (Optional) - مواعيد الحصص الأسبوعية (اختياري) */}
@@ -1029,22 +1239,33 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
               </button>
             </div>
 
-            {/* Quick Actions (Monthly Report & Record Lesson) */}
-            <div className="grid grid-cols-2 gap-2">
+            {/* Quick Actions (Monthly Report, Lesson Prep, and Record Lesson) */}
+            <div className="grid grid-cols-3 gap-1.5">
               <button
-                onClick={() => setShowMonthlyReportModal(true)}
-                className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-110 text-white text-xs font-bold transition cursor-pointer shadow-md"
+                type="button"
+                onClick={handleOpenMonthlyReport}
+                className="flex flex-col items-center justify-center gap-1 py-2 px-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-110 text-white text-[11px] font-bold transition cursor-pointer shadow-md text-center"
               >
                 <FileText className="w-3.5 h-3.5" />
-                <span>تقرير الشهر لولي الأمر 📄</span>
+                <span>تقرير الشهر 📄</span>
               </button>
 
               <button
-                onClick={() => setShowAddLessonInsideProfile(!showAddLessonInsideProfile)}
-                className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition cursor-pointer"
+                type="button"
+                onClick={handleOpenLessonPrep}
+                className="flex flex-col items-center justify-center gap-1 py-2 px-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:brightness-110 text-white text-[11px] font-bold transition cursor-pointer shadow-md text-center"
               >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>{showAddLessonInsideProfile ? 'إغلاق النموذج' : 'تسجيل حصة جديدة ✏️'}</span>
+                <BookOpen className="w-3.5 h-3.5 text-amber-300" />
+                <span>تحضير الحصة 📝</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowAddLessonInsideProfile(!showAddLessonInsideProfile)}
+                className="flex flex-col items-center justify-center gap-1 py-2 px-1.5 rounded-xl bg-purple-700/80 hover:bg-purple-600 text-white text-[11px] font-bold transition cursor-pointer text-center"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span>{showAddLessonInsideProfile ? 'إغلاق' : 'تسجيل حصة ✏️'}</span>
               </button>
             </div>
 
@@ -1105,66 +1326,153 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
               )}
             </div>
 
-            {/* SECTION 2: SECTION "إزاي الطالب ده بيتعلم أحسن؟" (Learning Style & Smart Assistant) */}
-            <div className="rounded-2xl bg-gradient-to-r from-purple-950/40 to-indigo-950/40 border border-purple-500/25 p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <Brain className="w-4 h-4 text-amber-300" />
-                  <span className="text-xs font-bold text-white">إزاي الطالب ده بيتعلم أحسن؟</span>
+            {/* SECTION 2: SECTION "إزاي الطالب ده بيتعلم أحسن؟" (Collapsible - مغلق افتراضياً) */}
+            <div className="rounded-2xl bg-gradient-to-r from-purple-950/40 to-indigo-950/40 border border-purple-500/25 overflow-hidden transition-all shadow-md">
+              <button
+                type="button"
+                onClick={() => setIsProfileLearningStyleOpen(!isProfileLearningStyleOpen)}
+                className="w-full p-3.5 flex items-center justify-between text-right cursor-pointer hover:bg-purple-950/30 transition"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30 flex-shrink-0">
+                    <Brain className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <span>إزاي الطالب ده بيتعلم أحسن؟</span>
+                      <span className="text-[10px] text-purple-300/80 font-normal">
+                        ({profileLearningStyle ? 'ملاحظة مسجلة 💡' : 'مساعد التدريس الذكي'})
+                      </span>
+                    </h4>
+                    <p className="text-[10px] text-slate-400">
+                      أسلوب استيعاب الطالب ونقاط القوة لتقارير المتابعة
+                    </p>
+                  </div>
                 </div>
-                <span className="text-[10px] text-purple-300 font-medium">مساعد التدريس الذكي</span>
-              </div>
-
-              {/* Quick Learning Style Tags */}
-              <div className="flex flex-wrap gap-1 text-[10px]">
-                {[
-                  'نمط بصري 👁️',
-                  'نمط سمعي 👂',
-                  'تطبيقي وحركي ✍️',
-                  'يحتاج تشجيع مستمر 🌟',
-                  'سريع الاستيعاب 🚀',
-                  'خطوة بخطوة 📐',
-                ].map((tag) => (
-                  <button
-                    key={tag}
-                    type="button"
-                    onClick={() => {
-                      const current = profileLearningStyle;
-                      if (!current.includes(tag)) {
-                        setProfileLearningStyle(current ? `${current} • ${tag}` : tag);
-                      }
-                    }}
-                    className="px-2 py-0.5 rounded-lg bg-purple-900/40 hover:bg-purple-800/60 border border-purple-500/30 text-purple-200 transition cursor-pointer"
-                  >
-                    + {tag}
-                  </button>
-                ))}
-              </div>
-
-              {/* Editable Notes Field */}
-              <div className="space-y-1.5">
-                <textarea
-                  value={profileLearningStyle}
-                  onChange={(e) => setProfileLearningStyle(e.target.value)}
-                  placeholder="سجل ملاحظاتك عن أسلوب استيعاب الطالب ونقاط قوته..."
-                  rows={2}
-                  className="w-full rounded-xl bg-slate-950/80 border border-slate-700/80 p-2 text-xs text-slate-200 focus:outline-none focus:border-purple-400"
-                />
-
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-slate-400">
-                    💡 احفظ الملاحظات ليتم تضمينها تلقائياً في تقارير المتابعة
+                <div className="flex items-center gap-1.5 text-xs text-purple-300">
+                  <span className="text-[10px] font-medium">
+                    {isProfileLearningStyleOpen ? 'إغلاق' : 'عرض'}
                   </span>
-                  <button
-                    type="button"
-                    disabled={savingLearningStyle}
-                    onClick={handleSaveLearningStyle}
-                    className="px-3 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold transition disabled:opacity-50 cursor-pointer"
-                  >
-                    {savingLearningStyle ? 'جارٍ الحفظ...' : 'حفظ الملاحظة'}
-                  </button>
+                  <ChevronDown
+                    className={`w-4 h-4 transform transition-transform duration-200 ${
+                      isProfileLearningStyleOpen ? 'rotate-180 text-amber-300' : ''
+                    }`}
+                  />
                 </div>
-              </div>
+              </button>
+
+              {isProfileLearningStyleOpen && (
+                <div className="p-3.5 pt-0 space-y-2.5 border-t border-purple-900/30 mt-1">
+                  {/* Quick Learning Style Tags */}
+                  <div className="flex flex-wrap gap-1 text-[10px] pt-2">
+                    {[
+                      'نمط بصري 👁️',
+                      'نمط سمعي 👂',
+                      'تطبيقي وحركي ✍️',
+                      'يحتاج تشجيع مستمر 🌟',
+                      'سريع الاستيعاب 🚀',
+                      'خطوة بخطوة 📐',
+                    ].map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => {
+                          const current = profileLearningStyle;
+                          if (!current.includes(tag)) {
+                            setProfileLearningStyle(current ? `${current} • ${tag}` : tag);
+                          }
+                        }}
+                        className="px-2 py-0.5 rounded-lg bg-purple-900/40 hover:bg-purple-800/60 border border-purple-500/30 text-purple-200 transition cursor-pointer"
+                      >
+                        + {tag}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Editable Notes Field */}
+                  <div className="space-y-1.5">
+                    <textarea
+                      value={profileLearningStyle}
+                      onChange={(e) => setProfileLearningStyle(e.target.value)}
+                      placeholder="سجل ملاحظاتك عن أسلوب استيعاب الطالب ونقاط قوته..."
+                      rows={2}
+                      className="w-full rounded-xl bg-slate-950/80 border border-slate-700/80 p-2 text-xs text-slate-200 focus:outline-none focus:border-purple-400"
+                    />
+
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-400">
+                        💡 احفظ الملاحظات ليتم تضمينها تلقائياً في تقارير المتابعة
+                      </span>
+                      <button
+                        type="button"
+                        disabled={savingLearningStyle}
+                        onClick={handleSaveLearningStyle}
+                        className="px-3 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold transition disabled:opacity-50 cursor-pointer"
+                      >
+                        {savingLearningStyle ? 'جارٍ الحفظ...' : 'حفظ أسلوب التعلم'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* SECTION 2.5: SECTION "الملاحظات الإضافية" (Collapsible - مغلق افتراضياً) */}
+            <div className="rounded-2xl bg-slate-950/70 border border-slate-800 overflow-hidden transition-all shadow-md">
+              <button
+                type="button"
+                onClick={() => setIsProfileNotesOpen(!isProfileNotesOpen)}
+                className="w-full p-3.5 flex items-center justify-between text-right cursor-pointer hover:bg-slate-900/60 transition"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-slate-800 text-slate-300 flex items-center justify-center border border-slate-700 flex-shrink-0">
+                    <FileText className="w-4 h-4 text-purple-400" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <span>الملاحظات الإضافية</span>
+                      <span className="text-[10px] text-slate-400 font-normal">
+                        ({profileNotes ? 'يوجد ملاحظات 📝' : 'ملاحظات خاصة'})
+                      </span>
+                    </h4>
+                    <p className="text-[10px] text-slate-400">
+                      ملاحظات خاصة عن الطالب، المواعيد أو متطلبات ولي الأمر
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                  <span className="text-[10px] font-medium">
+                    {isProfileNotesOpen ? 'إغلاق' : 'عرض'}
+                  </span>
+                  <ChevronDown
+                    className={`w-4 h-4 transform transition-transform duration-200 ${
+                      isProfileNotesOpen ? 'rotate-180 text-purple-400' : ''
+                    }`}
+                  />
+                </div>
+              </button>
+
+              {isProfileNotesOpen && (
+                <div className="p-3.5 pt-0 space-y-2 border-t border-slate-800/80 mt-1">
+                  <textarea
+                    value={profileNotes}
+                    onChange={(e) => setProfileNotes(e.target.value)}
+                    placeholder="سجل ملاحظاتك الإضافية عن الطالب هنا..."
+                    rows={2}
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2 text-xs text-slate-200 focus:outline-none focus:border-purple-400 mt-2"
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      disabled={savingNotes}
+                      onClick={handleSaveProfileNotes}
+                      className="px-3 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold transition disabled:opacity-50 cursor-pointer"
+                    >
+                      {savingNotes ? 'جارٍ الحفظ...' : 'حفظ الملاحظات'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* SECTION: 📅 مواعيد الحصص الأسبوعية */}
@@ -1679,49 +1987,196 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
         </div>
       )}
 
-      {/* MODAL: MONTHLY REPORT FOR PARENTS */}
+      {/* MODAL: MONTHLY REPORT FOR PARENTS (Edit Before Send Modal) */}
       {showMonthlyReportModal && selectedProfileStudent && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-slate-900 border border-emerald-500/40 rounded-3xl p-5 shadow-2xl text-right max-h-[90vh] flex flex-col space-y-3">
+          <div className="w-full max-w-lg bg-slate-900 border border-emerald-500/40 rounded-3xl p-5 shadow-2xl text-right max-h-[92vh] flex flex-col space-y-3">
             <div className="flex items-center justify-between border-b border-emerald-900/40 pb-3">
               <div className="flex items-center gap-2">
-                <FileText className="w-5 h-5 text-emerald-400" />
-                <h3 className="text-base font-bold text-white">تقرير الشهر لولي الأمر</h3>
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30">
+                  <FileText className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">معاينة وتعديل تقرير الشهر لولي الأمر</h3>
+                  <p className="text-[10px] text-slate-400">
+                    الطالب/ـة: {selectedProfileStudent.name} • {selectedProfileStudent.whatsapp ? `واتساب: ${selectedProfileStudent.whatsapp}` : 'بدون هاتف'}
+                  </p>
+                </div>
               </div>
               <button
                 onClick={() => setShowMonthlyReportModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-xs text-slate-300">
-              تقرير جاهز ومنسق بناءً على حصص وتقييمات الشهر الحالي ({currentMonthName}) لإرساله بضغطة زر:
-            </p>
-
-            {/* Report Preview Box */}
-            <div className="flex-1 overflow-y-auto bg-slate-950/80 border border-slate-800 rounded-2xl p-3.5 text-xs text-slate-200 font-mono whitespace-pre-wrap leading-relaxed select-text">
-              {generateMonthlyReportText()}
+            <div className="flex items-center justify-between text-xs text-slate-300">
+              <span>يمكنك مراجعة وتعديل نص التقرير بحرية قبل الإرسال:</span>
+              <button
+                type="button"
+                onClick={handleResetReportToDefault}
+                className="text-[11px] text-purple-300 hover:text-purple-200 underline font-medium cursor-pointer"
+                title="استعادة النص المقترح التلقائي"
+              >
+                استعادة النص الأصلي 🔄
+              </button>
             </div>
 
-            {/* Actions */}
+            {/* Editable Report Textarea */}
+            <div className="flex-1 flex flex-col">
+              <textarea
+                value={reportEditableText}
+                onChange={(e) => setReportEditableText(e.target.value)}
+                rows={11}
+                className="w-full rounded-2xl bg-slate-950/90 border border-emerald-500/30 focus:border-emerald-400 p-3.5 text-xs text-slate-100 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition resize-y"
+                placeholder="اكتب أو عدل نص التقرير هنا..."
+              />
+            </div>
+
+            {/* Action Buttons */}
             <div className="space-y-2 pt-1">
               <button
+                type="button"
                 onClick={handleSendMonthlyReport}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-lg shadow-emerald-950/50"
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-lg shadow-emerald-950/50 active:scale-98"
               >
                 <Send className="w-4 h-4" />
-                <span>إرسال التقرير عبر واتساب الآن</span>
+                <span>إرسال التقرير عبر واتساب الآن 💬</span>
               </button>
 
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyReport}
+                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition cursor-pointer active:scale-98"
+                >
+                  {copiedReport ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                  <span>{copiedReport ? 'تم النسخ بنجاح!' : 'نسخ نص التقرير'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowMonthlyReportModal(false)}
+                  className="flex items-center justify-center py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition cursor-pointer active:scale-98"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: LESSON PREPARATION (Edit Before Send Modal) */}
+      {showLessonPrepModal && selectedProfileStudent && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-slate-900 border border-purple-500/40 rounded-3xl p-5 shadow-2xl text-right max-h-[92vh] flex flex-col space-y-3">
+            <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-amber-300 flex items-center justify-center border border-purple-500/30">
+                  <BookOpen className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">معاينة وتعديل تحضير الحصة قبل الإرسال</h3>
+                  <p className="text-[10px] text-slate-400">
+                    الطالب/ـة: {selectedProfileStudent.name} • {selectedProfileStudent.subject} {selectedProfileStudent.whatsapp ? `• ${selectedProfileStudent.whatsapp}` : ''}
+                  </p>
+                </div>
+              </div>
               <button
-                onClick={handleCopyReport}
-                className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition cursor-pointer"
+                type="button"
+                onClick={() => setShowLessonPrepModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
               >
-                {copiedReport ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                <span>{copiedReport ? 'تم نسخ التقرير بنجاح!' : 'نسخ نص التقرير'}</span>
+                <X className="w-5 h-5" />
               </button>
+            </div>
+
+            {/* Quick Topic Modifier */}
+            <div className="flex items-center gap-2 bg-slate-950/80 p-2.5 rounded-2xl border border-purple-500/25">
+              <span className="text-[11px] font-bold text-purple-300 whitespace-nowrap">
+                عنوان الدرس:
+              </span>
+              <input
+                type="text"
+                value={prepTopicInput}
+                onChange={(e) => handleUpdatePrepTopic(e.target.value)}
+                placeholder="مثال: المعادلات التربيعية، قاعدة المضارع التام..."
+                className="flex-1 rounded-xl bg-slate-900 border border-slate-700 px-3 py-1.5 text-xs text-white focus:outline-none focus:border-purple-400"
+              />
+            </div>
+
+            {/* Notice if saved to library */}
+            {prepSavedNotice && (
+              <div className="p-2.5 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                <span>تم حفظ هذا التحضير بنجاح في قسم (مكتبتي)!</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between text-xs text-slate-300">
+              <span>يمكنك مراجعة وتعديل نص التحضير كاملاً داخل المربع أدناه:</span>
+              <button
+                type="button"
+                onClick={() => setPrepEditableText(generateLessonPrepText())}
+                className="text-[11px] text-purple-300 hover:text-purple-200 underline font-medium cursor-pointer"
+                title="إعادة توليد النص التلقائي"
+              >
+                استعادة القالب الأصلي 🔄
+              </button>
+            </div>
+
+            {/* Editable Lesson Prep Textarea */}
+            <div className="flex-1 flex flex-col">
+              <textarea
+                value={prepEditableText}
+                onChange={(e) => setPrepEditableText(e.target.value)}
+                rows={11}
+                className="w-full rounded-2xl bg-slate-950/90 border border-purple-500/30 focus:border-purple-400 p-3.5 text-xs text-slate-100 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-purple-500/40 transition resize-y"
+                placeholder="اكتب أو عدل نص تحضير الحصة هنا..."
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={handleSendLessonPrepWhatsApp}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-lg shadow-emerald-950/50 active:scale-98"
+              >
+                <Send className="w-4 h-4" />
+                <span>إرسال التحضير عبر واتساب الآن 💬</span>
+              </button>
+
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  disabled={isSavingPrepToLibrary}
+                  onClick={handleSavePrepToLibrary}
+                  className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 text-xs font-bold transition cursor-pointer disabled:opacity-50 active:scale-98"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  <span>{isSavingPrepToLibrary ? 'جارٍ الحفظ...' : 'حفظ في مكتبتي'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCopyLessonPrep}
+                  className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition cursor-pointer active:scale-98"
+                >
+                  {copiedPrep ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedPrep ? 'تم النسخ!' : 'نسخ النص'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowLessonPrepModal(false)}
+                  className="flex items-center justify-center py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition cursor-pointer active:scale-98"
+                >
+                  إلغاء
+                </button>
+              </div>
             </div>
           </div>
         </div>

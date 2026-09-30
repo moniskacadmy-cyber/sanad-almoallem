@@ -36,6 +36,9 @@ import {
   MessageCircle,
   Bell,
   X,
+  AlertCircle,
+  ChevronRight,
+  LogOut,
 } from 'lucide-react';
 import {
   getStoredReminderSettings,
@@ -64,20 +67,81 @@ export default function App() {
   // Active Tab for teacher application
   const [activeTab, setActiveTab] = useState<number>(0);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
 
   // Collections state for current teacher
   const [students, setStudents] = useState<Student[]>([]);
   const [schedules, setSchedules] = useState<ScheduleSlot[]>([]);
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
 
-  // Synchronize browser history / popstate
+  // Push initial history state on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({ tab: 0 }, '', window.location.pathname);
+    }
+  }, []);
+
+  // Synchronize browser history / popstate & Smart Back Button handling
   useEffect(() => {
     const handlePopState = () => {
       setCurrentPath(window.location.pathname);
+
+      // 1. If Exit Confirmation Modal is currently open, dismiss it
+      if (showExitConfirmModal) {
+        setShowExitConfirmModal(false);
+        window.history.pushState({ tab: activeTab }, '', window.location.pathname);
+        return;
+      }
+
+      // 2. If Admin view is open, return to Main Dashboard
+      if (showAdminView) {
+        setShowAdminView(false);
+        window.history.pushState({ tab: 0 }, '', '/');
+        return;
+      }
+
+      // 3. If Upgrade modal is open, close it
+      if (showUpgradeModal) {
+        setShowUpgradeModal(false);
+        window.history.pushState({ tab: activeTab }, '', window.location.pathname);
+        return;
+      }
+
+      // 4. If user is in any sub-tab (Students, Schedule, Library, Settings),
+      // redirect them back to the Main Dashboard (Tab 0) instead of exiting
+      if (activeTab !== 0) {
+        setActiveTab(0);
+        window.history.pushState({ tab: 0 }, '', '/');
+        return;
+      }
+
+      // 5. If user is ALREADY at the Main Dashboard (Tab 0) and pressed Back:
+      // Show confirmation dialog: "هل أنت متأكد من رغبتك في الخروج من التطبيق؟"
+      setShowExitConfirmModal(true);
+      window.history.pushState({ tab: 0 }, '', '/');
     };
+
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [activeTab, showAdminView, showUpgradeModal, showExitConfirmModal]);
+
+  const handleSelectTab = (idx: number) => {
+    setActiveTab(idx);
+    window.history.pushState({ tab: idx }, '', window.location.pathname);
+  };
+
+  const handleConfirmExit = () => {
+    setShowExitConfirmModal(false);
+    try {
+      window.history.go(-2);
+    } catch {
+      window.close();
+    }
+  };
+
+  const handleCancelExit = () => {
+    setShowExitConfirmModal(false);
+  };
 
   const navigateTo = (path: string) => {
     if (window.location.pathname !== path) {
@@ -312,11 +376,23 @@ export default function App() {
       {/* Mobile-first centered frame (up to 460px) */}
       <div className="w-full max-w-[460px] min-h-screen bg-slate-950/95 border-x border-purple-950/40 flex flex-col relative shadow-2xl">
         {/* Top App Header */}
-        <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-purple-900/30 px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-700 to-indigo-600 flex items-center justify-center shadow text-amber-300 font-bold">
-              <BookOpen className="w-4 h-4" />
-            </div>
+        <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-purple-900/30 px-3.5 py-2.5 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {activeTab !== 0 ? (
+              <button
+                type="button"
+                onClick={() => handleSelectTab(0)}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-purple-900/50 hover:bg-purple-800/70 border border-purple-500/40 text-xs font-bold text-purple-200 hover:text-white transition cursor-pointer shadow-sm active:scale-95"
+                title="الرجوع للواجهة الرئيسية (Main Dashboard)"
+              >
+                <ChevronRight className="w-4 h-4 text-amber-300" />
+                <span>الرئيسية</span>
+              </button>
+            ) : (
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-700 to-indigo-600 flex items-center justify-center shadow text-amber-300 font-bold">
+                <BookOpen className="w-4 h-4" />
+              </div>
+            )}
             <div>
               <h1 className="text-sm font-extrabold text-white tracking-wide">
                 سند المعلم
@@ -332,6 +408,16 @@ export default function App() {
             >
               <span>{profile.subscriptionStatus === 'active' ? 'مشترك 💎' : 'تجريبي 🎁'}</span>
             </div>
+
+            {/* Exit Application Trigger Button (Shows confirmation modal on Main Dashboard) */}
+            <button
+              type="button"
+              onClick={() => setShowExitConfirmModal(true)}
+              className="p-1.5 rounded-xl bg-slate-900 hover:bg-rose-950/60 border border-slate-800 hover:border-rose-500/40 text-slate-400 hover:text-rose-300 transition cursor-pointer"
+              title="خروج من التطبيق"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
         </header>
 
@@ -445,7 +531,7 @@ export default function App() {
             return (
               <button
                 key={tab.label}
-                onClick={() => setActiveTab(idx)}
+                onClick={() => handleSelectTab(idx)}
                 className={`flex-1 flex flex-col items-center justify-center py-1.5 px-1 rounded-2xl transition cursor-pointer relative ${
                   isActive
                     ? 'text-purple-300 font-bold'
@@ -478,6 +564,42 @@ export default function App() {
             isVoluntary={true}
             onClose={() => setShowUpgradeModal(false)}
           />
+        )}
+
+        {/* Exit Application Confirmation Modal */}
+        {showExitConfirmModal && (
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 text-right">
+            <div className="w-full max-w-sm bg-gradient-to-b from-slate-900 to-slate-950 border border-purple-500/40 rounded-3xl p-6 shadow-2xl relative space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30 flex-shrink-0">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">تأكيد الخروج من التطبيق</h3>
+                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                    هل أنت متأكد من رغبتك في الخروج من التطبيق؟
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleConfirmExit}
+                  className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition cursor-pointer shadow-lg shadow-rose-950/50 active:scale-98"
+                >
+                  تأكيد
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelExit}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition cursor-pointer active:scale-98"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

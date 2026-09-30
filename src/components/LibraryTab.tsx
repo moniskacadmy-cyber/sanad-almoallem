@@ -70,6 +70,16 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
   const [templateFilter, setTemplateFilter] = useState<'all' | 'lesson_plan' | 'quiz' | 'summary'>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // Create Lesson Prep Modal State (Edit Before Send Modal)
+  const [showCreateLessonPrepModal, setShowCreateLessonPrepModal] = useState(false);
+  const [prepModalTopic, setPrepModalTopic] = useState('');
+  const [prepModalGrade, setPrepModalGrade] = useState('');
+  const [prepModalContent, setPrepModalContent] = useState('');
+  const [prepModalRecipientPhone, setPrepModalRecipientPhone] = useState('');
+  const [isSavingPrepModal, setIsSavingPrepModal] = useState(false);
+  const [copiedPrepModal, setCopiedPrepModal] = useState(false);
+  const [prepModalSuccessMsg, setPrepModalSuccessMsg] = useState(false);
+
   // Filter items into sources vs templates
   const sources = libraryItems.filter(
     (item) => item.type === 'pdf' || item.type === 'image' || item.type === 'book'
@@ -230,6 +240,86 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
     }
   };
 
+  // Generate Lesson Prep Text
+  const generateNewLessonPrepText = (topic?: string, grade?: string) => {
+    const t = topic !== undefined ? topic : prepModalTopic.trim() || 'عنوان الدرس الجديد';
+    const g = grade !== undefined ? grade : prepModalGrade.trim() || 'المرحلة الدراسية';
+    const dateFormatted = new Intl.DateTimeFormat('ar-EG', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }).format(new Date());
+
+    return (
+      `السلام عليكم ورحمة الله وبركاته 🌷\n` +
+      `📋 بطاقة تحضير وخطة الحصة الدراسية\n\n` +
+      `📚 المادة: ${profile.subject}\n` +
+      `👨‍🏫 إعداد المعلم: أ. ${profile.name}\n` +
+      `🎯 عنوان الدرس: ${t}\n` +
+      `🏫 الصف / المرحلة: ${g}\n` +
+      `📅 التاريخ: ${dateFormatted}\n\n` +
+      `1️⃣ الأهداف التعليمية:\n` +
+      `• استيعاب المفاهيم والمصطلحات الأساسية لدرس (${t}).\n` +
+      `• التدرب على حل أمثلة ونماذج تطبيقية متنوعة.\n` +
+      `• التأكد من إتقان الطلاب للمهارات المستهدفة.\n\n` +
+      `2️⃣ خطة سير الحصة وتوزيع الوقت:\n` +
+      `• التهيئة والمراجعة السريعة (5 إلى 10 دقائق).\n` +
+      `• الشرح التفاعلي وطرح الأمثلة (25 دقيقة).\n` +
+      `• التطبيق العملي والتقويم الفوري (15 دقيقة).\n\n` +
+      `3️⃣ الواجب المنزلي والتكليفات:\n` +
+      `• حل التدريبات المحددة ومراجعة الملاحظات.\n\n` +
+      `مع خالص تمنياتنا لجميع طلابنا بالتفوق والتميز 🌟`
+    );
+  };
+
+  const handleOpenCreateLessonPrep = (initialTopic?: string) => {
+    const t = initialTopic || '';
+    setPrepModalTopic(t);
+    setPrepModalGrade('');
+    setPrepModalRecipientPhone('');
+    setPrepModalContent(generateNewLessonPrepText(t, ''));
+    setShowCreateLessonPrepModal(true);
+  };
+
+  const handleSendPrepWhatsApp = () => {
+    const textToSend = prepModalContent || generateNewLessonPrepText();
+    const cleanPhone = prepModalRecipientPhone ? prepModalRecipientPhone.replace(/[^0-9]/g, '') : '';
+    const phoneParam = cleanPhone ? (cleanPhone.startsWith('0') ? '2' + cleanPhone : cleanPhone) : '';
+    const url = phoneParam
+      ? `https://wa.me/${phoneParam}?text=${encodeURIComponent(textToSend)}`
+      : `https://wa.me/?text=${encodeURIComponent(textToSend)}`;
+    window.open(url, '_blank');
+  };
+
+  const handleCopyPrepModal = () => {
+    const textToCopy = prepModalContent || generateNewLessonPrepText();
+    navigator.clipboard.writeText(textToCopy);
+    setCopiedPrepModal(true);
+    setTimeout(() => setCopiedPrepModal(false), 2000);
+  };
+
+  const handleSavePrepModalToLibrary = async () => {
+    if (!prepModalContent.trim()) return;
+    setIsSavingPrepModal(true);
+    try {
+      await addLibraryItem(profile.id, {
+        title: `تحضير: ${prepModalTopic.trim() || 'درس جديد'} (${profile.subject})`,
+        type: 'lesson_plan',
+        subject: profile.subject,
+        content: prepModalContent.trim(),
+      });
+      setPrepModalSuccessMsg(true);
+      setTimeout(() => {
+        setPrepModalSuccessMsg(false);
+        setShowCreateLessonPrepModal(false);
+      }, 1500);
+    } catch (err) {
+      console.error('Error saving lesson prep:', err);
+    } finally {
+      setIsSavingPrepModal(false);
+    }
+  };
+
   return (
     <div className="space-y-4 pb-20 select-none">
       {/* Top Header */}
@@ -244,10 +334,14 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
         </div>
 
         <div className="flex items-center gap-1.5">
-          <span className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-purple-900/60 border border-purple-500/30 text-purple-300 text-xs font-bold">
-            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            <span>Gemini AI</span>
-          </span>
+          <button
+            type="button"
+            onClick={() => handleOpenCreateLessonPrep()}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold transition cursor-pointer shadow-lg shadow-purple-950/40 active:scale-95"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>إنشاء تحضير للحصة 📝</span>
+          </button>
         </div>
       </div>
 
@@ -556,13 +650,24 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
               </span>
             </h3>
 
-            <button
-              type="button"
-              onClick={handleRestoreDefaults}
-              className="text-[11px] text-purple-300 hover:text-purple-200 underline cursor-pointer"
-            >
-              استعادة النماذج الافتراضية
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleOpenCreateLessonPrep()}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition cursor-pointer shadow active:scale-95"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ تحضير جديد</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleRestoreDefaults}
+                className="text-[11px] text-purple-300 hover:text-purple-200 underline cursor-pointer"
+              >
+                استعادة النماذج الافتراضية
+              </button>
+            </div>
           </div>
 
           {/* Filter Pills */}
@@ -866,11 +971,176 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
 
               <button
                 type="button"
+                onClick={() => {
+                  const text = viewingItem.content;
+                  setViewingItem(null);
+                  handleOpenCreateLessonPrep(viewingItem.title);
+                  setPrepModalContent(text);
+                }}
+                className="py-2 px-3 rounded-xl bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-300 font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+                title="تعديل وإرسال هذا النموذج عبر الواتساب"
+              >
+                <MessageCircle className="w-4 h-4" />
+                <span>إرسال عبر واتساب</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setViewingItem(null)}
                 className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition cursor-pointer"
               >
                 إغلاق
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CREATE LESSON PREP (Edit Before Send Modal) */}
+      {showCreateLessonPrepModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-slate-900 border border-purple-500/40 rounded-3xl p-5 shadow-2xl text-right max-h-[92vh] flex flex-col space-y-3">
+            <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-amber-300 flex items-center justify-center border border-purple-500/30">
+                  <BookOpen className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">معاينة وتعديل تحضير الحصة قبل الإرسال</h3>
+                  <p className="text-[10px] text-slate-400">
+                    مادة: {profile.subject} • إعداد: أ. {profile.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCreateLessonPrepModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Topic & Grade Form Fields */}
+            <div className="grid grid-cols-2 gap-2 bg-slate-950/80 p-2.5 rounded-2xl border border-purple-500/25">
+              <div>
+                <label className="block text-[10px] font-bold text-purple-300 mb-1">
+                  عنوان الدرس:
+                </label>
+                <input
+                  type="text"
+                  value={prepModalTopic}
+                  onChange={(e) => {
+                    setPrepModalTopic(e.target.value);
+                    setPrepModalContent(generateNewLessonPrepText(e.target.value, prepModalGrade));
+                  }}
+                  placeholder="مثال: نظرية فيثاغورس"
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700 px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-purple-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-purple-300 mb-1">
+                  الصف / المرحلة:
+                </label>
+                <input
+                  type="text"
+                  value={prepModalGrade}
+                  onChange={(e) => {
+                    setPrepModalGrade(e.target.value);
+                    setPrepModalContent(generateNewLessonPrepText(prepModalTopic, e.target.value));
+                  }}
+                  placeholder="مثال: الصف الثاني الإعدادي"
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700 px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-purple-400"
+                />
+              </div>
+            </div>
+
+            {/* Recipient Phone for WhatsApp */}
+            <div className="flex items-center gap-2 bg-slate-950/80 p-2.5 rounded-2xl border border-emerald-500/25">
+              <span className="text-[11px] font-bold text-emerald-300 whitespace-nowrap flex items-center gap-1">
+                <MessageCircle className="w-3.5 h-3.5" />
+                <span>رقم الواتساب المستهدف:</span>
+              </span>
+              <input
+                type="tel"
+                value={prepModalRecipientPhone}
+                onChange={(e) => setPrepModalRecipientPhone(e.target.value)}
+                placeholder="رقم هاتف الطالب / ولي الأمر (اختياري)..."
+                className="flex-1 rounded-xl bg-slate-900 border border-slate-700 px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-400"
+              />
+            </div>
+
+            {/* Success notice */}
+            {prepModalSuccessMsg && (
+              <div className="p-2.5 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                <span>تم حفظ هذا التحضير بنجاح في مكتبتك!</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between text-xs text-slate-300">
+              <span>يمكنك مراجعة وتعديل نص التحضير كاملاً داخل المربع:</span>
+              <button
+                type="button"
+                onClick={() => setPrepModalContent(generateNewLessonPrepText())}
+                className="text-[11px] text-purple-300 hover:text-purple-200 underline font-medium cursor-pointer"
+                title="إعادة ضبط القالب الأصلي"
+              >
+                استعادة القالب الأصلي 🔄
+              </button>
+            </div>
+
+            {/* Editable Lesson Prep Textarea */}
+            <div className="flex-1 flex flex-col">
+              <textarea
+                value={prepModalContent}
+                onChange={(e) => setPrepModalContent(e.target.value)}
+                rows={11}
+                className="w-full rounded-2xl bg-slate-950/90 border border-purple-500/30 focus:border-purple-400 p-3.5 text-xs text-slate-100 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-purple-500/40 transition resize-y"
+                placeholder="اكتب أو عدل نص تحضير الحصة هنا..."
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={handleSendPrepWhatsApp}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-lg shadow-emerald-950/50 active:scale-98"
+              >
+                <Send className="w-4 h-4" />
+                <span>إرسال التحضير عبر واتساب الآن 💬</span>
+              </button>
+
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  disabled={isSavingPrepModal}
+                  onClick={handleSavePrepModalToLibrary}
+                  className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 text-xs font-bold transition cursor-pointer disabled:opacity-50 active:scale-98"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  <span>{isSavingPrepModal ? 'جارٍ الحفظ...' : 'حفظ في مكتبتي'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCopyPrepModal}
+                  className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition cursor-pointer active:scale-98"
+                >
+                  {copiedPrepModal ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedPrepModal ? 'تم النسخ!' : 'نسخ النص'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowCreateLessonPrepModal(false)}
+                  className="flex items-center justify-center py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition cursor-pointer active:scale-98"
+                >
+                  إلغاء
+                </button>
+              </div>
             </div>
           </div>
         </div>

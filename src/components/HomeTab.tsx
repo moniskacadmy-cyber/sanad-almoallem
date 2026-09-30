@@ -20,6 +20,9 @@ import {
   UserCheck,
   Check,
   PieChart as PieChartIcon,
+  Send,
+  FileText,
+  Copy,
 } from 'lucide-react';
 
 interface HomeTabProps {
@@ -44,6 +47,12 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   const [attendance, setAttendance] = useState<'present' | 'absent' | 'excused'>('present');
   const [rating, setRating] = useState<number>(5);
   const [savingClass, setSavingClass] = useState(false);
+
+  // Edit Before Send Modal for Class Report
+  const [showClassReportEditModal, setShowClassReportEditModal] = useState(false);
+  const [pendingReportStudent, setPendingReportStudent] = useState<Student | null>(null);
+  const [editableClassReportText, setEditableClassReportText] = useState('');
+  const [copiedClassReport, setCopiedClassReport] = useState(false);
 
   // Current Arabic date & day
   const now = new Date();
@@ -155,17 +164,18 @@ export const HomeTab: React.FC<HomeTabProps> = ({
       if (sendWhatsApp && student.whatsapp) {
         const attendanceAr =
           attendance === 'present' ? 'حاضر ✅' : attendance === 'absent' ? 'غائب ❌' : 'معتذر ⚠️';
-        const msg = encodeURIComponent(
+        const msgText =
           `السلام عليكم، تقرير حصة مادة ${profile.subject} للطالب/ـة: ${student.name}\n` +
           `📅 التاريخ: ${todayArabicName} ${dateFormatted}\n` +
           `🎯 الحالة: ${attendanceAr}\n` +
           `📖 ما تم شرحه: ${classTopic.trim()}\n` +
           (classHomework.trim() ? `📝 الواجب المطلوب: ${classHomework.trim()}\n` : '') +
           `⭐ التقييم: ${'★'.repeat(rating)}${'☆'.repeat(5 - rating)}\n\n` +
-          `تحياتي، أ. ${profile.name}`
-        );
-        const cleanPhone = student.whatsapp.replace(/[^0-9]/g, '');
-        window.open(`https://wa.me/${cleanPhone.startsWith('0') ? '2' + cleanPhone : cleanPhone}?text=${msg}`, '_blank');
+          `تحياتي، أ. ${profile.name}`;
+
+        setPendingReportStudent(student);
+        setEditableClassReportText(msgText);
+        setShowClassReportEditModal(true);
       }
 
       setShowStartClassModal(false);
@@ -177,6 +187,20 @@ export const HomeTab: React.FC<HomeTabProps> = ({
     } finally {
       setSavingClass(false);
     }
+  };
+
+  const handleSendClassReportWhatsApp = () => {
+    if (!pendingReportStudent?.whatsapp) return;
+    const cleanPhone = pendingReportStudent.whatsapp.replace(/[^0-9]/g, '');
+    const phoneParam = cleanPhone.startsWith('0') ? '2' + cleanPhone : cleanPhone;
+    const url = `https://wa.me/${phoneParam}?text=${encodeURIComponent(editableClassReportText)}`;
+    window.open(url, '_blank');
+  };
+
+  const handleCopyClassReport = () => {
+    navigator.clipboard.writeText(editableClassReportText);
+    setCopiedClassReport(true);
+    setTimeout(() => setCopiedClassReport(false), 2000);
   };
 
   const getClassTypeBadge = (type: ClassType) => {
@@ -775,6 +799,80 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                   className="w-full rounded-xl bg-purple-600/40 hover:bg-purple-600/60 border border-purple-500/40 py-2 text-xs font-bold text-purple-200 transition active:scale-95 disabled:opacity-50 cursor-pointer"
                 >
                   <span>حفظ في سجل الطالب فقط (بدون واتساب)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Edit Class Report Before Send */}
+      {showClassReportEditModal && pendingReportStudent && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 text-right">
+          <div className="w-full max-w-lg bg-slate-900 border border-emerald-500/40 rounded-3xl p-5 shadow-2xl text-right max-h-[92vh] flex flex-col space-y-3">
+            <div className="flex items-center justify-between border-b border-emerald-900/40 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30">
+                  <FileText className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">معاينة وتعديل تقرير الحصة لولي الأمر</h3>
+                  <p className="text-[10px] text-slate-400">
+                    الطالب/ـة: {pendingReportStudent.name} • {pendingReportStudent.whatsapp ? `واتساب: ${pendingReportStudent.whatsapp}` : ''}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowClassReportEditModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300">
+              يمكنك مراجعة وتعديل نص التقرير بحرية قبل الضغط على زر الإرسال عبر الواتساب:
+            </p>
+
+            {/* Editable Textarea */}
+            <div className="flex-1 flex flex-col">
+              <textarea
+                value={editableClassReportText}
+                onChange={(e) => setEditableClassReportText(e.target.value)}
+                rows={9}
+                className="w-full rounded-2xl bg-slate-950/90 border border-emerald-500/30 focus:border-emerald-400 p-3.5 text-xs text-slate-100 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition resize-y"
+                placeholder="نص التقرير..."
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={handleSendClassReportWhatsApp}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-lg shadow-emerald-950/50 active:scale-98"
+              >
+                <Send className="w-4 h-4" />
+                <span>إرسال التقرير عبر واتساب الآن 💬</span>
+              </button>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyClassReport}
+                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition cursor-pointer active:scale-98"
+                >
+                  {copiedClassReport ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                  <span>{copiedClassReport ? 'تم النسخ بنجاح!' : 'نسخ النص'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowClassReportEditModal(false)}
+                  className="flex items-center justify-center py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition cursor-pointer active:scale-98"
+                >
+                  إغلاق
                 </button>
               </div>
             </div>
