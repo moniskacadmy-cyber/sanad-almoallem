@@ -281,6 +281,12 @@ export async function updateTeacherProfile(teacherId: string, updates: {
   whatsapp?: string;
   subject?: string;
   currency?: string;
+  whatsappTemplates?: {
+    welcome?: string;
+    payment?: string;
+    report?: string;
+    lessonPrep?: string;
+  };
 }) {
   const path = `teachers/${teacherId}`;
   try {

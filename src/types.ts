@@ -20,6 +20,12 @@ export interface TeacherProfile {
   trialEndDate: any;   // Firestore Timestamp
   subscriptionExpiresAt: any; // Firestore Timestamp
   currency?: string; // العملة المفضلة (مثال: ج.م، ر.س، د.إ)
+  whatsappTemplates?: {
+    welcome?: string;
+    payment?: string;
+    report?: string;
+    lessonPrep?: string;
+  };
   createdAt: any;
   updatedAt: any;
 }
@@ -155,4 +161,19 @@ export interface ReminderSettings {
   notifyParent: boolean;
   soundEnabled: boolean;
   autoOpenWhatsApp?: boolean;
+}
+
+export const DEFAULT_WHATSAPP_TEMPLATES = {
+  welcome: `السلام عليكم ورحمة الله وبركاته 🌷\nمرحباً بك معنا في رحلتنا التعليمية لمادة ({subject})! يسعدني جداً انضمام الطالب/ـة: {studentName} معنا.\nسنبذل قصارى جهدنا لتحقيق التفوق والتميز الدراسي إن شاء الله. 📚✨`,
+  payment: `السلام عليكم ورحمة الله وبركاته 🌷\n🧾 كشف حساب ومطالبة مالية - مادة ({subject})\n\n👤 الطالب/ـة: {studentName}\n👨‍🏫 إعداد المعلم: أ. {teacherName}\n📅 التاريخ: {date}\n\n📊 تفاصيل المستحقات الحالية:\n• سعر الساعة: {hourlyRate} {currency}/ساعة\n• عدد الساعات المنفذة: {pendingHours} ساعة ({unsettledCount} حصص غير مصفاة)\n• إجمالي المستحقات المطلوبة: {pendingAmount} {currency} 💰\n\n{lessonsList}\n\nشاكرين ومقدرين لكم حسن التعاون والاهتمام الدائم 🌟`,
+  report: `السلام عليكم ورحمة الله وبركاته 🌷\nتقرير المتابعة الشهري لشهر ({month})\n👤 الطالب/ـة: {studentName}\n📚 المادة: {subject}\n👨‍🏫 المعلم: أ. {teacherName}\n\n📊 ملخص الحضور والالتزام:\n• إجمالي الحصص المنفذة: {totalLessons} حصة\n• عدد مرات الحضور: {presentCount} ✅\n• مرات الغياب: {absentCount} ❌\n• اعتذارات مسبقة: {excusedCount} ⚠️\n• متوسط التقييم العام: {avgRating} من 5 ⭐\n\n{lessonsSummary}\n\n{notes}\n\nمع خالص تمنياتنا بالتفوق والنجاح الباهر دائماً 🌟`,
+  lessonPrep: `السلام عليكم ورحمة الله وبركاته 🌷\n📋 بطاقة تحضير وخطة الحصة الدراسية\n\n👤 الطالب/ـة: {studentName}\n📚 المادة: {subject}\n👨‍🏫 إعداد المعلم: أ. {teacherName}\n📅 التاريخ: {date}\n🎯 عنوان الدرس: {topic}\n{notes}\n\n1️⃣ الأهداف التعليمية:\n• استيعاب المفاهيم والمصطلحات الأساسية لدرس ({topic}).\n• التدرب على حل أمثلة ونماذج تطبيقية متنوعة.\n• التأكد من إتقان الطالب للمهارات المطلوبة قبل نهاية الحصة.\n\n2️⃣ خطة سير الحصة:\n• مراجعة سريعة لما تم في الحصة السابقة (5 إلى 10 دقائق).\n• الشرح التفاعلي المبسط وطرح الأمثلة (25 دقيقة).\n• حل تمارين تطبيقية وتقييم الفهم الفوري (15 دقيقة).\n\n3️⃣ الواجب والتكليفات المنزلية:\n• حل التمارين المحددة ومراجعة الملاحظات.\n\nمع خالص تمنياتنا بالتفوق والنجاح المستمر دائماً 🌟`
+};
+
+export function renderTemplate(templateText: string, vars: Record<string, any>): string {
+  let result = templateText;
+  Object.entries(vars).forEach(([key, val]) => {
+    result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), String(val !== undefined && val !== null ? val : ''));
+  });
+  return result;
 }

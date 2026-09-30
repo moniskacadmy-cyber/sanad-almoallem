@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TeacherProfile, Student, LessonLog, ClassType, PaymentStatus, ScheduleSlot } from '../types';
+import { TeacherProfile, Student, LessonLog, ClassType, PaymentStatus, ScheduleSlot, DEFAULT_WHATSAPP_TEMPLATES, renderTemplate } from '../types';
 import {
   addStudent,
   updateStudent,
@@ -557,22 +557,20 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
       .map((l, i) => `  ${i + 1}. [${l.date}] ${l.topic}`)
       .join('\n');
 
-    return (
-      `السلام عليكم ورحمة الله وبركاته 🌷\n` +
-      `تقرير المتابعة الشهري لشهر (${currentMonthName})\n` +
-      `👤 الطالب/ـة: ${selectedProfileStudent.name}\n` +
-      `📚 المادة: ${selectedProfileStudent.subject}\n` +
-      `👨‍🏫 المعلم: أ. ${profile.name}\n\n` +
-      `📊 ملخص الحضور والالتزام:\n` +
-      `• إجمالي الحصص المنفذة: ${totalLessons} حصة\n` +
-      `• عدد مرات الحضور: ${presentCount} ✅\n` +
-      (absentCount > 0 ? `• مرات الغياب: ${absentCount} ❌\n` : '') +
-      (excusedCount > 0 ? `• اعتذارات مسبقة: ${excusedCount} ⚠️\n` : '') +
-      `• متوسط التقييم العام: ${avgRating} من 5 ⭐\n\n` +
-      (lessonsSummary ? `📖 أهم ما تم شرحه ودراسته:\n${lessonsSummary}\n\n` : '') +
-      (selectedProfileStudent.learningStyle ? `💡 ملاحظات المعلم:\n${selectedProfileStudent.learningStyle}\n\n` : '') +
-      `مع خالص تمنياتنا بالتفوق والنجاح الباهر دائماً 🌟`
-    );
+    const template = profile.whatsappTemplates?.report || DEFAULT_WHATSAPP_TEMPLATES.report;
+    return renderTemplate(template, {
+      studentName: selectedProfileStudent.name,
+      subject: selectedProfileStudent.subject,
+      teacherName: profile.name,
+      month: currentMonthName,
+      totalLessons: totalLessons,
+      presentCount: presentCount,
+      absentCount: absentCount,
+      excusedCount: excusedCount,
+      avgRating: avgRating,
+      lessonsSummary: lessonsSummary ? `📖 أهم ما تم شرحه ودراسته:\n${lessonsSummary}` : '',
+      notes: selectedProfileStudent.notes || '',
+    });
   };
 
   const handleOpenMonthlyReport = () => {
@@ -613,28 +611,15 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
       year: 'numeric',
     }).format(new Date());
 
-    return (
-      `السلام عليكم ورحمة الله وبركاته 🌷\n` +
-      `📋 بطاقة تحضير وخطة الحصة الدراسية\n\n` +
-      `👤 الطالب/ـة: ${selectedProfileStudent.name}\n` +
-      `📚 المادة: ${selectedProfileStudent.subject}\n` +
-      `👨‍🏫 إعداد المعلم: أ. ${profile.name}\n` +
-      `📅 التاريخ: ${dateFormatted}\n` +
-      `🎯 عنوان الدرس: ${topic}\n` +
-      (selectedProfileStudent.learningStyle ? `💡 نمط التعلم المخصص: ${selectedProfileStudent.learningStyle}\n` : '') +
-      `\n` +
-      `1️⃣ الأهداف التعليمية:\n` +
-      `• استيعاب المفاهيم والمصطلحات الأساسية لدرس (${topic}).\n` +
-      `• التدرب على حل أمثلة ونماذج تطبيقية متنوعة.\n` +
-      `• التأكد من إتقان الطالب للمهارات المطلوبة قبل نهاية الحصة.\n\n` +
-      `2️⃣ خطة سير الحصة:\n` +
-      `• مراجعة سريعة لما تم في الحصة السابقة (5 إلى 10 دقائق).\n` +
-      `• الشرح التفاعلي المبسط وطرح الأمثلة (25 دقيقة).\n` +
-      `• حل تمارين تطبيقية وتقييم الفهم الفوري (15 دقيقة).\n\n` +
-      `3️⃣ الواجب والتكليفات المنزلية:\n` +
-      `• حل التمارين المحددة ومراجعة الملاحظات.\n\n` +
-      `مع خالص تمنياتنا بالتفوق والنجاح المستمر دائماً 🌟`
-    );
+    const template = profile.whatsappTemplates?.lessonPrep || DEFAULT_WHATSAPP_TEMPLATES.lessonPrep;
+    return renderTemplate(template, {
+      studentName: selectedProfileStudent.name,
+      subject: selectedProfileStudent.subject,
+      teacherName: profile.name,
+      date: dateFormatted,
+      topic: topic,
+      notes: selectedProfileStudent.learningStyle ? `💡 نمط التعلم المخصص: ${selectedProfileStudent.learningStyle}` : '',
+    });
   };
 
   const handleOpenLessonPrep = () => {
@@ -707,24 +692,40 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
       )
       .join('\n');
 
-    const msg =
-      `السلام عليكم ورحمة الله وبركاته 🌷\n` +
-      `🧾 كشف حساب ومطالبة مالية - مادة (${selectedProfileStudent.subject})\n\n` +
-      `👤 الطالب/ـة: ${selectedProfileStudent.name}\n` +
-      `👨‍🏫 إعداد المعلم: أ. ${profile.name}\n` +
-      `📅 التاريخ: ${new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}\n\n` +
-      `📊 تفاصيل المستحقات الحالية:\n` +
-      `• سعر الساعة: ${hourlyRate} ${currency}/ساعة\n` +
-      `• عدد الساعات المنفذة: ${pendingHours} ساعة (${unsettledLessons.length} حصص غير مصفاة)\n` +
-      `• إجمالي المستحقات المطلوبة: ${pendingAmount} ${currency} 💰\n\n` +
-      (lessonsListText ? `📋 تفاصيل الحصص المنفذة غير المصفاة:\n${lessonsListText}\n\n` : '') +
-      `شاكرين ومقدرين لكم حسن التعاون والاهتمام الدائم 🌟`;
+    const template = profile.whatsappTemplates?.payment || DEFAULT_WHATSAPP_TEMPLATES.payment;
+    const msg = renderTemplate(template, {
+      studentName: selectedProfileStudent.name,
+      subject: selectedProfileStudent.subject,
+      teacherName: profile.name,
+      date: new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()),
+      hourlyRate: hourlyRate,
+      currency: currency,
+      pendingHours: pendingHours,
+      unsettledCount: unsettledLessons.length,
+      pendingAmount: pendingAmount,
+      lessonsList: lessonsListText ? `📋 تفاصيل الحصص المنفذة غير المصفاة:\n${lessonsListText}` : '',
+    });
 
     const cleanPhone = selectedProfileStudent.whatsapp ? selectedProfileStudent.whatsapp.replace(/[^0-9]/g, '') : '';
     const phoneParam = cleanPhone ? (cleanPhone.startsWith('0') ? '2' + cleanPhone : cleanPhone) : '';
     const url = phoneParam
       ? `https://wa.me/${phoneParam}?text=${encodeURIComponent(msg)}`
       : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank');
+  };
+
+  const handleSendWelcomeWhatsApp = () => {
+    if (!selectedProfileStudent) return;
+    const template = profile.whatsappTemplates?.welcome || DEFAULT_WHATSAPP_TEMPLATES.welcome;
+    const rendered = renderTemplate(template, {
+      studentName: selectedProfileStudent.name,
+      subject: selectedProfileStudent.subject,
+    });
+    const cleanPhone = selectedProfileStudent.whatsapp ? selectedProfileStudent.whatsapp.replace(/[^0-9]/g, '') : '';
+    const phoneParam = cleanPhone ? (cleanPhone.startsWith('0') ? '2' + cleanPhone : cleanPhone) : '';
+    const url = phoneParam
+      ? `https://wa.me/${phoneParam}?text=${encodeURIComponent(rendered)}`
+      : `https://wa.me/?text=${encodeURIComponent(rendered)}`;
     window.open(url, '_blank');
   };
 
@@ -1411,33 +1412,42 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
               </button>
             </div>
 
-            {/* Quick Actions (Monthly Report, Lesson Prep, and Record Lesson) */}
-            <div className="grid grid-cols-3 gap-1.5">
+            {/* Quick Actions (Monthly Report, Lesson Prep, Record Lesson, and Welcome) */}
+            <div className="grid grid-cols-4 gap-1.5">
               <button
                 type="button"
                 onClick={handleOpenMonthlyReport}
-                className="flex flex-col items-center justify-center gap-1 py-2 px-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-110 text-white text-[11px] font-bold transition cursor-pointer shadow-md text-center"
+                className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-110 text-white text-[10px] font-bold transition cursor-pointer shadow-md text-center"
               >
-                <FileText className="w-3.5 h-3.5" />
-                <span>تقرير الشهر 📄</span>
+                <FileText className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="truncate w-full">تقرير المتابعة</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleOpenLessonPrep}
-                className="flex flex-col items-center justify-center gap-1 py-2 px-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:brightness-110 text-white text-[11px] font-bold transition cursor-pointer shadow-md text-center"
+                className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:brightness-110 text-white text-[10px] font-bold transition cursor-pointer shadow-md text-center"
               >
-                <BookOpen className="w-3.5 h-3.5 text-amber-300" />
-                <span>تحضير الحصة 📝</span>
+                <BookOpen className="w-3.5 h-3.5 text-amber-300 flex-shrink-0" />
+                <span className="truncate w-full">تحضير خطة</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSendWelcomeWhatsApp}
+                className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:brightness-110 text-white text-[10px] font-bold transition cursor-pointer shadow-md text-center"
+              >
+                <MessageCircle className="w-3.5 h-3.5 text-sky-200 flex-shrink-0" />
+                <span className="truncate w-full">ترحيب بالواتس</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setShowAddLessonInsideProfile(!showAddLessonInsideProfile)}
-                className="flex flex-col items-center justify-center gap-1 py-2 px-1.5 rounded-xl bg-purple-700/80 hover:bg-purple-600 text-white text-[11px] font-bold transition cursor-pointer text-center"
+                className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl bg-purple-700/80 hover:bg-purple-600 text-white text-[10px] font-bold transition cursor-pointer text-center"
               >
-                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                <span>{showAddLessonInsideProfile ? 'إغلاق' : 'تسجيل حصة ✏️'}</span>
+                <Sparkles className="w-3.5 h-3.5 text-amber-300 flex-shrink-0" />
+                <span className="truncate w-full">{showAddLessonInsideProfile ? 'إغلاق' : 'تسجيل حصة'}</span>
               </button>
             </div>
 

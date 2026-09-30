@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { TeacherProfile, Student, ScheduleSlot, LibraryItem, BackupData, ReminderLog, ReminderSettings } from '../types';
+import React, { useState, useRef, useEffect } from 'react';
+import { TeacherProfile, Student, ScheduleSlot, LibraryItem, BackupData, ReminderLog, ReminderSettings, DEFAULT_WHATSAPP_TEMPLATES } from '../types';
 import { updateTeacherProfile, auth, fetchAllStudentLessons, importFullTeacherBackup } from '../firebase';
 import { signOut } from 'firebase/auth';
 import { PWAInstallButton } from '../PWAInstallButton';
@@ -115,6 +115,47 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [testLocation, setTestLocation] = useState<string>('');
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [testSuccessData, setTestSuccessData] = useState<any | null>(null);
+
+  // WhatsApp Template Customization States
+  const [selectedTemplateKey, setSelectedTemplateKey] = useState<'welcome' | 'payment' | 'report' | 'lessonPrep'>('welcome');
+  const [templateText, setTemplateText] = useState('');
+  const [savingTemplate, setSavingProfileTemplate] = useState(false);
+  const [templateNotice, setTemplateNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    const t = profile.whatsappTemplates || {};
+    const fallback = DEFAULT_WHATSAPP_TEMPLATES;
+    setTemplateText(t[selectedTemplateKey] || fallback[selectedTemplateKey] || '');
+  }, [selectedTemplateKey, profile.whatsappTemplates]);
+
+  const handleSaveTemplate = async () => {
+    setSavingProfileTemplate(true);
+    setTemplateNotice(null);
+    try {
+      const existing = profile.whatsappTemplates || {};
+      const updatedTemplates = {
+        ...existing,
+        [selectedTemplateKey]: templateText,
+      };
+      await updateTeacherProfile(profile.id, {
+        whatsappTemplates: updatedTemplates,
+      });
+      setTemplateNotice('تم حفظ قالب الرسالة بنجاح! 💾✨');
+      setTimeout(() => setTemplateNotice(null), 3000);
+    } catch (err) {
+      console.error('Error saving template:', err);
+      setTemplateNotice('حدث خطأ أثناء حفظ القالب، يرجى المحاولة مرة أخرى.');
+    } finally {
+      setSavingProfileTemplate(false);
+    }
+  };
+
+  const handleResetTemplate = () => {
+    const fallback = DEFAULT_WHATSAPP_TEMPLATES;
+    setTemplateText(fallback[selectedTemplateKey]);
+    setTemplateNotice('تمت استعادة النص الافتراضي للقالب. لا تنسى الحفظ! 🔄');
+    setTimeout(() => setTemplateNotice(null), 4000);
+  };
 
   const handleUpdateReminderSetting = (key: keyof ReminderSettings, val: any) => {
     const updated = { ...reminderSettings, [key]: val };
@@ -507,6 +548,155 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           >
             <Lock className="w-3.5 h-3.5" />
             <span>دخول</span>
+          </button>
+        </div>
+      </div>
+
+      {/* WhatsApp Message Templates Customizer Card */}
+      <div className="rounded-2xl bg-gradient-to-r from-purple-950/40 via-slate-900 to-indigo-950/40 border border-purple-500/30 p-4 space-y-3.5 shadow-xl">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-purple-600/20 text-purple-300 flex items-center justify-center border border-purple-500/30">
+              <MessageCircle className="w-4 h-4 text-purple-400" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white">تخصيص قوالب رسائل واتساب</h3>
+              <p className="text-[11px] text-purple-200/80">تعديل نصوص الترحيب، المطالبات، والتقارير الجاهزة</p>
+            </div>
+          </div>
+        </div>
+
+        {templateNotice && (
+          <div className="p-2.5 rounded-xl bg-purple-950/80 border border-purple-500/40 text-purple-200 text-xs flex items-center gap-2 animate-pulse">
+            <CheckCircle2 className="w-4 h-4 text-amber-300 flex-shrink-0" />
+            <span>{templateNotice}</span>
+          </div>
+        )}
+
+        {/* Template Selector Tabs */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px] font-bold">
+          <button
+            type="button"
+            onClick={() => setSelectedTemplateKey('welcome')}
+            className={`py-2 px-1 rounded-xl border transition cursor-pointer text-center whitespace-nowrap truncate ${
+              selectedTemplateKey === 'welcome'
+                ? 'bg-purple-600 border-purple-400 text-white'
+                : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
+            }`}
+          >
+            👤 رسالة الترحيب
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedTemplateKey('payment')}
+            className={`py-2 px-1 rounded-xl border transition cursor-pointer text-center whitespace-nowrap truncate ${
+              selectedTemplateKey === 'payment'
+                ? 'bg-purple-600 border-purple-400 text-white'
+                : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
+            }`}
+          >
+            🧾 تذكير الدفع
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedTemplateKey('report')}
+            className={`py-2 px-1 rounded-xl border transition cursor-pointer text-center whitespace-nowrap truncate ${
+              selectedTemplateKey === 'report'
+                ? 'bg-purple-600 border-purple-400 text-white'
+                : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
+            }`}
+          >
+            📊 تقرير المتابعة
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedTemplateKey('lessonPrep')}
+            className={`py-2 px-1 rounded-xl border transition cursor-pointer text-center whitespace-nowrap truncate ${
+              selectedTemplateKey === 'lessonPrep'
+                ? 'bg-purple-600 border-purple-400 text-white'
+                : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
+            }`}
+          >
+            📋 تحضير الدرس
+          </button>
+        </div>
+
+        {/* Placeholders Guide Box */}
+        <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 text-[10px] text-slate-300 leading-relaxed">
+          <span className="font-bold text-amber-300 block mb-1">💡 العلامات التلقائية المتاحة للاستخدام:</span>
+          {selectedTemplateKey === 'welcome' && (
+            <p>يمكنك استخدام العلامات التالية ليقوم التطبيق بتعويضها تلقائياً عند الإرسال: <br />
+              <code className="text-purple-300 font-bold font-mono">{"{studentName}"}</code> لاسم الطالب •{' '}
+              <code className="text-purple-300 font-bold font-mono">{"{subject}"}</code> للمادة الدراسية.
+            </p>
+          )}
+          {selectedTemplateKey === 'payment' && (
+            <p>يمكنك استخدام العلامات التالية ليقوم التطبيق بتعويضها تلقائياً: <br />
+              <code className="text-purple-300 font-mono font-bold">{"{studentName}"}</code> اسم الطالب •{' '}
+              <code className="text-purple-300 font-mono font-bold">{"{subject}"}</code> المادة •{' '}
+              <code className="text-purple-300 font-mono font-bold">{"{teacherName}"}</code> اسم المعلم <br />
+              <code className="text-purple-300 font-mono font-bold">{"{date}"}</code> التاريخ •{' '}
+              <code className="text-purple-300 font-mono font-bold">{"{hourlyRate}"}</code> الأجر •{' '}
+              <code className="text-purple-300 font-mono font-bold">{"{currency}"}</code> العملة <br />
+              <code className="text-purple-300 font-mono font-bold">{"{pendingHours}"}</code> الساعات المعلقة •{' '}
+              <code className="text-purple-300 font-mono font-bold">{"{pendingAmount}"}</code> المبلغ المطلوب <br />
+              <code className="text-purple-300 font-mono font-bold">{"{lessonsList}"}</code> كشف بالحصص المنفذة غير المصفاة.
+            </p>
+          )}
+          {selectedTemplateKey === 'report' && (
+            <p>يمكنك استخدام العلامات التالية ليقوم التطبيق بتعويضها تلقائياً: <br />
+              <code className="text-purple-300 font-mono font-bold">{"{studentName}"}</code> اسم الطالب •{' '}
+              <code className="text-purple-300 font-mono font-bold">{"{subject}"}</code> المادة •{' '}
+              <code className="text-purple-300 font-mono font-bold">{"{teacherName}"}</code> اسم المعلم <br />
+              <code className="text-purple-300 font-mono font-bold">{"{month}"}</code> الشهر •{' '}
+              <code className="text-purple-300 font-mono font-bold">{"{totalLessons}"}</code> إجمالي الحصص <br />
+              <code className="text-purple-300 font-mono font-bold">{"{presentCount}"}</code> الحضور •{' '}
+              <code className="text-purple-300 font-mono font-bold">{"{absentCount}"}</code> الغياب •{' '}
+              <code className="text-purple-300 font-mono font-bold">{"{excusedCount}"}</code> الاعتذار <br />
+              <code className="text-purple-300 font-mono font-bold">{"{avgRating}"}</code> متوسط التقييم •{' '}
+              <code className="text-purple-300 font-mono font-bold">{"{lessonsSummary}"}</code> عناوين الدروس المشروحة.
+            </p>
+          )}
+          {selectedTemplateKey === 'lessonPrep' && (
+            <p>يمكنك استخدام العلامات التالية ليقوم التطبيق بتعويضها تلقائياً: <br />
+              <code className="text-purple-300 font-mono font-bold">{"{studentName}"}</code> اسم الطالب •{' '}
+              <code className="text-purple-300 font-mono font-bold">{"{subject}"}</code> المادة •{' '}
+              <code className="text-purple-300 font-mono font-bold">{"{teacherName}"}</code> المعلم <br />
+              <code className="text-purple-300 font-mono font-bold">{"{date}"}</code> التاريخ •{' '}
+              <code className="text-purple-300 font-mono font-bold">{"{topic}"}</code> عنوان الدرس القادم •{' '}
+              <code className="text-purple-300 font-mono font-bold">{"{notes}"}</code> ملاحظات المعلم ونمط التعلم.
+            </p>
+          )}
+        </div>
+
+        {/* Template Text Editor */}
+        <div className="space-y-2">
+          <textarea
+            value={templateText}
+            onChange={(e) => setTemplateText(e.target.value)}
+            rows={8}
+            dir="rtl"
+            className="w-full rounded-xl bg-slate-950/90 border border-purple-500/20 focus:border-purple-500 p-3 text-xs text-slate-100 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-purple-500/40 transition resize-y text-right"
+            placeholder="اكتب قالب الرسالة هنا..."
+          />
+        </div>
+
+        {/* Action buttons */}
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <button
+            type="button"
+            disabled={savingTemplate}
+            onClick={handleSaveTemplate}
+            className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold transition cursor-pointer shadow-md disabled:opacity-50"
+          >
+            <span>حفظ القالب 💾</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleResetTemplate}
+            className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer border border-slate-700"
+          >
+            <span>استعادة الافتراضي 🔄</span>
           </button>
         </div>
       </div>
