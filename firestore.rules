@@ -1,0 +1,185 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (request.auth.token.email != null && request.auth.token.email == 'moniskacadmy@gmail.com')
+      );
+    }
+
+    function isTeacherOwner(teacherId) {
+      return isSignedIn() && request.auth.uid == teacherId;
+    }
+
+    // Validation for new teacher profile registration
+    function isValidNewTeacher(teacherId) {
+      let data = incoming();
+      return isValidId(teacherId) &&
+        data.id == teacherId &&
+        data.email == request.auth.token.email &&
+        data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
+        data.whatsapp is string && data.whatsapp.size() >= 8 && data.whatsapp.size() <= 30 &&
+        data.subject is string && data.subject.size() >= 2 && data.subject.size() <= 100 &&
+        data.role in ['teacher', 'admin'] &&
+        (data.role == 'teacher' || isAdmin()) &&
+        data.subscriptionStatus in ['trial', 'active', 'expired'] &&
+        data.subscriptionStatus == 'trial' &&
+        data.plan in ['none', 'monthly', 'six_months', 'yearly'] &&
+        data.createdAt == request.time &&
+        data.updatedAt == request.time &&
+        data.trialStartDate == request.time &&
+        data.trialEndDate >= request.time + duration.value(6, 'd') &&
+        data.trialEndDate <= request.time + duration.value(8, 'd') &&
+        data.subscriptionExpiresAt >= request.time + duration.value(6, 'd') &&
+        data.subscriptionExpiresAt <= request.time + duration.value(8, 'd');
+    }
+
+    // Teacher self update (can only update profile fields, not subscription or role)
+    function isValidTeacherProfileUpdate() {
+      let data = incoming();
+      let diff = incoming().diff(existing()).affectedKeys();
+      return diff.hasOnly(['name', 'whatsapp', 'subject', 'updatedAt']) &&
+        data.updatedAt == request.time &&
+        data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
+        data.whatsapp is string && data.whatsapp.size() >= 8 && data.whatsapp.size() <= 30 &&
+        data.subject is string && data.subject.size() >= 2 && data.subject.size() <= 100 &&
+        data.id == existing().id &&
+        data.email == existing().email &&
+        data.role == existing().role &&
+        data.subscriptionStatus == existing().subscriptionStatus &&
+        data.plan == existing().plan &&
+        data.trialStartDate == existing().trialStartDate &&
+        data.trialEndDate == existing().trialEndDate &&
+        data.subscriptionExpiresAt == existing().subscriptionExpiresAt;
+    }
+
+    // Admin teacher update (can update subscription, plan, status, etc.)
+    function isValidAdminTeacherUpdate() {
+      let data = incoming();
+      return data.name is string && data.name.size() <= 100 &&
+        data.subscriptionStatus in ['trial', 'active', 'expired'] &&
+        data.plan in ['none', 'monthly', 'six_months', 'yearly'] &&
+        data.updatedAt == request.time;
+    }
+
+    // Student validation
+    function isValidStudent(teacherId) {
+      let data = incoming();
+      return data.teacherId == teacherId &&
+        data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
+        data.whatsapp is string && data.whatsapp.size() >= 6 && data.whatsapp.size() <= 30 &&
+        data.subject is string && data.subject.size() <= 100 &&
+        data.classType in ['online', 'center', 'private'] &&
+        data.monthlyFee is number &&
+        data.paymentStatus in ['paid', 'unpaid'];
+    }
+
+    // Lesson validation
+    function isValidLesson(teacherId) {
+      let data = incoming();
+      return data.teacherId == teacherId &&
+        data.topic is string && data.topic.size() <= 500 &&
+        data.attendance in ['present', 'absent', 'excused'];
+    }
+
+    // Schedule validation
+    function isValidSchedule(teacherId) {
+      let data = incoming();
+      return data.teacherId == teacherId &&
+        data.studentName is string && data.studentName.size() <= 100 &&
+        data.dayOfWeek is number && data.dayOfWeek >= 0 && data.dayOfWeek <= 6 &&
+        data.time is string && data.time.size() <= 20 &&
+        data.recurrence in ['daily', 'weekly', 'monthly', 'once'] &&
+        data.classType in ['online', 'center', 'private'];
+    }
+
+    // Library Item validation
+    function isValidLibraryItem(teacherId) {
+      let data = incoming();
+      return data.teacherId == teacherId &&
+        data.title is string && data.title.size() >= 2 && data.title.size() <= 200 &&
+        data.type in ['lesson_plan', 'quiz', 'summary'] &&
+        data.content is string && data.content.size() <= 10000;
+    }
+
+    // Admins collection
+    match /admins/{adminId} {
+      allow get: if isAdmin() || (isSignedIn() && request.auth.uid == adminId);
+      allow list: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // Teachers collection
+    match /teachers/{teacherId} {
+      allow get: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isTeacherOwner(teacherId) && isValidNewTeacher(teacherId);
+      allow update: if (isValidId(teacherId) && isTeacherOwner(teacherId) && isValidTeacherProfileUpdate()) ||
+                       (isAdmin() && isValidAdminTeacherUpdate());
+      allow delete: if isValidId(teacherId) && isAdmin();
+
+      // Subcollection: Students
+      match /students/{studentId} {
+        allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+        allow create, update: if isValidId(teacherId) && isValidId(studentId) &&
+                                 (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isValidStudent(teacherId);
+        allow delete: if isValidId(teacherId) && isValidId(studentId) &&
+                         (isTeacherOwner(teacherId) || isAdmin());
+
+        // Subcollection: Lessons
+        match /lessons/{lessonId} {
+          allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+          allow create, update: if isValidId(teacherId) && isValidId(studentId) && isValidId(lessonId) &&
+                                   (isTeacherOwner(teacherId) || isAdmin()) &&
+                                   isValidLesson(teacherId);
+          allow delete: if isValidId(teacherId) && isValidId(studentId) && isValidId(lessonId) &&
+                           (isTeacherOwner(teacherId) || isAdmin());
+        }
+      }
+
+      // Subcollection: Schedules
+      match /schedules/{scheduleId} {
+        allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+        allow create, update: if isValidId(teacherId) && isValidId(scheduleId) &&
+                                 (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isValidSchedule(teacherId);
+        allow delete: if isValidId(teacherId) && isValidId(scheduleId) &&
+                         (isTeacherOwner(teacherId) || isAdmin());
+      }
+
+      // Subcollection: Library
+      match /library/{itemId} {
+        allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+        allow create, update: if isValidId(teacherId) && isValidId(itemId) &&
+                                 (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isValidLibraryItem(teacherId);
+        allow delete: if isValidId(teacherId) && isValidId(itemId) &&
+                         (isTeacherOwner(teacherId) || isAdmin());
+      }
+    }
+  }
+}

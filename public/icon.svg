@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2e1065" />
+      <stop offset="50%" stop-color="#4c1d95" />
+      <stop offset="100%" stop-color="#1e1035" />
+    </linearGradient>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a" />
+      <stop offset="50%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#c084fc" />
+      <stop offset="100%" stop-color="#7c3aed" />
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded Background -->
+  <rect width="512" height="512" rx="110" fill="url(#bg)"/>
+
+  <!-- Glow Ring -->
+  <circle cx="256" cy="256" r="180" fill="none" stroke="url(#accent)" stroke-width="6" opacity="0.4" stroke-dasharray="16 10"/>
+
+  <!-- Open Book Base -->
+  <path d="M120 340 C180 320, 220 325, 256 345 C292 325, 332 320, 392 340 L392 230 C332 210, 292 215, 256 235 C220 215, 180 210, 120 230 Z" fill="#ffffff" fill-opacity="0.95" />
+  <path d="M256 235 L256 345" stroke="#7c3aed" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Bookmark Ribbon -->
+  <path d="M256 345 L256 380 L266 370 L276 380 L276 345 Z" fill="url(#gold)"/>
+
+  <!-- Graduation Cap -->
+  <!-- Top Diamond -->
+  <polygon points="256,120 390,165 256,210 122,165" fill="url(#gold)" />
+  <polygon points="256,125 380,165 256,205 132,165" fill="#fef08a" opacity="0.3" />
+
+  <!-- Cap Skull Base -->
+  <path d="M175 185 L175 235 C175 260, 337 260, 337 235 L337 185" fill="#d97706" />
+
+  <!-- Tassel -->
+  <path d="M256 165 C230 180, 210 210, 205 240" fill="none" stroke="url(#accent)" stroke-width="5" stroke-linecap="round" />
+  <circle cx="205" cy="245" r="7" fill="url(#accent)" />
+  <path d="M205 245 L200 275 M205 245 L205 278 M205 245 L210 275" stroke="url(#accent)" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- Stars -->
+  <polygon points="150,110 154,122 166,122 156,129 160,140 150,133 140,140 144,129 134,122 146,122" fill="url(#gold)" opacity="0.9"/>
+  <polygon points="362,110 366,122 378,122 368,129 372,140 362,133 352,140 356,129 346,122 358,122" fill="url(#gold)" opacity="0.9"/>
+</svg>

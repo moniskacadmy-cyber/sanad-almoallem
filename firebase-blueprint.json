@@ -1,0 +1,137 @@
+{
+  "entities": {
+    "Admin": {
+      "title": "Admin",
+      "description": "System administrator with management privileges.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 256 },
+        "role": { "type": "string", "enum": ["admin"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "email", "role", "createdAt"]
+    },
+    "Teacher": {
+      "title": "Teacher",
+      "description": "Teacher account with profile and subscription details.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 256 },
+        "whatsapp": { "type": "string", "minLength": 8, "maxLength": 30 },
+        "subject": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "role": { "type": "string", "enum": ["teacher", "admin"] },
+        "subscriptionStatus": { "type": "string", "enum": ["trial", "active", "expired"] },
+        "plan": { "type": "string", "enum": ["none", "monthly", "six_months", "yearly"] },
+        "trialStartDate": { "type": "string", "format": "date-time" },
+        "trialEndDate": { "type": "string", "format": "date-time" },
+        "subscriptionExpiresAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "email", "whatsapp", "subject", "role", "subscriptionStatus", "plan", "trialStartDate", "trialEndDate", "subscriptionExpiresAt", "createdAt", "updatedAt"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "Student enrolled with a teacher.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "teacherId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "whatsapp": { "type": "string", "minLength": 8, "maxLength": 30 },
+        "subject": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "classType": { "type": "string", "enum": ["online", "center", "private"] },
+        "monthlyFee": { "type": "number" },
+        "paymentStatus": { "type": "string", "enum": ["paid", "unpaid"] },
+        "lastPaymentMonth": { "type": "string", "maxLength": 20 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "teacherId", "name", "whatsapp", "subject", "classType", "monthlyFee", "paymentStatus", "createdAt", "updatedAt"]
+    },
+    "LessonLog": {
+      "title": "LessonLog",
+      "description": "Log of a class session for a student.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "teacherId": { "type": "string", "maxLength": 128 },
+        "date": { "type": "string", "maxLength": 30 },
+        "topic": { "type": "string", "maxLength": 500 },
+        "homework": { "type": "string", "maxLength": 500 },
+        "attendance": { "type": "string", "enum": ["present", "absent", "excused"] },
+        "rating": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "studentId", "teacherId", "date", "topic", "attendance", "createdAt"]
+    },
+    "Schedule": {
+      "title": "Schedule",
+      "description": "Class timetable schedule slot.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "teacherId": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "studentName": { "type": "string", "maxLength": 100 },
+        "dayOfWeek": { "type": "number" },
+        "time": { "type": "string", "maxLength": 20 },
+        "duration": { "type": "number" },
+        "recurrence": { "type": "string", "enum": ["daily", "weekly", "monthly", "once"] },
+        "classType": { "type": "string", "enum": ["online", "center", "private"] },
+        "locationOrLink": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "teacherId", "studentId", "studentName", "dayOfWeek", "time", "duration", "recurrence", "classType", "createdAt", "updatedAt"]
+    },
+    "LibraryItem": {
+      "title": "LibraryItem",
+      "description": "Preparation template or quiz in teacher library.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "teacherId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "minLength": 2, "maxLength": 200 },
+        "type": { "type": "string", "enum": ["lesson_plan", "quiz", "summary"] },
+        "subject": { "type": "string", "maxLength": 100 },
+        "content": { "type": "string", "maxLength": 10000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "teacherId", "title", "type", "content", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/Admin" },
+      "description": "Stores administrator accounts."
+    },
+    "/teachers/{teacherId}": {
+      "schema": { "$ref": "#/entities/Teacher" },
+      "description": "Stores teacher user profile and subscription status."
+    },
+    "/teachers/{teacherId}/students/{studentId}": {
+      "schema": { "$ref": "#/entities/Student" },
+      "description": "Stores students belonging to a teacher."
+    },
+    "/teachers/{teacherId}/students/{studentId}/lessons/{lessonId}": {
+      "schema": { "$ref": "#/entities/LessonLog" },
+      "description": "Stores session records and attendance for a student."
+    },
+    "/teachers/{teacherId}/schedules/{scheduleId}": {
+      "schema": { "$ref": "#/entities/Schedule" },
+      "description": "Stores weekly class schedule slots."
+    },
+    "/teachers/{teacherId}/library/{itemId}": {
+      "schema": { "$ref": "#/entities/LibraryItem" },
+      "description": "Stores preparation plans and quiz templates."
+    }
+  }
+}
