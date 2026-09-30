@@ -281,10 +281,11 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const handleSaveEditScheduleSlot = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingScheduleSlot) return;
+    setConflictError(null);
 
     const conflict = checkScheduleConflict(Number(editSchedDay), editSchedTime, Number(editSchedDuration) || 60, editingScheduleSlot.id);
     if (conflict) {
-      alert(conflict);
+      setConflictError(conflict);
       return;
     }
 
