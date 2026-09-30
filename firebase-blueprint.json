@@ -24,7 +24,9 @@
         "subject": { "type": "string", "minLength": 2, "maxLength": 100 },
         "role": { "type": "string", "enum": ["teacher", "admin"] },
         "subscriptionStatus": { "type": "string", "enum": ["trial", "active", "expired"] },
-        "plan": { "type": "string", "enum": ["none", "monthly", "six_months", "yearly"] },
+        "plan": { "type": "string", "enum": ["none", "monthly", "six_months", "yearly", "three_months", "custom"] },
+        "isActive": { "type": "boolean" },
+        "subscriptionEndDate": { "type": "string", "format": "date-time" },
         "trialStartDate": { "type": "string", "format": "date-time" },
         "trialEndDate": { "type": "string", "format": "date-time" },
         "subscriptionExpiresAt": { "type": "string", "format": "date-time" },
@@ -108,12 +110,31 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "teacherId", "title", "type", "content", "createdAt", "updatedAt"]
+    },
+    "Subscription": {
+      "title": "Subscription",
+      "description": "Pre-activated teacher subscription records by email.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 256 },
+        "isActive": { "type": "boolean" },
+        "subscriptionEndDate": { "type": "string", "format": "date-time" },
+        "plan": { "type": "string", "maxLength": 50 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "email", "isActive", "subscriptionEndDate"]
     }
   },
   "firestore": {
     "/admins/{adminId}": {
       "schema": { "$ref": "#/entities/Admin" },
       "description": "Stores administrator accounts."
+    },
+    "/subscriptions/{subId}": {
+      "schema": { "$ref": "#/entities/Subscription" },
+      "description": "Stores teacher subscriptions by email."
     },
     "/teachers/{teacherId}": {
       "schema": { "$ref": "#/entities/Teacher" },

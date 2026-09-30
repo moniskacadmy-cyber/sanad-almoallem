@@ -27,9 +27,9 @@ interface SettingsTabProps {
   students: Student[];
   schedules: ScheduleSlot[];
   libraryItems: LibraryItem[];
-  isAdmin: boolean;
+  isAdmin?: boolean;
   onOpenUpgradeModal: () => void;
-  onOpenAdminDashboard: () => void;
+  onOpenAdminDashboard?: () => void;
 }
 
 export const SettingsTab: React.FC<SettingsTabProps> = ({
@@ -160,27 +160,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         <div className="p-3 rounded-2xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
           <span>{exportNotice}</span>
-        </div>
-      )}
-
-      {/* Admin Quick Switch (if user is admin) */}
-      {isAdmin && (
-        <div className="rounded-2xl bg-gradient-to-r from-amber-950/60 via-purple-950/80 to-slate-900 border border-amber-500/40 p-3.5 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-amber-500/20 text-amber-300">
-              <ShieldAlert className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-amber-300">أنت في وضع المدير (Admin)</p>
-              <p className="text-[11px] text-slate-300">لوحة تحكم وتفعيل اشتراكات جميع المعلمين</p>
-            </div>
-          </div>
-          <button
-            onClick={onOpenAdminDashboard}
-            className="flex-shrink-0 px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black transition cursor-pointer shadow-md"
-          >
-            لوحة الإدارة
-          </button>
         </div>
       )}
 

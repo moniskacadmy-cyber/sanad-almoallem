@@ -78,11 +78,7 @@ service cloud.firestore {
 
     // Admin teacher update (can update subscription, plan, status, etc.)
     function isValidAdminTeacherUpdate() {
-      let data = incoming();
-      return data.name is string && data.name.size() <= 100 &&
-        data.subscriptionStatus in ['trial', 'active', 'expired'] &&
-        data.plan in ['none', 'monthly', 'six_months', 'yearly'] &&
-        data.updatedAt == request.time;
+      return isAdmin();
     }
 
     // Student validation
@@ -131,6 +127,12 @@ service cloud.firestore {
       allow get: if isAdmin() || (isSignedIn() && request.auth.uid == adminId);
       allow list: if isAdmin();
       allow write: if isAdmin();
+    }
+
+    // Subscriptions collection (admin managed)
+    match /subscriptions/{subId} {
+      allow read, write: if isAdmin();
+      allow get: if isSignedIn() && (isAdmin() || (request.auth.token.email != null && (request.auth.token.email == subId || request.auth.token.email == resource.data.email)));
     }
 
     // Teachers collection

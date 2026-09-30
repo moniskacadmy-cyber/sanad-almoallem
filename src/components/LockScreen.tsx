@@ -89,17 +89,25 @@ export const LockScreen: React.FC<LockScreenProps> = ({
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-purple-800 to-indigo-600 flex items-center justify-center shadow-lg shadow-purple-900/50 mb-3 border border-purple-400/30">
             {isVoluntary ? (
               <Sparkles className="w-8 h-8 text-amber-300" />
+            ) : profile.isActive === false ? (
+              <Lock className="w-8 h-8 text-rose-400 animate-pulse" />
             ) : (
               <Lock className="w-8 h-8 text-amber-400 animate-pulse" />
             )}
           </div>
           <h2 className="text-xl font-bold text-white">
-            {isVoluntary ? 'ترقية وتجديد الاشتراك' : 'انتهت الفترة التجريبية المجانية'}
+            {isVoluntary
+              ? 'ترقية وتجديد الاشتراك'
+              : profile.isActive === false
+              ? 'تم إيقاف تفعيل الحساب مؤقتاً'
+              : 'انتهت فترة اشتراك / تجربة التطبيق'}
           </h2>
           <p className="text-xs text-purple-200/80 mt-1 max-w-xs leading-relaxed">
             {isVoluntary
               ? 'اختر الباقة المناسبة لك واستمتع بجميع مميزات سند المعلم بلا انقطاع'
-              : 'شكراً لتجربتك "سند المعلم"! للاستمرار في تنظيم حصصك وطلابك، اختر باقتك المفضلة:'}
+              : profile.isActive === false
+              ? 'يرجى التواصل مع إدارة سند المعلم عبر واتساب لتفعيل اشتراكك واستعادة الوصول لبياناتك.'
+              : 'شكراً لاستخدامك "سند المعلم"! للاستمرار في تنظيم حصصك وطلابك، يرجى تجديد الاشتراك:'}
           </p>
         </div>
 

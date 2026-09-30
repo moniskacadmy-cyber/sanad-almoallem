@@ -34,7 +34,8 @@ import {
   LessonLog,
   ScheduleSlot,
   LibraryItem,
-  SubscriptionPlan
+  SubscriptionPlan,
+  SubscriptionStatus,
 } from './types';
 
 const app = initializeApp(firebaseConfig);
@@ -134,19 +135,49 @@ export async function registerTeacher(params: {
   const trialEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   const isAdminEmail = user.email === 'moniskacadmy@gmail.com';
+  const normalizedEmail = (user.email || params.email).trim().toLowerCase();
+
+  // Check if admin pre-provisioned a subscription for this email
+  let initialStatus: SubscriptionStatus = 'trial';
+  let initialPlan: SubscriptionPlan = 'none';
+  let initialEndDate = trialEnd;
+  let isActive = true;
+
+  try {
+    const subDoc = await getDoc(doc(db, 'subscriptions', normalizedEmail));
+    if (subDoc.exists()) {
+      const subData = subDoc.data();
+      if (subData.subscriptionEndDate) {
+        const subDate = subData.subscriptionEndDate.toDate ? subData.subscriptionEndDate.toDate() : new Date(subData.subscriptionEndDate);
+        if (subDate > new Date() && subData.isActive !== false) {
+          initialStatus = 'active';
+          initialPlan = (subData.plan as SubscriptionPlan) || 'monthly';
+          initialEndDate = subDate;
+        }
+      }
+      if (subData.isActive === false) {
+        isActive = false;
+        initialStatus = 'expired';
+      }
+    }
+  } catch (e) {
+    console.warn('Subscription pre-check note:', e);
+  }
 
   const newProfile = {
     id: user.uid,
     name: params.name.trim(),
-    email: user.email || params.email.trim().toLowerCase(),
+    email: normalizedEmail,
     whatsapp: params.whatsapp.trim(),
     subject: params.subject.trim(),
     role: isAdminEmail ? 'admin' : 'teacher',
-    subscriptionStatus: 'trial',
-    plan: 'none',
+    subscriptionStatus: initialStatus,
+    plan: initialPlan,
+    isActive: isActive,
+    subscriptionEndDate: Timestamp.fromDate(initialEndDate),
     trialStartDate: serverTimestamp(),
     trialEndDate: Timestamp.fromDate(trialEnd),
-    subscriptionExpiresAt: Timestamp.fromDate(trialEnd),
+    subscriptionExpiresAt: Timestamp.fromDate(initialEndDate),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
@@ -212,17 +243,24 @@ export function subscribeToTeacherProfile(
     (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data();
-        // Compute dynamically if subscription has expired
+        // Compute dynamically if subscription has expired or is deactivated
         let status = data.subscriptionStatus;
-        if (data.subscriptionExpiresAt) {
-          const expiryDate = data.subscriptionExpiresAt.toDate();
-          if (expiryDate < new Date()) {
+        const isDeactivated = data.isActive === false;
+
+        const effectiveExpiry = data.subscriptionEndDate || data.subscriptionExpiresAt;
+        if (effectiveExpiry) {
+          const expiryDate = effectiveExpiry.toDate ? effectiveExpiry.toDate() : new Date(effectiveExpiry);
+          if (expiryDate < new Date() || isDeactivated) {
             status = 'expired';
           }
+        } else if (isDeactivated) {
+          status = 'expired';
         }
+
         onUpdate({
           ...data,
           id: snapshot.id,
+          isActive: data.isActive !== false,
           subscriptionStatus: status,
         } as TeacherProfile);
       } else {
@@ -258,66 +296,328 @@ export async function adminGetAllTeachers(): Promise<TeacherProfile[]> {
   const path = 'teachers';
   try {
     const snap = await getDocs(collection(db, 'teachers'));
-    return snap.docs.map((d) => {
+    const teachersList = snap.docs.map((d) => {
       const data = d.data();
       let status = data.subscriptionStatus;
-      if (data.subscriptionExpiresAt) {
-        const expiryDate = data.subscriptionExpiresAt.toDate();
-        if (expiryDate < new Date()) {
+      const isDeactivated = data.isActive === false;
+      const effectiveExpiry = data.subscriptionEndDate || data.subscriptionExpiresAt;
+      if (effectiveExpiry) {
+        const expiryDate = effectiveExpiry.toDate ? effectiveExpiry.toDate() : new Date(effectiveExpiry);
+        if (expiryDate < new Date() || isDeactivated) {
           status = 'expired';
         }
+      } else if (isDeactivated) {
+        status = 'expired';
       }
+
       return {
         ...data,
         id: d.id,
+        isActive: data.isActive !== false,
         subscriptionStatus: status,
       } as TeacherProfile;
     });
+
+    // Also fetch pre-provisioned subscriptions that don't yet have teacher accounts
+    try {
+      const subSnap = await getDocs(collection(db, 'subscriptions'));
+      const existingEmails = new Set(teachersList.map((t) => t.email.toLowerCase()));
+
+      subSnap.docs.forEach((sDoc) => {
+        const sData = sDoc.data();
+        const subEmail = (sData.email || sDoc.id).toLowerCase();
+        if (!existingEmails.has(subEmail)) {
+          const effectiveExpiry = sData.subscriptionEndDate;
+          let isExpired = false;
+          if (effectiveExpiry) {
+            const exp = effectiveExpiry.toDate ? effectiveExpiry.toDate() : new Date(effectiveExpiry);
+            if (exp < new Date()) isExpired = true;
+          }
+          if (sData.isActive === false) isExpired = true;
+
+          teachersList.push({
+            id: `sub_${sDoc.id}`,
+            name: sData.name || 'معلم جديد (في انتظار التسجيل)',
+            email: subEmail,
+            whatsapp: sData.whatsapp || 'غير محدد بعد',
+            subject: sData.subject || 'غير محدد بعد',
+            role: 'teacher',
+            subscriptionStatus: isExpired ? 'expired' : 'active',
+            plan: sData.plan || 'monthly',
+            isActive: sData.isActive !== false,
+            subscriptionEndDate: sData.subscriptionEndDate,
+            subscriptionExpiresAt: sData.subscriptionEndDate,
+            trialStartDate: null,
+            trialEndDate: null,
+            createdAt: sData.updatedAt || Timestamp.now(),
+            updatedAt: sData.updatedAt || Timestamp.now(),
+          } as TeacherProfile);
+        }
+      });
+    } catch (e) {
+      console.warn('Subscriptions list note:', e);
+    }
+
+    return teachersList;
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
     return [];
   }
 }
 
+// Add or Activate Subscription for teacher by email
+export async function adminSaveSubscription(params: {
+  email: string;
+  name?: string;
+  durationType: 'monthly' | 'three_months' | 'six_months' | 'yearly' | 'custom';
+  customEndDate?: string; // YYYY-MM-DD
+  isActive?: boolean;
+}): Promise<{ success: boolean; message: string; teacherFound: boolean }> {
+  const normalizedEmail = params.email.trim().toLowerCase();
+  if (!normalizedEmail || !normalizedEmail.includes('@')) {
+    throw new Error('يرجى إدخال بريد إلكتروني صحيح');
+  }
+
+  let newExpiryDate: Date;
+  let planName: SubscriptionPlan = 'monthly';
+
+  if (params.durationType === 'monthly') {
+    newExpiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    planName = 'monthly';
+  } else if (params.durationType === 'three_months') {
+    newExpiryDate = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+    planName = 'three_months';
+  } else if (params.durationType === 'six_months') {
+    newExpiryDate = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000);
+    planName = 'six_months';
+  } else if (params.durationType === 'yearly') {
+    newExpiryDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+    planName = 'yearly';
+  } else if (params.durationType === 'custom' && params.customEndDate) {
+    newExpiryDate = new Date(params.customEndDate);
+    newExpiryDate.setHours(23, 59, 59, 999);
+    planName = 'custom';
+  } else {
+    newExpiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  }
+
+  const isActive = params.isActive !== false;
+  const status: SubscriptionStatus = isActive && newExpiryDate > new Date() ? 'active' : 'expired';
+
+  // 1. Save/Update in subscriptions collection
+  try {
+    await setDoc(
+      doc(db, 'subscriptions', normalizedEmail),
+      {
+        email: normalizedEmail,
+        name: params.name?.trim() || '',
+        isActive,
+        plan: planName,
+        subscriptionEndDate: Timestamp.fromDate(newExpiryDate),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    console.error('Error saving to subscriptions collection:', err);
+  }
+
+  // 2. Find if teacher with this email already exists in teachers collection
+  let teacherFound = false;
+  try {
+    const snap = await getDocs(collection(db, 'teachers'));
+    for (const tDoc of snap.docs) {
+      const tData = tDoc.data();
+      if (tData.email && tData.email.trim().toLowerCase() === normalizedEmail) {
+        teacherFound = true;
+        await updateDoc(doc(db, 'teachers', tDoc.id), {
+          isActive,
+          subscriptionStatus: status,
+          plan: planName,
+          subscriptionEndDate: Timestamp.fromDate(newExpiryDate),
+          subscriptionExpiresAt: Timestamp.fromDate(newExpiryDate),
+          updatedAt: serverTimestamp(),
+        });
+      }
+    }
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, 'teachers');
+  }
+
+  return {
+    success: true,
+    teacherFound,
+    message: teacherFound
+      ? 'تم تفعيل وتحديث اشتراك المعلم بنجاح!'
+      : 'تم حفظ وتفعيل الاشتراك مسبقاً لهذا البريد. سيتم تفعيله فور تسجيل المعلم!',
+  };
+}
+
+// Toggle teacher active / inactive (deactivate / unban)
+export async function adminToggleTeacherActive(
+  teacherId: string,
+  email: string,
+  isActive: boolean
+) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const isPreSubOnly = teacherId.startsWith('sub_');
+
+  if (!isPreSubOnly) {
+    const path = `teachers/${teacherId}`;
+    try {
+      await updateDoc(doc(db, 'teachers', teacherId), {
+        isActive,
+        subscriptionStatus: isActive ? 'active' : 'expired',
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, path);
+    }
+  }
+
+  try {
+    await setDoc(
+      doc(db, 'subscriptions', normalizedEmail),
+      {
+        email: normalizedEmail,
+        isActive,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    console.warn('Subscription sync error:', err);
+  }
+}
+
+// Extend or Set subscription date for teacher
 export async function adminActivateTeacher(
   teacherId: string,
   days: number,
   plan: SubscriptionPlan
 ) {
+  const isPreSubOnly = teacherId.startsWith('sub_');
   const path = `teachers/${teacherId}`;
-  try {
-    const teacherDoc = await getDoc(doc(db, 'teachers', teacherId));
-    let baseDate = new Date();
-    if (teacherDoc.exists()) {
-      const existing = teacherDoc.data();
-      if (existing.subscriptionExpiresAt) {
-        const exp = existing.subscriptionExpiresAt.toDate();
-        if (exp > new Date()) {
-          baseDate = exp;
+
+  let baseDate = new Date();
+  let teacherEmail = '';
+
+  if (!isPreSubOnly) {
+    try {
+      const teacherDoc = await getDoc(doc(db, 'teachers', teacherId));
+      if (teacherDoc.exists()) {
+        const existing = teacherDoc.data();
+        teacherEmail = existing.email || '';
+        const effectiveExpiry = existing.subscriptionEndDate || existing.subscriptionExpiresAt;
+        if (effectiveExpiry) {
+          const exp = effectiveExpiry.toDate ? effectiveExpiry.toDate() : new Date(effectiveExpiry);
+          if (exp > new Date()) {
+            baseDate = exp;
+          }
         }
       }
+    } catch (err) {
+      console.warn('Error reading teacher doc:', err);
     }
-    const newExpiresAt = new Date(baseDate.getTime() + days * 24 * 60 * 60 * 1000);
+  } else {
+    teacherEmail = teacherId.replace('sub_', '');
+  }
 
-    await updateDoc(doc(db, 'teachers', teacherId), {
-      subscriptionStatus: 'active',
-      plan,
-      subscriptionExpiresAt: Timestamp.fromDate(newExpiresAt),
-      updatedAt: serverTimestamp(),
-    });
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
+  const newExpiresAt = new Date(baseDate.getTime() + days * 24 * 60 * 60 * 1000);
+
+  if (!isPreSubOnly) {
+    try {
+      await updateDoc(doc(db, 'teachers', teacherId), {
+        isActive: true,
+        subscriptionStatus: 'active',
+        plan,
+        subscriptionEndDate: Timestamp.fromDate(newExpiresAt),
+        subscriptionExpiresAt: Timestamp.fromDate(newExpiresAt),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+  }
+
+  if (teacherEmail) {
+    try {
+      await setDoc(
+        doc(db, 'subscriptions', teacherEmail.toLowerCase()),
+        {
+          email: teacherEmail.toLowerCase(),
+          isActive: true,
+          plan,
+          subscriptionEndDate: Timestamp.fromDate(newExpiresAt),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    } catch (e) {
+      console.warn('Subscription update error:', e);
+    }
+  }
+}
+
+// Set custom end date for teacher
+export async function adminSetCustomExpiry(
+  teacherId: string,
+  email: string,
+  dateString: string,
+  plan: SubscriptionPlan = 'custom'
+) {
+  const newDate = new Date(dateString);
+  newDate.setHours(23, 59, 59, 999);
+  const normalizedEmail = email.trim().toLowerCase();
+  const isActive = newDate > new Date();
+  const isPreSubOnly = teacherId.startsWith('sub_');
+
+  if (!isPreSubOnly) {
+    const path = `teachers/${teacherId}`;
+    try {
+      await updateDoc(doc(db, 'teachers', teacherId), {
+        isActive,
+        subscriptionStatus: isActive ? 'active' : 'expired',
+        plan,
+        subscriptionEndDate: Timestamp.fromDate(newDate),
+        subscriptionExpiresAt: Timestamp.fromDate(newDate),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, path);
+    }
+  }
+
+  try {
+    await setDoc(
+      doc(db, 'subscriptions', normalizedEmail),
+      {
+        email: normalizedEmail,
+        isActive,
+        plan,
+        subscriptionEndDate: Timestamp.fromDate(newDate),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  } catch (e) {
+    console.warn('Subscription sync error:', e);
   }
 }
 
 export async function adminResetTrial(teacherId: string) {
+  const isPreSubOnly = teacherId.startsWith('sub_');
+  if (isPreSubOnly) return;
+
   const path = `teachers/${teacherId}`;
   try {
     const trialEnd = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     await updateDoc(doc(db, 'teachers', teacherId), {
+      isActive: true,
       subscriptionStatus: 'trial',
       plan: 'none',
       trialEndDate: Timestamp.fromDate(trialEnd),
+      subscriptionEndDate: Timestamp.fromDate(trialEnd),
       subscriptionExpiresAt: Timestamp.fromDate(trialEnd),
       updatedAt: serverTimestamp(),
     });
@@ -327,8 +627,28 @@ export async function adminResetTrial(teacherId: string) {
 }
 
 export async function adminDeleteTeacher(teacherId: string) {
+  const isPreSubOnly = teacherId.startsWith('sub_');
+  if (isPreSubOnly) {
+    const email = teacherId.replace('sub_', '');
+    try {
+      await deleteDoc(doc(db, 'subscriptions', email));
+    } catch (e) {
+      console.warn('Delete sub error:', e);
+    }
+    return;
+  }
+
   const path = `teachers/${teacherId}`;
   try {
+    const teacherDoc = await getDoc(doc(db, 'teachers', teacherId));
+    if (teacherDoc.exists()) {
+      const email = teacherDoc.data()?.email;
+      if (email) {
+        try {
+          await deleteDoc(doc(db, 'subscriptions', email.toLowerCase()));
+        } catch {}
+      }
+    }
     await deleteDoc(doc(db, 'teachers', teacherId));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);

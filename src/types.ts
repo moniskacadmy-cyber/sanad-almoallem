@@ -1,5 +1,5 @@
 export type SubscriptionStatus = 'trial' | 'active' | 'expired';
-export type SubscriptionPlan = 'none' | 'monthly' | 'six_months' | 'yearly';
+export type SubscriptionPlan = 'none' | 'monthly' | 'three_months' | 'six_months' | 'yearly' | 'custom';
 export type ClassType = 'online' | 'center' | 'private';
 export type AttendanceStatus = 'present' | 'absent' | 'excused';
 export type PaymentStatus = 'paid' | 'unpaid';
@@ -14,11 +14,24 @@ export interface TeacherProfile {
   role: 'teacher' | 'admin';
   subscriptionStatus: SubscriptionStatus;
   plan: SubscriptionPlan;
+  isActive?: boolean;
+  subscriptionEndDate?: any; // Firestore Timestamp
   trialStartDate: any; // Firestore Timestamp
   trialEndDate: any;   // Firestore Timestamp
   subscriptionExpiresAt: any; // Firestore Timestamp
   createdAt: any;
   updatedAt: any;
+}
+
+export interface SubscriptionRecord {
+  id: string;
+  email: string;
+  isActive: boolean;
+  subscriptionEndDate: any;
+  plan?: string;
+  teacherName?: string;
+  createdAt?: any;
+  updatedAt?: any;
 }
 
 export interface Student {
