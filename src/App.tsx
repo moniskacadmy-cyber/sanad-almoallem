@@ -7,6 +7,7 @@ import {
   subscribeToStudents,
   subscribeToSchedules,
   subscribeToLibrary,
+  runOrphanCleanup,
 } from './firebase';
 import {
   TeacherProfile,
@@ -214,6 +215,12 @@ export default function App() {
       unsubLibrary();
     };
   }, [currentUser, profile?.id]);
+
+  // Run database automatic cleanup script for orphaned schedules and lessons (IIFE triggered)
+  useEffect(() => {
+    if (!currentUser || !profile || students.length === 0) return;
+    runOrphanCleanup(currentUser.uid, students.map(s => s.id));
+  }, [currentUser, profile?.id, students]);
 
   // Automated 15-Minute Class Reminders Periodic Check
   const [activeReminderAlert, setActiveReminderAlert] = useState<{

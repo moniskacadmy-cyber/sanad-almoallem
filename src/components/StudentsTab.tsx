@@ -78,7 +78,8 @@ interface StudentsTabProps {
   schedules?: ScheduleSlot[];
 }
 
-export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, schedules = [] }) => {
+export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, schedules: rawSchedules = [] }) => {
+  const schedules = rawSchedules.filter((s) => students.some((st) => st.id === s.studentId));
   const currency = profile?.currency || 'ج.م';
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | ClassType>('all');

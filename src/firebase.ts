@@ -25,7 +25,8 @@ import {
   serverTimestamp,
   Timestamp,
   getDocFromServer,
-  onSnapshot
+  onSnapshot,
+  collectionGroup
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 import {
@@ -1277,5 +1278,45 @@ export async function importFullTeacherBackup(
     lessonsCount,
     libraryCount,
   };
+}
+
+export async function runOrphanCleanup(teacherId: string, activeStudentIds: string[]) {
+  const studentIdsSet = new Set(activeStudentIds);
+
+  // 1. Clean up orphan schedules
+  try {
+    const schedulesSnap = await getDocs(collection(db, 'teachers', teacherId, 'schedules'));
+    const orphanSchedules = schedulesSnap.docs.filter((doc) => {
+      const data = doc.data();
+      return data.studentId && !studentIdsSet.has(data.studentId);
+    });
+
+    if (orphanSchedules.length > 0) {
+      console.log(`[Database Cleanup] Found ${orphanSchedules.length} orphan schedules. Deleting...`);
+      await Promise.all(orphanSchedules.map((doc) => deleteDoc(doc.ref)));
+    }
+  } catch (err) {
+    console.warn('[Database Cleanup] Error cleaning up orphan schedules:', err);
+  }
+
+  // 2. Clean up orphan lessons
+  try {
+    const lessonsQuery = query(
+      collectionGroup(db, 'lessons'),
+      where('teacherId', '==', teacherId)
+    );
+    const lessonsSnap = await getDocs(lessonsQuery);
+    const orphanLessons = lessonsSnap.docs.filter((doc) => {
+      const data = doc.data();
+      return data.studentId && !studentIdsSet.has(data.studentId);
+    });
+
+    if (orphanLessons.length > 0) {
+      console.log(`[Database Cleanup] Found ${orphanLessons.length} orphan lessons. Deleting...`);
+      await Promise.all(orphanLessons.map((doc) => deleteDoc(doc.ref)));
+    }
+  } catch (err) {
+    console.warn('[Database Cleanup] Error cleaning up orphan lessons:', err);
+  }
 }
 

@@ -25,6 +25,7 @@ import {
   Copy,
   DollarSign,
   TrendingUp,
+  Bell,
 } from 'lucide-react';
 
 interface HomeTabProps {
@@ -39,11 +40,12 @@ interface HomeTabProps {
 export const HomeTab: React.FC<HomeTabProps> = ({
   profile,
   students,
-  schedules,
+  schedules: rawSchedules,
   onNavigateToTab,
   onOpenUpgradeModal,
   onOpenFinancialDashboard,
 }) => {
+  const schedules = rawSchedules.filter((s) => students.some((st) => st.id === s.studentId));
   const [showStartClassModal, setShowStartClassModal] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [classTopic, setClassTopic] = useState('');
@@ -303,6 +305,55 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         </div>
         {getSubscriptionPill()}
       </div>
+
+      {/* Browser Notification Status Banner */}
+      {typeof window !== 'undefined' && 'Notification' in window && Notification.permission !== 'granted' && (
+        <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-950/40 via-slate-900 to-amber-950/40 border border-amber-500/30 flex items-center justify-between gap-3 text-right">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-300 flex items-center justify-center border border-amber-500/20 shrink-0">
+              <Bell className="w-4 h-4 text-amber-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h4 className="text-xs font-bold text-white">تفعيل إشعارات المتصفح التنبيهية 🔔</h4>
+              <p className="text-[10px] text-slate-300 mt-0.5 leading-snug">
+                يرجى تفعيل التنبيهات لتنبيهك قبل بدء الحصة بـ 15 دقيقة بصوت تنبيه مميز لضمان عدم نسيان أي موعد.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={async () => {
+              const perm = await Notification.requestPermission();
+              if (perm === 'granted') {
+                new Notification('سند المعلم 🔔', {
+                  body: 'تم تفعيل التنبيهات بنجاح! سنقوم بإرسال تنبيه قبل كل حصة بـ 15 دقيقة.',
+                });
+                try {
+                  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+                  if (AudioContextClass) {
+                    const ctx = new AudioContextClass();
+                    const now = ctx.currentTime;
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(587.33, now);
+                    gain.gain.setValueAtTime(0.18, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.35);
+                  }
+                } catch {}
+              }
+              // Force local re-render
+              window.location.reload();
+            }}
+            className="flex-shrink-0 px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-extrabold shadow cursor-pointer active:scale-95 transition"
+          >
+            تفعيل الآن 🔔
+          </button>
+        </div>
+      )}
 
       {/* Main Action Banner: Smart Upcoming Lesson Countdown */}
       {(() => {

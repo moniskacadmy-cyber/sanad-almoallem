@@ -185,7 +185,8 @@ export const TIME_SLOTS = Array.from({ length: 48 }, (_, i) => {
   };
 });
 
-export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, schedules }) => {
+export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, schedules: rawSchedules }) => {
+  const schedules = rawSchedules.filter((s) => students.some((st) => st.id === s.studentId));
   const todayIndex = new Date().getDay();
   const [viewMode, setViewMode] = useState<'grid' | 'month' | 'list'>('grid');
   const [selectedDayFilter, setSelectedDayFilter] = useState<number | 'all'>(todayIndex);
