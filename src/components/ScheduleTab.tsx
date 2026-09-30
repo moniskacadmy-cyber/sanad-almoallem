@@ -384,10 +384,8 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
 
         // Check if intervals overlap: startA < endB && endA > startB
         if (newStartMin < slotEnd && newEndMin > slotStart) {
-          const dayObj = WEEK_DAYS.find((d) => d.dayIndex === Number(day));
-          const slotEndFormatted = getEndTimeFormatted(slot.time, slot.duration || 60);
           setConflictError(
-            `تنبيه: هذا الموعد يتعارض مع حصة الطالب [${slot.studentName}] بنفس الوقت! (يوم ${dayObj?.name || 'هذا اليوم'} من ${slot.time} إلى ${slotEndFormatted})`
+            `عفواً، لا يمكن إضافة الحصة لوجود تعارض في الموعد مع الطالب: ${slot.studentName}`
           );
           return;
         }

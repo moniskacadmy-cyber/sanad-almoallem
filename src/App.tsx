@@ -77,10 +77,23 @@ export default function App() {
   const [schedules, setSchedules] = useState<ScheduleSlot[]>([]);
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
 
-  // Push initial history state on mount
+  // Push initial history state on mount & Request browser notification permission
   useEffect(() => {
     if (typeof window !== 'undefined') {
       window.history.replaceState({ tab: 0 }, '', window.location.pathname);
+
+      // Ask for native notification permission immediately upon app startup
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission().then((perm) => {
+          if (perm === 'granted') {
+            showBrowserNotification(
+              'سند المعلم 🔔',
+              'تم تفعيل إشعارات الهاتف والنظام بنجاح لحصصك المجدولة!'
+            );
+            playNotificationChime();
+          }
+        });
+      }
     }
   }, []);
 

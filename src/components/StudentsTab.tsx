@@ -208,10 +208,42 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     return `${dayName} الساعة ${timeFormatted} (${dur} دقيقة) - ${classTypeStr}`;
   };
 
+  const getMinutesFromTime = (timeStr: string) => {
+    const [h, m] = timeStr.split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+  };
+
+  const checkScheduleConflict = (dayOfWeek: number, timeStr: string, durationMin: number, excludeScheduleId?: string): string | null => {
+    const newStart = getMinutesFromTime(timeStr);
+    const newEnd = newStart + durationMin;
+
+    for (const slot of schedules) {
+      if (excludeScheduleId && slot.id === excludeScheduleId) continue;
+      if (slot.dayOfWeek === dayOfWeek) {
+        const slotStart = getMinutesFromTime(slot.time);
+        const slotEnd = slotStart + (slot.duration || 60);
+
+        // Check overlap: startA < endB && endA > startB
+        if (newStart < slotEnd && newEnd > slotStart) {
+          return `عفواً، لا يمكن إضافة الحصة لوجود تعارض في الموعد مع الطالب: [${slot.studentName}]`;
+        }
+      }
+    }
+    return null;
+  };
+
   // Actions for managing schedules directly inside Student Details Modal
   const handleAddScheduleForProfileStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProfileStudent) return;
+    setConflictError(null);
+
+    const conflict = checkScheduleConflict(Number(newSchedDay), newSchedTime, Number(newSchedDuration) || 60);
+    if (conflict) {
+      setConflictError(conflict);
+      return;
+    }
+
     setSavingSchedInProfile(true);
     try {
       await addSchedule(profile.id, {
@@ -249,6 +281,13 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const handleSaveEditScheduleSlot = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingScheduleSlot) return;
+
+    const conflict = checkScheduleConflict(Number(editSchedDay), editSchedTime, Number(editSchedDuration) || 60, editingScheduleSlot.id);
+    if (conflict) {
+      alert(conflict);
+      return;
+    }
+
     setSavingSchedInProfile(true);
     try {
       await updateSchedule(profile.id, editingScheduleSlot.id, {
@@ -413,6 +452,18 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const handleSaveStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim()) return; // WhatsApp is optional!
+
+    // Overlapping Schedule Validation for new student schedules before writing to Firestore
+    if (!editingStudent && formSchedules.length > 0) {
+      for (const s of formSchedules) {
+        const conflict = checkScheduleConflict(Number(s.dayOfWeek), s.time, Number(s.duration) || 60);
+        if (conflict) {
+          alert(conflict);
+          return;
+        }
+      }
+    }
+
     setIsSubmitting(true);
 
     try {

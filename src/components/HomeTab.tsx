@@ -389,18 +389,57 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                   {mainSubtitle}
                 </p>
               </div>
-              <button
-                onClick={() => {
-                  if (targetStudentId) {
-                    setSelectedStudentId(targetStudentId);
+              <div className="flex flex-col gap-2 flex-shrink-0">
+                <button
+                  onClick={() => {
+                    if (targetStudentId) {
+                      setSelectedStudentId(targetStudentId);
+                    }
+                    setShowStartClassModal(true);
+                  }}
+                  className="flex-shrink-0 flex items-center justify-center gap-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 px-3.5 py-2.5 text-xs font-black shadow-lg shadow-amber-950/40 active:scale-95 transition cursor-pointer"
+                >
+                  <Play className="w-3.5 h-3.5 fill-slate-950" />
+                  <span>{upcomingOrOngoing ? 'بدء الحصة' : 'تسجيل حصة'}</span>
+                </button>
+
+                {upcomingOrOngoing && (() => {
+                  const matchedStudent = students.find((s) => s.id === upcomingOrOngoing.slot.studentId);
+                  if (matchedStudent?.whatsapp) {
+                    const cleanPhone = matchedStudent.whatsapp.replace(/[^0-9]/g, '');
+                    const fullPhone = cleanPhone.startsWith('01') ? '2' + cleanPhone : cleanPhone;
+                    const classTypeAr =
+                      upcomingOrOngoing.slot.classType === 'online'
+                        ? 'أونلاين (عن بُعد 🌐)'
+                        : upcomingOrOngoing.slot.classType === 'trial'
+                        ? 'حصة تجريبية ✨'
+                        : upcomingOrOngoing.slot.classType === 'center'
+                        ? 'في السنتر (مجموعة 🏫)'
+                        : 'حضور شخصي 👤';
+                    const msg =
+                      `👋 مرحباً ولي أمر الطالب/ـة: *${upcomingOrOngoing.slot.studentName}*\n\n` +
+                      `🔔 نود تذكيركم بأن موعد حصة *${matchedStudent.subject || profile.subject}* مع الأستاذ/ـة *${profile.name}* ستبدأ بعد *15 دقيقة* (الساعة ${upcomingOrOngoing.slot.time}).\n` +
+                      `📌 نوع الحصة: ${classTypeAr}\n` +
+                      (upcomingOrOngoing.slot.locationOrLink ? `🔗 الرابط / المكان: ${upcomingOrOngoing.slot.locationOrLink}\n` : '') +
+                      `\nنتمنى له/لها حصة دراسية موفقة وممتعة! 📚✨\n` +
+                      `— منصة سند المعلم`;
+                    const whatsappUrl = `https://wa.me/${fullPhone}?text=${encodeURIComponent(msg)}`;
+                    return (
+                      <a
+                        href={whatsappUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 text-[11px] font-bold shadow-md shadow-emerald-950/30 active:scale-95 transition cursor-pointer"
+                        title="إرسال تذكير واتساب للحصة القادمة"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        <span>تذكير واتساب</span>
+                      </a>
+                    );
                   }
-                  setShowStartClassModal(true);
-                }}
-                className="flex-shrink-0 flex items-center gap-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 px-3.5 py-2.5 text-xs font-black shadow-lg shadow-amber-950/40 active:scale-95 transition cursor-pointer"
-              >
-                <Play className="w-3.5 h-3.5 fill-slate-950" />
-                <span>{upcomingOrOngoing ? 'بدء الحصة' : 'تسجيل حصة'}</span>
-              </button>
+                  return null;
+                })()}
+              </div>
             </div>
             <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-purple-500/20 blur-xl pointer-events-none" />
           </div>
