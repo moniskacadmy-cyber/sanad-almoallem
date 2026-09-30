@@ -12,6 +12,8 @@ import {
   updateSchedule,
   deleteSchedule,
   addLibraryItem,
+  fetchAllStudentLessons,
+  settleStudentAccount,
 } from '../firebase';
 import {
   WEEK_DAYS,
@@ -51,6 +53,8 @@ import {
   Palette,
   Plus,
   ChevronDown,
+  DollarSign,
+  TrendingUp,
 } from 'lucide-react';
 
 interface FormScheduleRow {
@@ -78,6 +82,12 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | ClassType>('all');
   const [paymentFilter, setPaymentFilter] = useState<'all' | PaymentStatus>('all');
+
+  // Lessons map for calculating dynamic dues and hours for all students
+  const [allLessonsMap, setAllLessonsMap] = useState<Record<string, LessonLog[]>>({});
+  const [loadingAllLessons, setLoadingAllLessons] = useState(false);
+  const [showConfirmSettleStudent, setShowConfirmSettleStudent] = useState<Student | null>(null);
+  const [isSettling, setIsSettling] = useState(false);
 
   // Modals state
   const [showAddModal, setShowAddModal] = useState(false);
@@ -110,7 +120,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const [formWhatsapp, setFormWhatsapp] = useState('');
   const [formSubject, setFormSubject] = useState(profile.subject || 'رياضيات');
   const [formClassType, setFormClassType] = useState<ClassType>('private');
-  const [formMonthlyFee, setFormMonthlyFee] = useState<number>(300);
+  const [formHourlyRate, setFormHourlyRate] = useState<number>(100);
   const [formLearningStyle, setFormLearningStyle] = useState('');
   const [formNotes, setFormNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -286,6 +296,27 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const [profileLearningStyle, setProfileLearningStyle] = useState('');
   const [savingLearningStyle, setSavingLearningStyle] = useState(false);
 
+  // Load all lessons for students to calculate dynamic dues & teaching hours
+  const loadAllLessons = async () => {
+    if (students.length === 0) {
+      setAllLessonsMap({});
+      return;
+    }
+    setLoadingAllLessons(true);
+    try {
+      const data = await fetchAllStudentLessons(profile.id, students);
+      setAllLessonsMap(data);
+    } catch (err) {
+      console.error('Error fetching all lessons for students tab:', err);
+    } finally {
+      setLoadingAllLessons(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAllLessons();
+  }, [profile.id, students]);
+
   // Subscribe to selected student's lessons
   useEffect(() => {
     if (!selectedProfileStudent) {
@@ -348,7 +379,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     setFormWhatsapp('');
     setFormSubject(profile.subject || 'رياضيات');
     setFormClassType('private');
-    setFormMonthlyFee(300);
+    setFormHourlyRate(100);
     setFormLearningStyle('');
     setFormNotes('');
     setIsAddStudentLearningStyleOpen(false);
@@ -364,7 +395,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     setFormWhatsapp(student.whatsapp || '');
     setFormSubject(student.subject);
     setFormClassType(student.classType);
-    setFormMonthlyFee(student.monthlyFee || 0);
+    setFormHourlyRate(student.hourlyRate || (student.monthlyFee ? Math.round(student.monthlyFee / 4) : 100));
     setFormLearningStyle(student.learningStyle || '');
     setFormNotes(student.notes || '');
     setIsAddStudentLearningStyleOpen(false);
@@ -380,13 +411,15 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     setIsSubmitting(true);
 
     try {
+      const rate = Number(formHourlyRate) || 100;
       if (editingStudent) {
         await updateStudent(profile.id, editingStudent.id, {
           name: formName.trim(),
           whatsapp: formWhatsapp.trim(),
           subject: formSubject.trim(),
           classType: formClassType,
-          monthlyFee: Number(formMonthlyFee) || 0,
+          hourlyRate: rate,
+          monthlyFee: rate * 4,
           learningStyle: formLearningStyle.trim(),
           notes: formNotes.trim(),
           color: formColor,
@@ -397,7 +430,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
           whatsapp: formWhatsapp.trim(),
           subject: formSubject.trim(),
           classType: formClassType,
-          monthlyFee: Number(formMonthlyFee) || 0,
+          hourlyRate: rate,
+          monthlyFee: rate * 4,
           paymentStatus: 'unpaid',
           learningStyle: formLearningStyle.trim(),
           notes: formNotes.trim(),
@@ -420,6 +454,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
           }
         }
       }
+      await loadAllLessons();
       setShowAddModal(false);
     } catch (err) {
       console.error('Error saving student', err);
@@ -435,6 +470,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
       if (selectedProfileStudent?.id === studentId) {
         setSelectedProfileStudent(null);
       }
+      await loadAllLessons();
     } catch (err) {
       console.error('Error deleting student', err);
     }
@@ -445,19 +481,41 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     if (!selectedProfileStudent || !newLessonTopic.trim()) return;
     try {
       const todayStr = new Intl.DateTimeFormat('en-CA').format(new Date());
+      const duration = 60;
+      const hourlyRate = selectedProfileStudent.hourlyRate || (selectedProfileStudent.monthlyFee ? Math.round(selectedProfileStudent.monthlyFee / 4) : 100);
+      const cost = Math.round((duration / 60) * hourlyRate);
+
       await addLessonLog(profile.id, selectedProfileStudent.id, {
         date: todayStr,
         topic: newLessonTopic.trim(),
         homework: newLessonHomework.trim(),
         attendance: newLessonAttendance,
+        duration,
+        hourlyRate,
+        cost,
+        settled: false,
         rating: newLessonRating,
         notes: '',
       });
       setNewLessonTopic('');
       setNewLessonHomework('');
       setShowAddLessonInsideProfile(false);
+      await loadAllLessons();
     } catch (err) {
       console.error('Error adding lesson log', err);
+    }
+  };
+
+  const handleConfirmSettleAccount = async (student: Student) => {
+    setIsSettling(true);
+    try {
+      await settleStudentAccount(profile.id, student.id);
+      await loadAllLessons();
+      setShowConfirmSettleStudent(null);
+    } catch (err) {
+      console.error('Error settling student account:', err);
+    } finally {
+      setIsSettling(false);
     }
   };
 
@@ -625,21 +683,44 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     }
   };
 
-  // Payment Reminder WhatsApp Generator
+  // Payment Reminder WhatsApp Generator (Hourly Rate & Dues Statement)
   const handleSendPaymentReminder = () => {
     if (!selectedProfileStudent) return;
-    const text = encodeURIComponent(
+    const hourlyRate = selectedProfileStudent.hourlyRate || (selectedProfileStudent.monthlyFee ? Math.round(selectedProfileStudent.monthlyFee / 4) : 100);
+    const unsettledLessons = studentLessons.filter((l) => !l.settled);
+    const pendingMinutes = unsettledLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
+    const pendingHours = (pendingMinutes / 60).toFixed(1);
+    const pendingAmount = unsettledLessons.reduce((acc, l) => {
+      const dur = l.duration || 60;
+      const rate = l.hourlyRate || hourlyRate;
+      return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
+    }, 0);
+
+    const lessonsListText = unsettledLessons
+      .map(
+        (l, i) =>
+          `  ${i + 1}. [${l.date}] ${l.topic} (${l.duration || 60} دقيقة) - ${l.cost || Math.round(((l.duration || 60) / 60) * hourlyRate)} ج.م`
+      )
+      .join('\n');
+
+    const msg =
       `السلام عليكم ورحمة الله وبركاته 🌷\n` +
-      `تحية طيبة لولي أمر الطالب/ـة المتميز/ة: ${selectedProfileStudent.name}\n` +
-      `نود تذكيركم بمصروفات حصص مادة (${selectedProfileStudent.subject}) لشهر (${currentMonthName}) وقدرها: ${selectedProfileStudent.monthlyFee} ج.م.\n\n` +
-      `شاكرين ومقدرين حسن تعاونكم وحرصكم الدائم على متابعة الطالب 🌟\n` +
-      `معلمكم: أ. ${profile.name}`
-    );
+      `🧾 كشف حساب ومطالبة مالية - مادة (${selectedProfileStudent.subject})\n\n` +
+      `👤 الطالب/ـة: ${selectedProfileStudent.name}\n` +
+      `👨‍🏫 إعداد المعلم: أ. ${profile.name}\n` +
+      `📅 التاريخ: ${new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}\n\n` +
+      `📊 تفاصيل المستحقات الحالية:\n` +
+      `• سعر الساعة: ${hourlyRate} ج.م/ساعة\n` +
+      `• عدد الساعات المنفذة: ${pendingHours} ساعة (${unsettledLessons.length} حصص غير مصفاة)\n` +
+      `• إجمالي المستحقات المطلوبة: ${pendingAmount} ج.م 💰\n\n` +
+      (lessonsListText ? `📋 تفاصيل الحصص المنفذة غير المصفاة:\n${lessonsListText}\n\n` : '') +
+      `شاكرين ومقدرين لكم حسن التعاون والاهتمام الدائم 🌟`;
+
     const cleanPhone = selectedProfileStudent.whatsapp ? selectedProfileStudent.whatsapp.replace(/[^0-9]/g, '') : '';
     const phoneParam = cleanPhone ? (cleanPhone.startsWith('0') ? '2' + cleanPhone : cleanPhone) : '';
     const url = phoneParam
-      ? `https://wa.me/${phoneParam}?text=${text}`
-      : `https://wa.me/?text=${text}`;
+      ? `https://wa.me/${phoneParam}?text=${encodeURIComponent(msg)}`
+      : `https://wa.me/?text=${encodeURIComponent(msg)}`;
     window.open(url, '_blank');
   };
 
@@ -760,105 +841,125 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
         </div>
       ) : (
         <div className="space-y-2.5">
-          {filteredStudents.map((s) => (
-            <div
-              key={s.id}
-              className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-3.5 hover:border-purple-400/40 transition"
-            >
-              <div className="flex items-start justify-between">
-                {/* Student Info Clickable */}
-                <div
-                  onClick={() => handleOpenStudentProfile(s)}
-                  className="cursor-pointer flex-1"
-                >
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-bold text-white hover:text-purple-300 transition">
-                      {s.name}
-                    </h3>
-                    {getClassTypeBadge(s.classType)}
+          {filteredStudents.map((s) => {
+            const sLessons = allLessonsMap[s.id] || [];
+            const hourlyRate = s.hourlyRate || (s.monthlyFee ? Math.round(s.monthlyFee / 4) : 100);
+            const unsettledLessons = sLessons.filter((l) => !l.settled);
+            const pendingMinutes = unsettledLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
+            const pendingHours = (pendingMinutes / 60).toFixed(1);
+            const pendingAmount = unsettledLessons.reduce((acc, l) => {
+              const dur = l.duration || 60;
+              const rate = l.hourlyRate || hourlyRate;
+              return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
+            }, 0);
+            const totalMinutes = sLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
+            const totalHours = (totalMinutes / 60).toFixed(1);
+
+            return (
+              <div
+                key={s.id}
+                className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-3.5 hover:border-purple-400/40 transition"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  {/* Student Info Clickable */}
+                  <div
+                    onClick={() => handleOpenStudentProfile(s)}
+                    className="cursor-pointer flex-1"
+                  >
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-white hover:text-purple-300 transition">
+                        {s.name}
+                      </h3>
+                      {getClassTypeBadge(s.classType)}
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">
+                      مادة: <span className="text-purple-300 font-medium">{s.subject}</span> •{' '}
+                      <span className="text-amber-300 font-bold font-mono">
+                        المستحقات: {pendingAmount} ج.م ({pendingHours} ساعة)
+                      </span>
+                      {s.learningStyle && (
+                        <span className="mr-2 text-[11px] text-purple-300/80 truncate max-w-[150px] inline-block align-middle">
+                          🧠 {s.learningStyle}
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-[10px] text-slate-500 mt-0.5 font-mono">
+                      سعر الساعة: {hourlyRate} ج.م • إجمالي الساعات: {totalHours} س ({sLessons.length} حصص)
+                    </p>
                   </div>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    مادة: <span className="text-purple-300">{s.subject}</span> •{' '}
-                    <span className="font-mono">{s.monthlyFee} ج.م/شهرياً</span>
-                    {s.learningStyle && (
-                      <span className="mr-2 text-[11px] text-amber-300/90 truncate max-w-[150px] inline-block align-middle">
-                        🧠 {s.learningStyle}
+
+                  {/* Dues Status Badge / Quick Settle Indicator */}
+                  <div
+                    onClick={() => handleOpenStudentProfile(s)}
+                    className="cursor-pointer flex-shrink-0"
+                  >
+                    {pendingAmount > 0 ? (
+                      <span
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-950/80 border border-amber-500/40 text-amber-300 hover:bg-amber-900/80 transition shadow"
+                        title="مستحقات معلقة - اضغط لتفاصيل الحساب والتصفية"
+                      >
+                        <Clock className="w-3 h-3 text-amber-400" />
+                        <span>مستحق: {pendingAmount} ج.م</span>
+                      </span>
+                    ) : (
+                      <span
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/80 transition shadow"
+                        title="خالص الحساب - لا توجد مستحقات معلقة"
+                      >
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                        <span>خالص الحساب ✅</span>
                       </span>
                     )}
-                  </p>
+                  </div>
                 </div>
 
-                {/* Quick Payment Status Toggle */}
-                <button
-                  type="button"
-                  onClick={() => toggleStudentPaymentStatus(profile.id, s.id, s.paymentStatus)}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold transition cursor-pointer ${
-                    s.paymentStatus === 'paid'
-                      ? 'bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60'
-                      : 'bg-rose-950/70 border border-rose-500/40 text-rose-300 hover:bg-rose-900/60'
-                  }`}
-                  title="اضغط لتغيير حالة دفع هذا الشهر"
-                >
-                  {s.paymentStatus === 'paid' ? (
-                    <>
-                      <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                      <span>دفع</span>
-                    </>
-                  ) : (
-                    <>
-                      <XCircle className="w-3 h-3 text-rose-400" />
-                      <span>لم يدفع</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-              {/* Action Buttons Row */}
-              <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  {s.whatsapp ? (
-                    <a
-                      href={`https://wa.me/${s.whatsapp.replace(/[^0-9]/g, '')}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-950/60 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-900/50 transition"
+                {/* Action Buttons Row */}
+                <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    {s.whatsapp ? (
+                      <a
+                        href={`https://wa.me/${s.whatsapp.replace(/[^0-9]/g, '')}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-950/60 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-900/50 transition"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        <span>واتساب</span>
+                      </a>
+                    ) : (
+                      <span className="text-[11px] text-slate-500 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800">
+                        بدون واتساب
+                      </span>
+                    )}
+                    <button
+                      onClick={() => handleOpenStudentProfile(s)}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-950/60 border border-purple-500/30 text-purple-300 hover:bg-purple-900/50 transition cursor-pointer"
                     >
-                      <MessageCircle className="w-3.5 h-3.5" />
-                      <span>واتساب</span>
-                    </a>
-                  ) : (
-                    <span className="text-[11px] text-slate-500 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800">
-                      بدون واتساب
-                    </span>
-                  )}
-                  <button
-                    onClick={() => handleOpenStudentProfile(s)}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-950/60 border border-purple-500/30 text-purple-300 hover:bg-purple-900/50 transition cursor-pointer"
-                  >
-                    <BookOpen className="w-3.5 h-3.5" />
-                    <span>متابعة وتقارير</span>
-                  </button>
-                </div>
+                      <BookOpen className="w-3.5 h-3.5" />
+                      <span>متابعة وتصفية</span>
+                    </button>
+                  </div>
 
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => handleOpenEditModal(s)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
-                    title="تعديل"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => setShowDeleteConfirm(s)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition cursor-pointer"
-                    title="حذف"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleOpenEditModal(s)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                      title="تعديل"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setShowDeleteConfirm(s)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition cursor-pointer"
+                      title="حذف"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -933,17 +1034,24 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  المصروفات الشهرية (ج.م)
+                <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center justify-between">
+                  <span>سعر الساعة (Hourly Rate) *</span>
+                  <span className="text-[10px] text-amber-300 font-normal">تُحسب قيمة كل حصة تلقائياً بالمعادلة: (المدة ÷ 60) × سعر الساعة</span>
                 </label>
-                <input
-                  type="number"
-                  value={formMonthlyFee}
-                  onChange={(e) => setFormMonthlyFee(Number(e.target.value))}
-                  placeholder="300"
-                  min={0}
-                  className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
-                />
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={formHourlyRate}
+                    onChange={(e) => setFormHourlyRate(Number(e.target.value))}
+                    placeholder="100"
+                    min={0}
+                    required
+                    className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
+                  />
+                  <span className="absolute left-3 top-2 text-xs text-slate-400 pointer-events-none">
+                    ج.م / ساعة
+                  </span>
+                </div>
               </div>
 
               {/* Collapsible 1: إزاي الطالب ده بيتعلم أحسن؟ (Accordion - مغلق افتراضياً) */}
@@ -1269,62 +1377,100 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
               </button>
             </div>
 
-            {/* SECTION 1: SECTION "تابع حصص ودفع الطالب" */}
-            <div className="rounded-2xl bg-slate-950/70 border border-purple-500/20 p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <CreditCard className="w-4 h-4 text-emerald-400" />
-                  <span className="text-xs font-bold text-white">تابع حصص ودفع الطالب</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    toggleStudentPaymentStatus(
-                      profile.id,
-                      selectedProfileStudent.id,
-                      selectedProfileStudent.paymentStatus
-                    )
-                  }
-                  className={`text-[11px] font-bold px-2 py-0.5 rounded-full border transition cursor-pointer ${
-                    selectedProfileStudent.paymentStatus === 'paid'
-                      ? 'bg-emerald-950 border-emerald-500/40 text-emerald-300'
-                      : 'bg-rose-950 border-rose-500/40 text-rose-300'
-                  }`}
-                >
-                  {selectedProfileStudent.paymentStatus === 'paid' ? 'دفع هذا الشهر ✅' : 'لم يدفع بعد ❌'}
-                </button>
-              </div>
+            {/* SECTION 1: SECTION "حسابات ومستحقات الطالب (نظام سعر الساعة)" */}
+            {(() => {
+              const hourlyRate = selectedProfileStudent.hourlyRate || (selectedProfileStudent.monthlyFee ? Math.round(selectedProfileStudent.monthlyFee / 4) : 100);
+              const unsettledLessons = studentLessons.filter((l) => !l.settled);
+              const pendingMinutes = unsettledLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
+              const pendingHours = (pendingMinutes / 60).toFixed(1);
+              const pendingAmount = unsettledLessons.reduce((acc, l) => {
+                const dur = l.duration || 60;
+                const rate = l.hourlyRate || hourlyRate;
+                return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
+              }, 0);
+              const collectedAmount = studentLessons.filter((l) => l.settled).reduce((acc, l) => {
+                const dur = l.duration || 60;
+                const rate = l.hourlyRate || hourlyRate;
+                return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
+              }, 0);
+              const totalMinutes = studentLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
+              const totalHours = (totalMinutes / 60).toFixed(1);
 
-              <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
-                  <span className="text-[10px] text-slate-400 block">إجمالي الحصص</span>
-                  <span className="font-bold text-white font-mono text-sm">{totalLessons}</span>
-                </div>
-                <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
-                  <span className="text-[10px] text-slate-400 block">المصروفات</span>
-                  <span className="font-bold text-amber-300 font-mono text-sm">
-                    {selectedProfileStudent.monthlyFee} ج.م
-                  </span>
-                </div>
-                <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
-                  <span className="text-[10px] text-slate-400 block">نسبة الحضور</span>
-                  <span className="font-bold text-emerald-400 font-mono text-sm">
-                    {totalLessons > 0 ? Math.round((presentCount / totalLessons) * 100) : 100}%
-                  </span>
-                </div>
-              </div>
+              return (
+                <div className="rounded-2xl bg-slate-950/70 border border-purple-500/20 p-3.5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30">
+                        <DollarSign className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-white block">حسابات ومستحقات الطالب</span>
+                        <span className="text-[10px] text-emerald-300 font-semibold">سعر الساعة: {hourlyRate} ج.م/ساعة</span>
+                      </div>
+                    </div>
 
-              {/* WhatsApp Payment Reminder Button */}
-              {selectedProfileStudent.whatsapp && (
-                <button
-                  onClick={handleSendPaymentReminder}
-                  className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-xs font-semibold transition cursor-pointer"
-                >
-                  <MessageCircle className="w-3.5 h-3.5 text-amber-300" />
-                  <span>تجهيز رسالة تذكير بالمصروفات عبر واتساب</span>
-                </button>
-              )}
-            </div>
+                    <div className="flex items-center gap-1.5">
+                      {pendingAmount > 0 ? (
+                        <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-950 border border-amber-500/40 text-amber-300 shadow">
+                          مستحق: {pendingAmount} ج.م ⏳
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-950 border border-emerald-500/40 text-emerald-300 shadow">
+                          خالص الحساب ✅
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">المستحقات المعلقة</span>
+                      <span className="font-bold text-amber-300 font-mono text-sm block mt-0.5">
+                        {pendingAmount} ج.م
+                      </span>
+                      <span className="text-[9px] text-slate-400">({pendingHours} ساعة غير مصفاة)</span>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">المبالغ المحصلة</span>
+                      <span className="font-bold text-emerald-400 font-mono text-sm block mt-0.5">
+                        {collectedAmount} ج.م
+                      </span>
+                      <span className="text-[9px] text-emerald-300/80">تم تصفيتها سابقاً</span>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">إجمالي الساعات</span>
+                      <span className="font-bold text-white font-mono text-sm block mt-0.5">
+                        {totalHours} س
+                      </span>
+                      <span className="text-[9px] text-purple-300">{studentLessons.length} حصة كلية</span>
+                    </div>
+                  </div>
+
+                  {/* Actions: Settle Account Button & WhatsApp Statement */}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmSettleStudent(selectedProfileStudent)}
+                      className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-md active:scale-98"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>تصفية الحساب (تصفير) 💰</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSendPaymentReminder}
+                      className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-xs font-semibold transition cursor-pointer active:scale-98"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5 text-amber-300" />
+                      <span>مطالبة مالية (واتساب)</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* SECTION 2: SECTION "إزاي الطالب ده بيتعلم أحسن؟" (Collapsible - مغلق افتراضياً) */}
             <div className="rounded-2xl bg-gradient-to-r from-purple-950/40 to-indigo-950/40 border border-purple-500/25 overflow-hidden transition-all shadow-md">
@@ -2177,6 +2323,45 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                   إلغاء
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settle Account Confirmation Modal (تصفية الحساب وبدء دورة جديدة) */}
+      {showConfirmSettleStudent && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 text-right">
+          <div className="w-full max-w-sm bg-slate-900 border border-emerald-500/40 rounded-3xl p-5 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30 flex-shrink-0">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">تأكيد تصفية حساب الطالب</h3>
+                <p className="text-xs text-purple-300 font-semibold">{showConfirmSettleStudent.name}</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed bg-slate-950/60 p-3 rounded-2xl border border-slate-800">
+              عند التأكيد، سيتم تصفير المستحقات المعلقة الحالية واعتبار كافة الحصص السابقة مدفوعة ومصفاة، لتبدأ دورة حسابية جديدة للطالب فوراً.
+            </p>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                disabled={isSettling}
+                onClick={() => handleConfirmSettleAccount(showConfirmSettleStudent)}
+                className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition cursor-pointer shadow-lg shadow-emerald-950/50 active:scale-98 disabled:opacity-50"
+              >
+                {isSettling ? 'جارٍ التصفية...' : 'تأكيد واستلام الأجر 💰'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowConfirmSettleStudent(null)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition cursor-pointer active:scale-98"
+              >
+                إلغاء
+              </button>
             </div>
           </div>
         </div>

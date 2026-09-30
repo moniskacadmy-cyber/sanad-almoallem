@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { TeacherProfile, Student, ScheduleSlot, ClassType, RecurrenceType } from '../types';
-import { addSchedule, updateSchedule, deleteSchedule } from '../firebase';
+import { addSchedule, updateSchedule, deleteSchedule, toggleScheduleCompletedToday } from '../firebase';
 import {
   Calendar,
   Clock,
@@ -13,6 +13,7 @@ import {
   Building,
   UserCheck,
   Check,
+  CheckCircle,
   LayoutGrid,
   List,
   Palette,
@@ -22,6 +23,7 @@ import {
   Info,
   ExternalLink,
   MessageCircle,
+  Play,
 } from 'lucide-react';
 
 interface ScheduleTabProps {
@@ -353,6 +355,45 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
     return `${displayH}:${endM.toString().padStart(2, '0')} ${period}`;
   };
 
+  // Today's evaluated slots & Next upcoming lesson countdown
+  const now = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const todayStr = new Intl.DateTimeFormat('en-CA').format(now);
+  const arabicDays = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+  const todayArabicName = arabicDays[todayIndex];
+
+  const todayScheduleSlots = schedules
+    .filter((s) => s.dayOfWeek === todayIndex)
+    .sort((a, b) => a.time.localeCompare(b.time));
+
+  const evaluatedTodaySchedule = todayScheduleSlots.map((item) => {
+    let startMin = 0;
+    let endMin = 0;
+    if (item.time && item.time.includes(':')) {
+      const [h, m] = item.time.split(':').map(Number);
+      startMin = h * 60 + m;
+      endMin = startMin + (item.duration || 60);
+    }
+    const isExplicitlyCompleted = item.completedTodayDate === todayStr;
+    const isPastTime = nowMinutes >= endMin;
+    const isCompleted = isExplicitlyCompleted || isPastTime;
+    const isOngoing = nowMinutes >= startMin && nowMinutes < endMin && !isExplicitlyCompleted;
+    const isUpcoming = startMin > nowMinutes && !isExplicitlyCompleted;
+    const diffToStart = startMin - nowMinutes;
+
+    return {
+      slot: item,
+      startMin,
+      endMin,
+      isCompleted,
+      isOngoing,
+      isUpcoming,
+      diffToStart,
+    };
+  });
+
+  const nextUpcomingOrOngoing = evaluatedTodaySchedule.find((c) => c.isOngoing || c.isUpcoming);
+
   const filteredListSchedules = schedules.filter((s) => {
     if (selectedDayFilter === 'all') return true;
     return s.dayOfWeek === selectedDayFilter;
@@ -408,6 +449,53 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
           </button>
         </div>
       </div>
+
+      {/* Smart Upcoming Lesson Countdown Banner */}
+      {(() => {
+        let badgeText = 'جدول اليوم';
+        let mainTitle = 'لا توجد حصص متبقية اليوم 🌟';
+        let mainSubtitle = todayScheduleSlots.length > 0 ? 'اكتملت جميع حصص اليوم بنجاح، أحسنت عملاً!' : 'لا توجد حصص مجدولة لليوم في الجدول الأسبوعي.';
+
+        if (nextUpcomingOrOngoing) {
+          if (nextUpcomingOrOngoing.isOngoing) {
+            badgeText = 'حصة جارية الآن 🔴';
+            mainTitle = `الحصة الجارية: ${nextUpcomingOrOngoing.slot.studentName}`;
+            mainSubtitle = `بدأت الساعة ${nextUpcomingOrOngoing.slot.time} (متبقي ${nextUpcomingOrOngoing.endMin - nowMinutes} دقيقة)`;
+          } else {
+            const diffM = nextUpcomingOrOngoing.diffToStart;
+            const timeStr = diffM >= 60 ? `${Math.floor(diffM / 60)} ساعة و ${diffM % 60} دقيقة` : `${diffM} دقيقة`;
+            badgeText = `خلال ${timeStr} ⏰`;
+            mainTitle = `الحصة القادمة: ${nextUpcomingOrOngoing.slot.studentName} - خلال ${timeStr}`;
+            mainSubtitle = `الساعة ${nextUpcomingOrOngoing.slot.time} • مدة الحصة: ${nextUpcomingOrOngoing.slot.duration || 60} دقيقة`;
+          }
+        }
+
+        return (
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-purple-800 via-indigo-800 to-purple-900 p-4 shadow-xl border border-purple-400/30 text-right">
+            <div className="relative z-10 flex items-center justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <span className="inline-block px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-full bg-amber-400 text-slate-950 mb-1.5 shadow">
+                  {badgeText}
+                </span>
+                <h3 className="text-sm font-extrabold text-white truncate">{mainTitle}</h3>
+                <p className="text-xs text-purple-200 mt-0.5 leading-relaxed">
+                  {mainSubtitle}
+                </p>
+              </div>
+              {nextUpcomingOrOngoing && (
+                <button
+                  onClick={() => setViewingScheduleDetails(nextUpcomingOrOngoing.slot)}
+                  className="flex-shrink-0 flex items-center gap-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 px-3.5 py-2.5 text-xs font-black shadow-lg shadow-amber-950/40 active:scale-95 transition cursor-pointer"
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>عرض الموعد</span>
+                </button>
+              )}
+            </div>
+            <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-purple-500/20 blur-xl pointer-events-none" />
+          </div>
+        );
+      })()}
 
       {/* Notification Banner (if not granted) */}
       {notificationStatus !== 'granted' && (
@@ -573,9 +661,12 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
                       {/* Rendered Booked Classes on top */}
                       {daySchedules.map((slot) => {
                         const startMin = getMinutesFromTime(slot.time);
+                        const endMin = startMin + (slot.duration || 60);
                         const topPx = (startMin / 30) * ROW_HEIGHT;
                         const heightPx = Math.max(32, (slot.duration / 30) * ROW_HEIGHT - 3);
                         const colorInfo = getColorStyle(slot.color);
+                        const isSlotCompleted =
+                          isToday && (slot.completedTodayDate === todayStr || nowMinutes >= endMin);
 
                         return (
                           <div
@@ -584,16 +675,22 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
                             style={{
                               top: `${topPx}px`,
                               height: `${heightPx}px`,
-                              backgroundColor: colorInfo.bg,
-                              borderColor: colorInfo.border,
-                              color: colorInfo.text,
+                              backgroundColor: isSlotCompleted ? 'rgba(6, 78, 59, 0.45)' : colorInfo.bg,
+                              borderColor: isSlotCompleted ? 'rgba(16, 185, 129, 0.5)' : colorInfo.border,
+                              color: isSlotCompleted ? '#d1fae5' : colorInfo.text,
                             }}
-                            className="absolute right-0.5 left-0.5 rounded-xl border p-1.5 overflow-hidden transition hover:scale-[1.02] hover:z-20 cursor-pointer shadow-md flex flex-col justify-between"
+                            className={`absolute right-0.5 left-0.5 rounded-xl border p-1.5 overflow-hidden transition hover:scale-[1.02] hover:z-20 cursor-pointer shadow-md flex flex-col justify-between ${
+                              isSlotCompleted ? 'opacity-80' : ''
+                            }`}
                           >
                             <div>
                               <div className="flex items-center justify-between gap-1 leading-tight">
-                                <span className="font-bold text-xs truncate drop-shadow-sm">
-                                  {slot.studentName}
+                                <span
+                                  className={`font-bold text-xs truncate drop-shadow-sm ${
+                                    isSlotCompleted ? 'line-through text-slate-200 decoration-emerald-400' : ''
+                                  }`}
+                                >
+                                  {isSlotCompleted ? `✓ ${slot.studentName}` : slot.studentName}
                                 </span>
                                 {slot.classType === 'online' && (
                                   <Video className="w-2.5 h-2.5 flex-shrink-0 opacity-80" />
@@ -607,10 +704,13 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
                               </span>
                             </div>
 
-                            {heightPx > 45 && slot.locationOrLink && (
-                              <span className="text-[9px] opacity-75 truncate block">
-                                {slot.locationOrLink}
-                              </span>
+                            {heightPx > 45 && (
+                              <div className="flex items-center justify-between text-[9px] opacity-80">
+                                <span className="truncate">{slot.locationOrLink || ''}</span>
+                                {isSlotCompleted && (
+                                  <span className="text-emerald-300 font-bold">تمت ✅</span>
+                                )}
+                              </div>
                             )}
                           </div>
                         );
@@ -683,29 +783,61 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
               {filteredListSchedules.map((slot) => {
                 const colorInfo = getColorStyle(slot.color);
                 const dayObj = WEEK_DAYS.find((d) => d.dayIndex === slot.dayOfWeek);
+                const isTodaySlot = slot.dayOfWeek === todayIndex;
+                const [slotH, slotM] = slot.time.split(':').map(Number);
+                const startMin = (slotH || 0) * 60 + (slotM || 0);
+                const endMin = startMin + (slot.duration || 60);
+                const isExplicitlyCompleted = slot.completedTodayDate === todayStr;
+                const isPastTime = isTodaySlot && nowMinutes >= endMin;
+                const isCompleted = isExplicitlyCompleted || isPastTime;
 
                 return (
                   <div
                     key={slot.id}
                     onClick={() => setViewingScheduleDetails(slot)}
-                    style={{ borderColor: colorInfo.border }}
-                    className="rounded-2xl bg-slate-900/90 border p-3.5 flex items-center justify-between hover:border-purple-400 transition cursor-pointer shadow-md"
+                    style={{ borderColor: isCompleted ? 'rgba(16, 185, 129, 0.4)' : colorInfo.border }}
+                    className={`rounded-2xl border p-3.5 flex items-center justify-between transition cursor-pointer shadow-md ${
+                      isCompleted
+                        ? 'bg-slate-900/60 opacity-80 border-emerald-500/40'
+                        : 'bg-slate-900/90 hover:border-purple-400'
+                    }`}
                   >
                     <div className="flex items-center gap-3">
                       <div
-                        style={{ backgroundColor: colorInfo.bg, borderColor: colorInfo.border }}
+                        style={{
+                          backgroundColor: isCompleted ? 'rgba(6, 78, 59, 0.5)' : colorInfo.bg,
+                          borderColor: isCompleted ? 'rgba(16, 185, 129, 0.4)' : colorInfo.border,
+                        }}
                         className="w-12 h-12 rounded-2xl border flex flex-col items-center justify-center font-bold"
                       >
-                        <span className="font-mono text-xs" style={{ color: colorInfo.text }}>
-                          {slot.time}
+                        <span
+                          className="font-mono text-xs"
+                          style={{ color: isCompleted ? '#34d399' : colorInfo.text }}
+                        >
+                          {isCompleted ? '✓' : slot.time}
                         </span>
                         <span className="text-[9px] text-slate-400">{slot.duration}د</span>
                       </div>
 
                       <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-bold text-white">{slot.studentName}</h3>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3
+                            className={`text-sm font-bold ${
+                              isCompleted
+                                ? 'line-through text-slate-300 decoration-emerald-400'
+                                : 'text-white'
+                            }`}
+                          >
+                            {slot.studentName}
+                          </h3>
                           {getClassTypeBadge(slot.classType)}
+
+                          {isCompleted && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/90 text-emerald-300 border border-emerald-500/40 font-bold flex items-center gap-1 shadow-sm">
+                              <Check className="w-3 h-3 text-emerald-400 stroke-[3]" />
+                              <span>تمت الحصة ✅</span>
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs text-slate-400 mt-0.5">
                           {dayObj?.name} •{' '}
@@ -716,6 +848,25 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
                     </div>
 
                     <div className="flex items-center gap-1">
+                      {/* Toggle Attendance / Completed */}
+                      {isTodaySlot && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleScheduleCompletedToday(profile.id, slot.id, !slot.completedTodayDate);
+                          }}
+                          className={`p-1.5 rounded-lg border transition cursor-pointer ${
+                            slot.completedTodayDate
+                              ? 'bg-emerald-900/40 border-emerald-500/40 text-emerald-300 hover:bg-emerald-800/40'
+                              : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-emerald-300 hover:bg-slate-800'
+                          }`}
+                          title={slot.completedTodayDate ? 'إلغاء وسم تمت الحصة' : 'تسجيل حضور / تمت الحصة'}
+                        >
+                          <CheckCircle className={`w-3.5 h-3.5 ${slot.completedTodayDate ? 'text-emerald-400' : ''}`} />
+                        </button>
+                      )}
+
                       <button
                         onClick={(e) => {
                           e.stopPropagation();

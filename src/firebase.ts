@@ -769,8 +769,16 @@ export async function addLessonLog(
   try {
     const colRef = collection(db, 'teachers', teacherId, 'students', studentId, 'lessons');
     const newDoc = doc(colRef);
+    const duration = lesson.duration || 60;
+    const hourlyRate = lesson.hourlyRate || 100;
+    const computedCost = lesson.cost !== undefined ? lesson.cost : Math.round((duration / 60) * hourlyRate);
+
     await setDoc(newDoc, {
       ...lesson,
+      duration,
+      hourlyRate,
+      cost: computedCost,
+      settled: lesson.settled !== undefined ? lesson.settled : false,
       id: newDoc.id,
       studentId,
       teacherId,
@@ -779,6 +787,47 @@ export async function addLessonLog(
     return newDoc.id;
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export async function settleStudentAccount(teacherId: string, studentId: string) {
+  const path = `teachers/${teacherId}/students/${studentId}`;
+  try {
+    const snap = await getDocs(collection(db, 'teachers', teacherId, 'students', studentId, 'lessons'));
+    const updates = snap.docs
+      .filter((d) => !d.data().settled)
+      .map((d) =>
+        updateDoc(doc(db, 'teachers', teacherId, 'students', studentId, 'lessons', d.id), {
+          settled: true,
+          settledAt: serverTimestamp(),
+        })
+      );
+    await Promise.all(updates);
+
+    await updateDoc(doc(db, 'teachers', teacherId, 'students', studentId), {
+      paymentStatus: 'paid',
+      lastSettledAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function toggleScheduleCompletedToday(
+  teacherId: string,
+  scheduleId: string,
+  isCompleted: boolean
+) {
+  const path = `teachers/${teacherId}/schedules/${scheduleId}`;
+  try {
+    const todayStr = new Intl.DateTimeFormat('en-CA').format(new Date());
+    await updateDoc(doc(db, 'teachers', teacherId, 'schedules', scheduleId), {
+      completedTodayDate: isCompleted ? todayStr : null,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
   }
 }
 

@@ -47,6 +47,9 @@ import {
   VolumeX,
   Copy,
   Send,
+  DollarSign,
+  TrendingUp,
+  ChevronLeft,
 } from 'lucide-react';
 
 interface SettingsTabProps {
@@ -57,6 +60,7 @@ interface SettingsTabProps {
   isAdmin?: boolean;
   onOpenUpgradeModal: () => void;
   onOpenAdminDashboard?: () => void;
+  onOpenFinancialDashboard?: () => void;
 }
 
 export const SettingsTab: React.FC<SettingsTabProps> = ({
@@ -67,6 +71,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   isAdmin,
   onOpenUpgradeModal,
   onOpenAdminDashboard,
+  onOpenFinancialDashboard,
 }) => {
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [editName, setEditName] = useState(profile.name);
@@ -497,6 +502,37 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Financial Summary & Earnings Dashboard Entry */}
+      {onOpenFinancialDashboard && (
+        <div
+          onClick={onOpenFinancialDashboard}
+          className="rounded-2xl bg-gradient-to-r from-emerald-950/70 via-slate-900 to-teal-950/70 border border-emerald-500/40 p-4 space-y-3 cursor-pointer hover:border-emerald-400 transition shadow-xl group"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center shadow group-hover:scale-105 transition flex-shrink-0">
+                <DollarSign className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-white">الملخص المالي والأرباح</h3>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-500/40 text-emerald-300 font-bold">
+                    نظام سعر الساعة 💰
+                  </span>
+                </div>
+                <p className="text-xs text-emerald-200/80 mt-0.5">
+                  أرباح الشهر، إجمالي ساعات التدريس، المستحقات المعلقة، وتصفية حساب الطلاب
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 text-xs font-bold text-emerald-300 group-hover:translate-x-[-2px] transition flex-shrink-0">
+              <span>فتح لوحة الأرباح</span>
+              <ChevronLeft className="w-4 h-4" />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* PWA Install Component */}
       <div className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-4 space-y-2">

@@ -21,6 +21,7 @@ import { StudentsTab } from './components/StudentsTab';
 import { ScheduleTab } from './components/ScheduleTab';
 import { LibraryTab } from './components/LibraryTab';
 import { SettingsTab } from './components/SettingsTab';
+import { FinancialDashboard } from './components/FinancialDashboard';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AdminSecretGate } from './components/AdminSecretGate';
 import { NearExpiryOverlay } from './components/NearExpiryOverlay';
@@ -68,6 +69,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<number>(0);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
+  const [showFinancialDashboard, setShowFinancialDashboard] = useState(false);
 
   // Collections state for current teacher
   const [students, setStudents] = useState<Student[]>([]);
@@ -93,21 +95,28 @@ export default function App() {
         return;
       }
 
-      // 2. If Admin view is open, return to Main Dashboard
+      // 2. If Financial Dashboard is open, return to Main Dashboard
+      if (showFinancialDashboard) {
+        setShowFinancialDashboard(false);
+        window.history.pushState({ tab: activeTab }, '', window.location.pathname);
+        return;
+      }
+
+      // 3. If Admin view is open, return to Main Dashboard
       if (showAdminView) {
         setShowAdminView(false);
         window.history.pushState({ tab: 0 }, '', '/');
         return;
       }
 
-      // 3. If Upgrade modal is open, close it
+      // 4. If Upgrade modal is open, close it
       if (showUpgradeModal) {
         setShowUpgradeModal(false);
         window.history.pushState({ tab: activeTab }, '', window.location.pathname);
         return;
       }
 
-      // 4. If user is in any sub-tab (Students, Schedule, Library, Settings),
+      // 5. If user is in any sub-tab (Students, Schedule, Library, Settings),
       // redirect them back to the Main Dashboard (Tab 0) instead of exiting
       if (activeTab !== 0) {
         setActiveTab(0);
@@ -115,7 +124,7 @@ export default function App() {
         return;
       }
 
-      // 5. If user is ALREADY at the Main Dashboard (Tab 0) and pressed Back:
+      // 6. If user is ALREADY at the Main Dashboard (Tab 0) and pressed Back:
       // Show confirmation dialog: "هل أنت متأكد من رغبتك في الخروج من التطبيق؟"
       setShowExitConfirmModal(true);
       window.history.pushState({ tab: 0 }, '', '/');
@@ -123,7 +132,7 @@ export default function App() {
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [activeTab, showAdminView, showUpgradeModal, showExitConfirmModal]);
+  }, [activeTab, showAdminView, showUpgradeModal, showExitConfirmModal, showFinancialDashboard]);
 
   const handleSelectTab = (idx: number) => {
     setActiveTab(idx);
@@ -484,42 +493,58 @@ export default function App() {
 
         {/* Main Body Content */}
         <main className="flex-1 p-4 pb-20 overflow-y-auto">
-          {activeTab === 0 && (
-            <HomeTab
+          {showFinancialDashboard ? (
+            <FinancialDashboard
               profile={profile}
               students={students}
-              schedules={schedules}
-              onNavigateToTab={(t) => setActiveTab(t)}
-              onOpenUpgradeModal={() => setShowUpgradeModal(true)}
+              onBackToApp={() => setShowFinancialDashboard(false)}
+              onOpenStudentDetails={() => {
+                setShowFinancialDashboard(false);
+                setActiveTab(1);
+              }}
             />
-          )}
-          {activeTab === 1 && (
-            <StudentsTab
-              profile={profile}
-              students={students}
-              schedules={schedules}
-            />
-          )}
-          {activeTab === 2 && (
-            <ScheduleTab
-              profile={profile}
-              students={students}
-              schedules={schedules}
-            />
-          )}
-          {activeTab === 3 && (
-            <LibraryTab profile={profile} libraryItems={libraryItems} />
-          )}
-          {activeTab === 4 && (
-            <SettingsTab
-              profile={profile}
-              students={students}
-              schedules={schedules}
-              libraryItems={libraryItems}
-              isAdmin={isAdmin}
-              onOpenUpgradeModal={() => setShowUpgradeModal(true)}
-              onOpenAdminDashboard={() => setShowAdminView(true)}
-            />
+          ) : (
+            <>
+              {activeTab === 0 && (
+                <HomeTab
+                  profile={profile}
+                  students={students}
+                  schedules={schedules}
+                  onNavigateToTab={(t) => setActiveTab(t)}
+                  onOpenUpgradeModal={() => setShowUpgradeModal(true)}
+                  onOpenFinancialDashboard={() => setShowFinancialDashboard(true)}
+                />
+              )}
+              {activeTab === 1 && (
+                <StudentsTab
+                  profile={profile}
+                  students={students}
+                  schedules={schedules}
+                />
+              )}
+              {activeTab === 2 && (
+                <ScheduleTab
+                  profile={profile}
+                  students={students}
+                  schedules={schedules}
+                />
+              )}
+              {activeTab === 3 && (
+                <LibraryTab profile={profile} libraryItems={libraryItems} />
+              )}
+              {activeTab === 4 && (
+                <SettingsTab
+                  profile={profile}
+                  students={students}
+                  schedules={schedules}
+                  libraryItems={libraryItems}
+                  isAdmin={isAdmin}
+                  onOpenUpgradeModal={() => setShowUpgradeModal(true)}
+                  onOpenAdminDashboard={() => setShowAdminView(true)}
+                  onOpenFinancialDashboard={() => setShowFinancialDashboard(true)}
+                />
+              )}
+            </>
           )}
         </main>
 

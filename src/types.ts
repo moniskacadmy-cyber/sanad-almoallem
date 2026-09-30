@@ -41,8 +41,13 @@ export interface Student {
   whatsapp?: string;
   subject: string;
   classType: ClassType;
-  monthlyFee: number;
-  paymentStatus: PaymentStatus;
+  hourlyRate: number; // سعر الساعة (Hourly Rate)
+  monthlyFee?: number; // legacy backward compatibility
+  pendingDues?: number; // المستحقات المعلقة غير المدفوعة
+  totalHours?: number; // إجمالي الساعات المنفذة
+  collectedDues?: number; // المبالغ المحصلة
+  lastSettledAt?: any; // تاريخ آخر تصفية
+  paymentStatus?: PaymentStatus;
   lastPaymentMonth?: string;
   learningStyle?: string;
   notes?: string;
@@ -59,6 +64,11 @@ export interface LessonLog {
   topic: string; // ما تم شرحه
   homework?: string; // الواجب
   attendance: AttendanceStatus;
+  duration?: number; // مدة الحصة بالدقائق
+  hourlyRate?: number; // سعر الساعة للحصة
+  cost?: number; // قيمة الحصة = (duration / 60) * hourlyRate
+  settled?: boolean; // هل تم تصفية حساب هذه الحصة
+  settledAt?: any; // تاريخ التصفية
   rating?: number; // 1 - 5
   notes?: string;
   createdAt: any;
@@ -76,6 +86,7 @@ export interface ScheduleSlot {
   classType: ClassType;
   color?: string;
   locationOrLink?: string;
+  completedTodayDate?: string; // YYYY-MM-DD إذا تم تعليم الحصة كمنجزة اليوم
   createdAt: any;
   updatedAt: any;
 }

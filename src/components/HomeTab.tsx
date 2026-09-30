@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { TeacherProfile, Student, ScheduleSlot, ClassType } from '../types';
-import { addLessonLog, toggleStudentPaymentStatus } from '../firebase';
+import { addLessonLog, toggleStudentPaymentStatus, toggleScheduleCompletedToday } from '../firebase';
 import { getColorStyle } from './ScheduleTab';
 import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import {
@@ -23,6 +23,8 @@ import {
   Send,
   FileText,
   Copy,
+  DollarSign,
+  TrendingUp,
 } from 'lucide-react';
 
 interface HomeTabProps {
@@ -31,6 +33,7 @@ interface HomeTabProps {
   schedules: ScheduleSlot[];
   onNavigateToTab: (tabIndex: number) => void;
   onOpenUpgradeModal: () => void;
+  onOpenFinancialDashboard?: () => void;
 }
 
 export const HomeTab: React.FC<HomeTabProps> = ({
@@ -39,6 +42,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   schedules,
   onNavigateToTab,
   onOpenUpgradeModal,
+  onOpenFinancialDashboard,
 }) => {
   const [showStartClassModal, setShowStartClassModal] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
@@ -57,6 +61,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   // Current Arabic date & day
   const now = new Date();
   const currentDayOfWeek = now.getDay(); // 0 is Sunday, 1 is Monday, etc.
+  const todayStr = new Intl.DateTimeFormat('en-CA').format(now); // YYYY-MM-DD
   const arabicDays = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
   const todayArabicName = arabicDays[currentDayOfWeek];
   const dateFormatted = new Intl.DateTimeFormat('ar-EG', {
@@ -65,8 +70,44 @@ export const HomeTab: React.FC<HomeTabProps> = ({
     year: 'numeric',
   }).format(now);
 
-  // Filter today's classes
-  const todayClasses = schedules.filter((s) => s.dayOfWeek === currentDayOfWeek);
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+  // Filter and sort today's classes
+  const todayClasses = schedules
+    .filter((s) => s.dayOfWeek === currentDayOfWeek)
+    .sort((a, b) => a.time.localeCompare(b.time));
+
+  // Determine completed vs upcoming status for each class
+  const evaluatedTodayClasses = todayClasses.map((item) => {
+    let startMin = 0;
+    let endMin = 0;
+    if (item.time && item.time.includes(':')) {
+      const [h, m] = item.time.split(':').map(Number);
+      startMin = h * 60 + m;
+      endMin = startMin + (item.duration || 60);
+    }
+    const isExplicitlyCompleted = item.completedTodayDate === todayStr;
+    const isPastTime = nowMinutes >= endMin;
+    const isCompleted = isExplicitlyCompleted || isPastTime;
+    const isOngoing = nowMinutes >= startMin && nowMinutes < endMin && !isExplicitlyCompleted;
+    const isUpcoming = startMin > nowMinutes && !isExplicitlyCompleted;
+    const diffToStart = startMin - nowMinutes;
+    const isUpcomingSoon = isUpcoming && diffToStart <= 30;
+
+    return {
+      slot: item,
+      startMin,
+      endMin,
+      isCompleted,
+      isOngoing,
+      isUpcoming,
+      diffToStart,
+      isUpcomingSoon,
+    };
+  });
+
+  // Find the next upcoming or ongoing class
+  const upcomingOrOngoing = evaluatedTodayClasses.find((c) => c.isOngoing || c.isUpcoming);
 
   // Calculate subscription remaining days
   const getSubscriptionPill = () => {
@@ -152,14 +193,28 @@ export const HomeTab: React.FC<HomeTabProps> = ({
     setSavingClass(true);
     try {
       const todayStr = new Intl.DateTimeFormat('en-CA').format(new Date()); // YYYY-MM-DD
+      const todaySlot = schedules.find((s) => s.studentId === student.id && s.dayOfWeek === currentDayOfWeek);
+      const duration = todaySlot?.duration || 60;
+      const hourlyRate = student.hourlyRate || (student.monthlyFee ? Math.round(student.monthlyFee / 4) : 100);
+      const cost = Math.round((duration / 60) * hourlyRate);
+
       await addLessonLog(profile.id, student.id, {
         date: todayStr,
         topic: classTopic.trim(),
         homework: classHomework.trim(),
         attendance,
+        duration,
+        hourlyRate,
+        cost,
+        settled: false,
         rating,
         notes: '',
       });
+
+      // Mark slot completed today in schedule
+      if (todaySlot) {
+        await toggleScheduleCompletedToday(profile.id, todaySlot.id, true);
+      }
 
       if (sendWhatsApp && student.whatsapp) {
         const attendanceAr =
@@ -244,35 +299,86 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         {getSubscriptionPill()}
       </div>
 
-      {/* Main Action Banner: Start Class */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-purple-800 via-indigo-800 to-purple-900 p-4 shadow-xl border border-purple-400/30 text-right">
-        <div className="relative z-10 flex items-center justify-between">
-          <div>
-            <span className="inline-block px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-full bg-amber-400 text-slate-950 mb-1.5 shadow">
-              تسجيل الحصة
-            </span>
-            <h3 className="text-base font-extrabold text-white">هل لديك حصة جارية الآن؟</h3>
-            <p className="text-xs text-purple-200 mt-0.5 max-w-[240px]">
-              سجل الحضور وما تم شرحه مع إرسال تقرير فوري لولي الأمر عبر الواتساب.
-            </p>
+      {/* Main Action Banner: Smart Upcoming Lesson Countdown */}
+      {(() => {
+        let badgeText = 'جدول اليوم';
+        let mainTitle = 'لا توجد حصص متبقية اليوم 🌟';
+        let mainSubtitle = todayClasses.length > 0 ? 'اكتملت جميع حصص اليوم بنجاح، أحسنت عملاً!' : 'لا توجد حصص مجدولة لليوم في الجدول الأسبوعي.';
+        let targetStudentId = students.length > 0 ? students[0].id : '';
+
+        if (upcomingOrOngoing) {
+          targetStudentId = upcomingOrOngoing.slot.studentId;
+          if (upcomingOrOngoing.isOngoing) {
+            badgeText = 'حصة جارية الآن 🔴';
+            mainTitle = `الحصة الجارية: ${upcomingOrOngoing.slot.studentName}`;
+            mainSubtitle = `بدأت الساعة ${upcomingOrOngoing.slot.time} (متبقي ${upcomingOrOngoing.endMin - nowMinutes} دقيقة)`;
+          } else {
+            const diffM = upcomingOrOngoing.diffToStart;
+            const timeStr = diffM >= 60 ? `${Math.floor(diffM / 60)} ساعة و ${diffM % 60} دقيقة` : `${diffM} دقيقة`;
+            badgeText = `خلال ${timeStr} ⏰`;
+            mainTitle = `الحصة القادمة: ${upcomingOrOngoing.slot.studentName} - خلال ${timeStr}`;
+            mainSubtitle = `الساعة ${upcomingOrOngoing.slot.time} • مدة الحصة: ${upcomingOrOngoing.slot.duration || 60} دقيقة`;
+          }
+        }
+
+        return (
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-purple-800 via-indigo-800 to-purple-900 p-4 shadow-xl border border-purple-400/30 text-right">
+            <div className="relative z-10 flex items-center justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <span className="inline-block px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-full bg-amber-400 text-slate-950 mb-1.5 shadow">
+                  {badgeText}
+                </span>
+                <h3 className="text-sm font-extrabold text-white truncate">{mainTitle}</h3>
+                <p className="text-xs text-purple-200 mt-0.5 leading-relaxed">
+                  {mainSubtitle}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  if (targetStudentId) {
+                    setSelectedStudentId(targetStudentId);
+                  }
+                  setShowStartClassModal(true);
+                }}
+                className="flex-shrink-0 flex items-center gap-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 px-3.5 py-2.5 text-xs font-black shadow-lg shadow-amber-950/40 active:scale-95 transition cursor-pointer"
+              >
+                <Play className="w-3.5 h-3.5 fill-slate-950" />
+                <span>{upcomingOrOngoing ? 'بدء الحصة' : 'تسجيل حصة'}</span>
+              </button>
+            </div>
+            <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-purple-500/20 blur-xl pointer-events-none" />
           </div>
-          <button
-            onClick={() => {
-              if (todayClasses.length > 0 && !selectedStudentId) {
-                setSelectedStudentId(todayClasses[0].studentId);
-              } else if (students.length > 0 && !selectedStudentId) {
-                setSelectedStudentId(students[0].id);
-              }
-              setShowStartClassModal(true);
-            }}
-            className="flex-shrink-0 flex items-center gap-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 px-4 py-3 text-xs font-black shadow-lg shadow-amber-950/40 active:scale-95 transition cursor-pointer"
-          >
-            <Play className="w-4 h-4 fill-slate-950" />
-            <span>بدء الحصة</span>
-          </button>
+        );
+      })()}
+
+      {/* Financial Snapshot Card linking to Financial Dashboard */}
+      {onOpenFinancialDashboard && (
+        <div
+          onClick={onOpenFinancialDashboard}
+          className="rounded-2xl bg-gradient-to-r from-emerald-950/70 via-slate-900 to-purple-950/70 border border-emerald-500/35 p-3 flex items-center justify-between cursor-pointer hover:border-emerald-400/50 transition shadow-lg group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30 shadow group-hover:scale-105 transition flex-shrink-0">
+              <DollarSign className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-bold text-white">الملخص المالي والأرباح (نظام سعر الساعة)</h3>
+                <span className="text-[9px] px-2 py-0.2 rounded-full bg-emerald-950 border border-emerald-500/30 text-emerald-300 font-bold">
+                  جديد 💰
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                متابعة أرباح الشهر وساعات التدريس والمستحقات المعلقة والتصفية لكل طالب
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 text-xs font-bold text-emerald-300 group-hover:translate-x-[-2px] transition flex-shrink-0">
+            <span>عرض الحسابات</span>
+            <ChevronLeft className="w-4 h-4" />
+          </div>
         </div>
-        <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-purple-500/20 blur-xl pointer-events-none" />
-      </div>
+      )}
 
       {/* Quick Stats Grid (4 Responsive Cards) */}
       <div className="grid grid-cols-4 gap-2">
@@ -546,20 +652,13 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           </div>
         ) : (
           <div className="space-y-2">
-            {todayClasses.map((item) => {
+            {evaluatedTodayClasses.map((evalItem) => {
+              const item = evalItem.slot;
               const matchedStudent = students.find((s) => s.id === item.studentId);
               const colorInfo = getColorStyle(item.color);
-
-              // Calculate if class is starting soon (within 30 mins)
-              let isUpcomingSoon = false;
-              let diffMins = 0;
-              if (item.time && item.time.includes(':')) {
-                const [slotH, slotM] = item.time.split(':').map(Number);
-                const slotTotalMinutes = slotH * 60 + slotM;
-                const nowTotalMinutes = now.getHours() * 60 + now.getMinutes();
-                diffMins = slotTotalMinutes - nowTotalMinutes;
-                isUpcomingSoon = diffMins > 0 && diffMins <= 30;
-              }
+              const isCompleted = evalItem.isCompleted;
+              const isUpcomingSoon = evalItem.isUpcomingSoon;
+              const diffMins = evalItem.diffToStart;
 
               // Build pre-filled 15-minute reminder message for WhatsApp
               let whatsappReminderUrl = '';
@@ -585,36 +684,73 @@ export const HomeTab: React.FC<HomeTabProps> = ({
               return (
                 <div
                   key={item.id}
-                  style={{ borderColor: colorInfo.border }}
-                  className={`rounded-2xl bg-slate-900/80 border p-3.5 flex items-center justify-between hover:border-purple-400/50 transition shadow-md ${
-                    isUpcomingSoon ? 'ring-1 ring-amber-500/50 shadow-amber-950/30' : ''
+                  style={{ borderColor: isCompleted ? 'rgba(16, 185, 129, 0.4)' : colorInfo.border }}
+                  className={`rounded-2xl border p-3.5 flex items-center justify-between transition shadow-md ${
+                    isCompleted
+                      ? 'bg-slate-900/60 opacity-80 border-emerald-500/30'
+                      : isUpcomingSoon
+                      ? 'bg-slate-900/90 ring-1 ring-amber-500/50 shadow-amber-950/30'
+                      : 'bg-slate-900/80 hover:border-purple-400/50'
                   }`}
                 >
                   <div className="flex items-center gap-3">
                     <div
-                      style={{ backgroundColor: colorInfo.bg, borderColor: colorInfo.border }}
+                      style={{
+                        backgroundColor: isCompleted ? 'rgba(6, 78, 59, 0.5)' : colorInfo.bg,
+                        borderColor: isCompleted ? 'rgba(16, 185, 129, 0.4)' : colorInfo.border,
+                      }}
                       className="w-10 h-10 rounded-xl border flex flex-col items-center justify-center font-mono text-xs font-bold"
                     >
-                      <span style={{ color: colorInfo.text }}>{item.time}</span>
+                      <span style={{ color: isCompleted ? '#34d399' : colorInfo.text }}>
+                        {isCompleted ? '✓' : item.time}
+                      </span>
                     </div>
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h4 className="text-sm font-bold text-white">{item.studentName}</h4>
+                        <h4
+                          className={`text-sm font-bold ${
+                            isCompleted ? 'line-through text-slate-300 decoration-emerald-400' : 'text-white'
+                          }`}
+                        >
+                          {item.studentName}
+                        </h4>
                         {getClassTypeBadge(item.classType)}
-                        {isUpcomingSoon && (
+
+                        {isCompleted ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/90 text-emerald-300 border border-emerald-500/40 font-bold flex items-center gap-1 shadow-sm">
+                            <Check className="w-3 h-3 text-emerald-400 stroke-[3]" />
+                            <span>تمت الحصة ✅</span>
+                          </span>
+                        ) : isUpcomingSoon ? (
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse font-bold">
                             خلال {diffMins} دقيقة ⏰
                           </span>
-                        )}
+                        ) : null}
                       </div>
                       <p className="text-xs text-slate-400 mt-0.5">
-                        المدة: {item.duration} دقيقة {item.locationOrLink && `• ${item.locationOrLink}`}
+                        الساعة: {item.time} • المدة: {item.duration} دقيقة {item.locationOrLink && `• ${item.locationOrLink}`}
                       </p>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-1.5">
-                    {whatsappReminderUrl && (
+                    {/* Attendance / Completed Toggle Button */}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        toggleScheduleCompletedToday(profile.id, item.id, !item.completedTodayDate)
+                      }
+                      className={`p-2 rounded-xl border transition cursor-pointer ${
+                        item.completedTodayDate
+                          ? 'bg-emerald-900/40 border-emerald-500/40 text-emerald-300 hover:bg-emerald-800/40'
+                          : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-emerald-300 hover:bg-slate-800'
+                      }`}
+                      title={item.completedTodayDate ? 'إلغاء وسم تمت الحصة' : 'تسجيل حضور / تمت الحصة'}
+                    >
+                      <CheckCircle className={`w-4 h-4 ${item.completedTodayDate ? 'text-emerald-400' : ''}`} />
+                    </button>
+
+                    {!isCompleted && whatsappReminderUrl && (
                       <a
                         href={whatsappReminderUrl}
                         target="_blank"
@@ -635,10 +771,14 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                         setSelectedStudentId(item.studentId);
                         setShowStartClassModal(true);
                       }}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition active:scale-95 cursor-pointer shadow-md"
+                      className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-white text-xs font-bold transition active:scale-95 cursor-pointer shadow-md ${
+                        isCompleted
+                          ? 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                          : 'bg-purple-600 hover:bg-purple-500'
+                      }`}
                     >
                       <Play className="w-3 h-3 fill-white" />
-                      <span>بدء</span>
+                      <span>{isCompleted ? 'تفاصيل' : 'بدء'}</span>
                     </button>
                   </div>
                 </div>
