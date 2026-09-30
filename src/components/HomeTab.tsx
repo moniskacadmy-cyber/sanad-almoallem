@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { TeacherProfile, Student, ScheduleSlot, ClassType } from '../types';
 import { addLessonLog, toggleStudentPaymentStatus } from '../firebase';
+import { getColorStyle } from './ScheduleTab';
 import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import {
   Calendar,
@@ -249,45 +250,145 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-purple-500/20 blur-xl pointer-events-none" />
       </div>
 
-      {/* Quick Stats Grid */}
-      <div className="grid grid-cols-3 gap-2.5">
+      {/* Quick Stats Grid (4 Responsive Cards) */}
+      <div className="grid grid-cols-4 gap-2">
         <div
           onClick={() => onNavigateToTab(1)}
-          className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-3 text-right cursor-pointer hover:border-purple-400/40 transition"
+          className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-2.5 text-right cursor-pointer hover:border-purple-400/40 transition"
         >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] text-slate-400">الطلاب</span>
-            <Users className="w-4 h-4 text-purple-400" />
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] text-slate-400">الطلاب</span>
+            <Users className="w-3.5 h-3.5 text-purple-400" />
           </div>
-          <p className="text-xl font-black text-white">{totalStudents}</p>
-          <p className="text-[10px] text-purple-300/80 mt-0.5">طالب مسجل</p>
+          <p className="text-lg font-black text-white">{totalStudents}</p>
+          <p className="text-[9px] text-purple-300/80">طالب نشط</p>
         </div>
 
         <div
           onClick={() => onNavigateToTab(2)}
-          className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-3 text-right cursor-pointer hover:border-purple-400/40 transition"
+          className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-2.5 text-right cursor-pointer hover:border-purple-400/40 transition"
         >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] text-slate-400">حصص اليوم</span>
-            <Calendar className="w-4 h-4 text-indigo-400" />
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] text-slate-400">حصص اليوم</span>
+            <Calendar className="w-3.5 h-3.5 text-indigo-400" />
           </div>
-          <p className="text-xl font-black text-white">{todayClasses.length}</p>
-          <p className="text-[10px] text-indigo-300/80 mt-0.5">{todayArabicName}</p>
+          <p className="text-lg font-black text-white">{todayClasses.length}</p>
+          <p className="text-[9px] text-indigo-300/80">{todayArabicName}</p>
         </div>
 
         <div
-          onClick={() => onNavigateToTab(1)}
-          className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-3 text-right cursor-pointer hover:border-purple-400/40 transition"
+          onClick={() => onNavigateToTab(2)}
+          className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-2.5 text-right cursor-pointer hover:border-purple-400/40 transition"
         >
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] text-slate-400">التحصيل</span>
-            <CreditCard className="w-4 h-4 text-emerald-400" />
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] text-slate-400">مواعيد ثابتة</span>
+            <Clock className="w-3.5 h-3.5 text-cyan-400" />
           </div>
-          <p className="text-xl font-black text-emerald-400">
-            {paidStudents}/{totalStudents}
-          </p>
-          <p className="text-[10px] text-emerald-300/80 mt-0.5">دفعوا الشهر</p>
+          <p className="text-lg font-black text-cyan-300">{schedules.length}</p>
+          <p className="text-[9px] text-cyan-200/80">موعد أسبوعي</p>
         </div>
+
+        <div
+          onClick={onOpenUpgradeModal}
+          className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-2.5 text-right cursor-pointer hover:border-purple-400/40 transition"
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] text-slate-400">الاشتراك</span>
+            <CreditCard className="w-3.5 h-3.5 text-emerald-400" />
+          </div>
+          <p className="text-xs font-black text-emerald-300 truncate">
+            {profile.subscriptionStatus === 'active' ? 'مشترك 💎' : 'تجريبي 🎁'}
+          </p>
+          <p className="text-[9px] text-emerald-400/80">تجديد أو ترقية</p>
+        </div>
+      </div>
+
+      {/* Quick Links Grid (روابط سريعة) */}
+      <div className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-3.5 space-y-2.5">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+            <span>روابط سريعة</span>
+          </h3>
+          <span className="text-[10px] text-slate-400">وصول فوري للأقسام</span>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 text-xs">
+          <button
+            onClick={() => onNavigateToTab(1)}
+            className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-purple-950/40 hover:bg-purple-900/50 border border-purple-500/30 text-purple-200 transition cursor-pointer active:scale-95"
+          >
+            <span className="text-base mb-1">➕</span>
+            <span className="font-bold text-[11px]">إضافة طالب</span>
+          </button>
+
+          <button
+            onClick={() => onNavigateToTab(2)}
+            className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-indigo-950/40 hover:bg-indigo-900/50 border border-indigo-500/30 text-indigo-200 transition cursor-pointer active:scale-95"
+          >
+            <span className="text-base mb-1">📅</span>
+            <span className="font-bold text-[11px]">جدول المواعيد</span>
+          </button>
+
+          <button
+            onClick={() => onNavigateToTab(3)}
+            className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-blue-950/40 hover:bg-blue-900/50 border border-blue-500/30 text-blue-200 transition cursor-pointer active:scale-95"
+          >
+            <span className="text-base mb-1">📖</span>
+            <span className="font-bold text-[11px]">مكتبتي</span>
+          </button>
+
+          <button
+            onClick={() => onNavigateToTab(1)}
+            className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-amber-950/40 hover:bg-amber-900/50 border border-amber-500/30 text-amber-200 transition cursor-pointer active:scale-95"
+          >
+            <span className="text-base mb-1">📝</span>
+            <span className="font-bold text-[11px]">ملاحظات الطلاب</span>
+          </button>
+
+          <button
+            onClick={onOpenUpgradeModal}
+            className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-500/30 text-emerald-200 transition cursor-pointer active:scale-95"
+          >
+            <span className="text-base mb-1">💳</span>
+            <span className="font-bold text-[11px]">الاشتراك</span>
+          </button>
+
+          <button
+            onClick={() => onNavigateToTab(4)}
+            className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700 text-slate-200 transition cursor-pointer active:scale-95"
+          >
+            <span className="text-base mb-1">⚙️</span>
+            <span className="font-bold text-[11px]">الإعدادات</span>
+          </button>
+        </div>
+      </div>
+
+      {/* WhatsApp Teachers Community Card */}
+      <div className="rounded-2xl bg-gradient-to-r from-emerald-950/70 via-slate-900 to-purple-950/60 border border-emerald-500/40 p-3.5 space-y-2.5 shadow-lg">
+        <div className="flex items-center gap-2.5">
+          <div className="w-10 h-10 rounded-xl bg-emerald-600/30 border border-emerald-500/40 flex items-center justify-center flex-shrink-0 text-emerald-300">
+            <MessageCircle className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="text-xs font-bold text-white">انضم لمجتمع المعلمين المشتركين على واتساب</h4>
+            <p className="text-[11px] text-slate-300 mt-0.5 leading-snug">
+              تبادل الخبرات، بنوك الأسئلة، ونماذج المتابعة مع زملائك من نخبة المعلمين الخصوصيين.
+            </p>
+          </div>
+        </div>
+
+        <a
+          href={`https://wa.me/201025967471?text=${encodeURIComponent(
+            `مرحباً، أنا أ. ${profile.name} (معلم ${profile.subject}) وأرغب في الانضمام إلى مجتمع معلمي سند المعلم على واتساب.`
+          )}`}
+          target="_blank"
+          rel="noreferrer"
+          className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-md shadow-emerald-950/40"
+        >
+          <MessageCircle className="w-4 h-4" />
+          <span>انضم للمجموعة الآن 💬</span>
+        </a>
       </div>
 
       {/* Class Types Distribution Card (Recharts) */}
@@ -423,14 +524,19 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           <div className="space-y-2">
             {todayClasses.map((item) => {
               const matchedStudent = students.find((s) => s.id === item.studentId);
+              const colorInfo = getColorStyle(item.color);
               return (
                 <div
                   key={item.id}
-                  className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-3.5 flex items-center justify-between hover:border-purple-400/40 transition"
+                  style={{ borderColor: colorInfo.border }}
+                  className="rounded-2xl bg-slate-900/80 border p-3.5 flex items-center justify-between hover:border-purple-400/50 transition shadow-md"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-purple-950/80 border border-purple-500/30 flex flex-col items-center justify-center text-purple-300 font-mono text-xs font-bold">
-                      <span>{item.time}</span>
+                    <div
+                      style={{ backgroundColor: colorInfo.bg, borderColor: colorInfo.border }}
+                      className="w-10 h-10 rounded-xl border flex flex-col items-center justify-center font-mono text-xs font-bold"
+                    >
+                      <span style={{ color: colorInfo.text }}>{item.time}</span>
                     </div>
                     <div>
                       <div className="flex items-center gap-2">

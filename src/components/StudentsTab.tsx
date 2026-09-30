@@ -17,7 +17,6 @@ import {
   CreditCard,
   CheckCircle2,
   XCircle,
-  MoreVertical,
   Calendar,
   BookOpen,
   Star,
@@ -29,8 +28,15 @@ import {
   Video,
   Building,
   UserCheck,
-  Clock,
   Sparkles,
+  Share2,
+  Copy,
+  Lightbulb,
+  FileText,
+  AlertCircle,
+  Brain,
+  Send,
+  HelpCircle,
 } from 'lucide-react';
 
 interface StudentsTabProps {
@@ -49,6 +55,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
   const [selectedProfileStudent, setSelectedProfileStudent] = useState<Student | null>(null);
   const [studentLessons, setStudentLessons] = useState<LessonLog[]>([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<Student | null>(null);
+  const [showMonthlyReportModal, setShowMonthlyReportModal] = useState(false);
+  const [copiedReport, setCopiedReport] = useState(false);
 
   // Form fields for Add/Edit Student
   const [formName, setFormName] = useState('');
@@ -56,6 +64,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
   const [formSubject, setFormSubject] = useState(profile.subject || 'رياضيات');
   const [formClassType, setFormClassType] = useState<ClassType>('private');
   const [formMonthlyFee, setFormMonthlyFee] = useState<number>(300);
+  const [formLearningStyle, setFormLearningStyle] = useState('');
   const [formNotes, setFormNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -66,12 +75,17 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
   const [newLessonAttendance, setNewLessonAttendance] = useState<'present' | 'absent' | 'excused'>('present');
   const [newLessonRating, setNewLessonRating] = useState<number>(5);
 
+  // Learning style editing inside profile
+  const [profileLearningStyle, setProfileLearningStyle] = useState('');
+  const [savingLearningStyle, setSavingLearningStyle] = useState(false);
+
   // Subscribe to selected student's lessons
   useEffect(() => {
     if (!selectedProfileStudent) {
       setStudentLessons([]);
       return;
     }
+    setProfileLearningStyle(selectedProfileStudent.learningStyle || '');
     const unsub = subscribeToStudentLessons(profile.id, selectedProfileStudent.id, (lessons) => {
       setStudentLessons(lessons);
     });
@@ -82,7 +96,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
   const filteredStudents = students.filter((s) => {
     const matchesSearch =
       s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.whatsapp.includes(searchQuery) ||
+      (s.whatsapp && s.whatsapp.includes(searchQuery)) ||
       s.subject.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesType = typeFilter === 'all' || s.classType === typeFilter;
     const matchesPayment = paymentFilter === 'all' || s.paymentStatus === paymentFilter;
@@ -96,6 +110,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
     setFormSubject(profile.subject || 'رياضيات');
     setFormClassType('private');
     setFormMonthlyFee(300);
+    setFormLearningStyle('');
     setFormNotes('');
     setShowAddModal(true);
   };
@@ -103,17 +118,18 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
   const handleOpenEditModal = (student: Student) => {
     setEditingStudent(student);
     setFormName(student.name);
-    setFormWhatsapp(student.whatsapp);
+    setFormWhatsapp(student.whatsapp || '');
     setFormSubject(student.subject);
     setFormClassType(student.classType);
     setFormMonthlyFee(student.monthlyFee || 0);
+    setFormLearningStyle(student.learningStyle || '');
     setFormNotes(student.notes || '');
     setShowAddModal(true);
   };
 
   const handleSaveStudent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formName.trim() || !formWhatsapp.trim()) return;
+    if (!formName.trim()) return; // WhatsApp is optional!
     setIsSubmitting(true);
 
     try {
@@ -124,6 +140,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
           subject: formSubject.trim(),
           classType: formClassType,
           monthlyFee: Number(formMonthlyFee) || 0,
+          learningStyle: formLearningStyle.trim(),
           notes: formNotes.trim(),
         });
       } else {
@@ -134,6 +151,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
           classType: formClassType,
           monthlyFee: Number(formMonthlyFee) || 0,
           paymentStatus: 'unpaid',
+          learningStyle: formLearningStyle.trim(),
           notes: formNotes.trim(),
         });
       }
@@ -178,6 +196,94 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
     }
   };
 
+  const handleSaveLearningStyle = async () => {
+    if (!selectedProfileStudent) return;
+    setSavingLearningStyle(true);
+    try {
+      await updateStudent(profile.id, selectedProfileStudent.id, {
+        learningStyle: profileLearningStyle.trim(),
+      });
+      setSelectedProfileStudent({
+        ...selectedProfileStudent,
+        learningStyle: profileLearningStyle.trim(),
+      });
+    } catch (e) {
+      console.error('Error saving learning style', e);
+    } finally {
+      setSavingLearningStyle(false);
+    }
+  };
+
+  // Generate Monthly Report for WhatsApp
+  const currentMonthName = new Intl.DateTimeFormat('ar-EG', { month: 'long', year: 'numeric' }).format(new Date());
+  const presentCount = studentLessons.filter((l) => l.attendance === 'present').length;
+  const absentCount = studentLessons.filter((l) => l.attendance === 'absent').length;
+  const excusedCount = studentLessons.filter((l) => l.attendance === 'excused').length;
+  const totalLessons = studentLessons.length;
+  const ratings = studentLessons.map((l) => l.rating || 5);
+  const avgRating = ratings.length > 0 ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : '5.0';
+
+  const generateMonthlyReportText = () => {
+    if (!selectedProfileStudent) return '';
+    const lessonsSummary = studentLessons
+      .slice(0, 5)
+      .map((l, i) => `  ${i + 1}. [${l.date}] ${l.topic}`)
+      .join('\n');
+
+    return (
+      `السلام عليكم ورحمة الله وبركاته 🌷\n` +
+      `تقرير المتابعة الشهري لشهر (${currentMonthName})\n` +
+      `👤 الطالب/ـة: ${selectedProfileStudent.name}\n` +
+      `📚 المادة: ${selectedProfileStudent.subject}\n` +
+      `👨‍🏫 المعلم: أ. ${profile.name}\n\n` +
+      `📊 ملخص الحضور والالتزام:\n` +
+      `• إجمالي الحصص المنفذة: ${totalLessons} حصة\n` +
+      `• عدد مرات الحضور: ${presentCount} ✅\n` +
+      (absentCount > 0 ? `• مرات الغياب: ${absentCount} ❌\n` : '') +
+      (excusedCount > 0 ? `• اعتذارات مسبقة: ${excusedCount} ⚠️\n` : '') +
+      `• متوسط التقييم العام: ${avgRating} من 5 ⭐\n\n` +
+      (lessonsSummary ? `📖 أهم ما تم شرحه ودراسته:\n${lessonsSummary}\n\n` : '') +
+      (selectedProfileStudent.learningStyle ? `💡 ملاحظات المعلم:\n${selectedProfileStudent.learningStyle}\n\n` : '') +
+      `مع خالص تمنياتنا بالتفوق والنجاح الباهر دائماً 🌟`
+    );
+  };
+
+  const handleSendMonthlyReport = () => {
+    if (!selectedProfileStudent) return;
+    const text = generateMonthlyReportText();
+    const cleanPhone = selectedProfileStudent.whatsapp ? selectedProfileStudent.whatsapp.replace(/[^0-9]/g, '') : '';
+    const phoneParam = cleanPhone ? (cleanPhone.startsWith('0') ? '2' + cleanPhone : cleanPhone) : '';
+    const url = phoneParam
+      ? `https://wa.me/${phoneParam}?text=${encodeURIComponent(text)}`
+      : `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+  };
+
+  const handleCopyReport = () => {
+    const text = generateMonthlyReportText();
+    navigator.clipboard.writeText(text);
+    setCopiedReport(true);
+    setTimeout(() => setCopiedReport(false), 2500);
+  };
+
+  // Payment Reminder WhatsApp Generator
+  const handleSendPaymentReminder = () => {
+    if (!selectedProfileStudent) return;
+    const text = encodeURIComponent(
+      `السلام عليكم ورحمة الله وبركاته 🌷\n` +
+      `تحية طيبة لولي أمر الطالب/ـة المتميز/ة: ${selectedProfileStudent.name}\n` +
+      `نود تذكيركم بمصروفات حصص مادة (${selectedProfileStudent.subject}) لشهر (${currentMonthName}) وقدرها: ${selectedProfileStudent.monthlyFee} ج.م.\n\n` +
+      `شاكرين ومقدرين حسن تعاونكم وحرصكم الدائم على متابعة الطالب 🌟\n` +
+      `معلمكم: أ. ${profile.name}`
+    );
+    const cleanPhone = selectedProfileStudent.whatsapp ? selectedProfileStudent.whatsapp.replace(/[^0-9]/g, '') : '';
+    const phoneParam = cleanPhone ? (cleanPhone.startsWith('0') ? '2' + cleanPhone : cleanPhone) : '';
+    const url = phoneParam
+      ? `https://wa.me/${phoneParam}?text=${text}`
+      : `https://wa.me/?text=${text}`;
+    window.open(url, '_blank');
+  };
+
   const getClassTypeBadge = (type: ClassType) => {
     switch (type) {
       case 'online':
@@ -210,7 +316,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold text-white">سجل الطلاب ({students.length})</h2>
-          <p className="text-xs text-slate-400">إدارة الطلاب، الحضور، وما تم شرحه والمدفوعات</p>
+          <p className="text-xs text-slate-400">إدارة الطلاب، الحضور، التقارير والمدفوعات</p>
         </div>
         <button
           onClick={handleOpenAddModal}
@@ -228,7 +334,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="بحث بالاسم أو رقم الواتساب..."
+            placeholder="بحث بالاسم، المادة، أو رقم الهاتف..."
             className="w-full rounded-xl bg-slate-900/90 border border-slate-700/80 px-3.5 py-2.5 pr-10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400"
           />
           <Search className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
@@ -315,6 +421,11 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
                   <p className="text-xs text-slate-400 mt-0.5">
                     مادة: <span className="text-purple-300">{s.subject}</span> •{' '}
                     <span className="font-mono">{s.monthlyFee} ج.م/شهرياً</span>
+                    {s.learningStyle && (
+                      <span className="mr-2 text-[11px] text-amber-300/90 truncate max-w-[150px] inline-block align-middle">
+                        🧠 {s.learningStyle}
+                      </span>
+                    )}
                   </p>
                 </div>
 
@@ -346,7 +457,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
               {/* Action Buttons Row */}
               <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2">
-                  {s.whatsapp && (
+                  {s.whatsapp ? (
                     <a
                       href={`https://wa.me/${s.whatsapp.replace(/[^0-9]/g, '')}`}
                       target="_blank"
@@ -356,13 +467,17 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
                       <MessageCircle className="w-3.5 h-3.5" />
                       <span>واتساب</span>
                     </a>
+                  ) : (
+                    <span className="text-[11px] text-slate-500 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800">
+                      بدون واتساب
+                    </span>
                   )}
                   <button
                     onClick={() => setSelectedProfileStudent(s)}
                     className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-950/60 border border-purple-500/30 text-purple-300 hover:bg-purple-900/50 transition cursor-pointer"
                   >
                     <BookOpen className="w-3.5 h-3.5" />
-                    <span>سجل الحصص</span>
+                    <span>متابعة وتقارير</span>
                   </button>
                 </div>
 
@@ -391,8 +506,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
       {/* Add / Edit Student Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-slate-900 border border-purple-500/30 rounded-3xl p-5 shadow-2xl text-right">
-            <div className="flex items-center justify-between border-b border-purple-900/40 pb-3 mb-4">
+          <div className="w-full max-w-md bg-slate-900 border border-purple-500/30 rounded-3xl p-5 shadow-2xl text-right max-h-[92vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-purple-900/40 pb-3 mb-3">
               <h3 className="text-base font-bold text-white">
                 {editingStudent ? 'تعديل بيانات الطالب' : 'إضافة طالب جديد'}
               </h3>
@@ -404,7 +519,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
               </button>
             </div>
 
-            <form onSubmit={handleSaveStudent} className="space-y-3.5">
+            <form onSubmit={handleSaveStudent} className="space-y-3 overflow-y-auto pr-1">
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">اسم الطالب *</label>
                 <input
@@ -417,16 +532,16 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
                 />
               </div>
 
+              {/* WHATSAPP IS NOW OPTIONAL AS REQUESTED */}
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">
-                  رقم الواتساب (للطالب أو ولي الأمر) *
+                  رقم الواتساب (للطالب أو ولي الأمر) <span className="text-slate-400 font-normal">(اختياري)</span>
                 </label>
                 <input
                   type="tel"
                   value={formWhatsapp}
                   onChange={(e) => setFormWhatsapp(e.target.value)}
-                  placeholder="01012345678"
-                  required
+                  placeholder="01012345678 (اختياري)"
                   dir="ltr"
                   className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 text-right"
                 />
@@ -472,6 +587,21 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
                 />
               </div>
 
+              {/* How does this student learn best (Learning Style & Smart Notes) */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
+                  <Brain className="w-3.5 h-3.5 text-amber-300" />
+                  <span>إزاي الطالب ده بيتعلم أحسن؟ (ملاحظات أسلوب التعلم) (اختياري)</span>
+                </label>
+                <textarea
+                  value={formLearningStyle}
+                  onChange={(e) => setFormLearningStyle(e.target.value)}
+                  placeholder="مثال: نمط بصري يفضل الرسوم التوضيحية، يحتاج تشجيع مستمر، يستوعب المسائل بالتطبيق العملي..."
+                  rows={2}
+                  className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
+                />
+              </div>
+
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">
                   ملاحظات إضافية (اختياري)
@@ -479,7 +609,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
                 <textarea
                   value={formNotes}
                   onChange={(e) => setFormNotes(e.target.value)}
-                  placeholder="ملاحظات حول مستوى الطالب أو متطلبات خاصة..."
+                  placeholder="ملاحظات حول المواعيد أو متطلبات خاصة..."
                   rows={2}
                   className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
                 />
@@ -527,57 +657,178 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
         </div>
       )}
 
-      {/* Student Detailed Profile Modal (Attendance & Lessons Log) */}
+      {/* Student Detailed Profile Modal (With Reports, Payments, and Learning Style) */}
       {selectedProfileStudent && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="w-full max-w-lg bg-slate-900 border border-purple-500/30 rounded-3xl p-5 shadow-2xl text-right max-h-[90vh] flex flex-col">
+          <div className="w-full max-w-lg bg-slate-900 border border-purple-500/30 rounded-3xl p-5 shadow-2xl text-right max-h-[92vh] flex flex-col space-y-3.5">
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-purple-900/40 pb-3 mb-3">
+            <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-base font-bold text-white">{selectedProfileStudent.name}</h3>
                   {getClassTypeBadge(selectedProfileStudent.classType)}
                 </div>
                 <p className="text-xs text-purple-300 mt-0.5">
-                  واتساب: <span dir="ltr">{selectedProfileStudent.whatsapp}</span> • مادة: {selectedProfileStudent.subject}
+                  {selectedProfileStudent.whatsapp ? (
+                    <span>واتساب: <strong dir="ltr">{selectedProfileStudent.whatsapp}</strong> • </span>
+                  ) : (
+                    <span>بدون رقم واتساب • </span>
+                  )}
+                  مادة: {selectedProfileStudent.subject}
                 </p>
               </div>
               <button
-                onClick={() => setSelectedProfileStudent(null)}
+                onClick={() => {
+                  setSelectedProfileStudent(null);
+                  setShowMonthlyReportModal(false);
+                }}
                 className="p-1 rounded-lg text-slate-400 hover:text-white"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Quick Actions inside profile */}
-            <div className="grid grid-cols-2 gap-2 mb-3">
+            {/* Quick Actions (Monthly Report & Record Lesson) */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setShowMonthlyReportModal(true)}
+                className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-110 text-white text-xs font-bold transition cursor-pointer shadow-md"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>تقرير الشهر لولي الأمر 📄</span>
+              </button>
+
               <button
                 onClick={() => setShowAddLessonInsideProfile(!showAddLessonInsideProfile)}
                 className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition cursor-pointer"
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>{showAddLessonInsideProfile ? 'إغلاق النموذج' : 'تسجيل حصة جديدة'}</span>
+                <span>{showAddLessonInsideProfile ? 'إغلاق النموذج' : 'تسجيل حصة جديدة ✏️'}</span>
               </button>
+            </div>
 
-              <button
-                onClick={() => toggleStudentPaymentStatus(profile.id, selectedProfileStudent.id, selectedProfileStudent.paymentStatus)}
-                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-bold border transition cursor-pointer ${
-                  selectedProfileStudent.paymentStatus === 'paid'
-                    ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
-                    : 'bg-rose-950/60 border-rose-500/40 text-rose-300'
-                }`}
-              >
-                <CreditCard className="w-3.5 h-3.5" />
-                <span>
-                  {selectedProfileStudent.paymentStatus === 'paid' ? 'تم دفع المصروفات ✅' : 'لم يتم الدفع بعد ❌'}
-                </span>
-              </button>
+            {/* SECTION 1: SECTION "تابع حصص ودفع الطالب" */}
+            <div className="rounded-2xl bg-slate-950/70 border border-purple-500/20 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <CreditCard className="w-4 h-4 text-emerald-400" />
+                  <span className="text-xs font-bold text-white">تابع حصص ودفع الطالب</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    toggleStudentPaymentStatus(
+                      profile.id,
+                      selectedProfileStudent.id,
+                      selectedProfileStudent.paymentStatus
+                    )
+                  }
+                  className={`text-[11px] font-bold px-2 py-0.5 rounded-full border transition cursor-pointer ${
+                    selectedProfileStudent.paymentStatus === 'paid'
+                      ? 'bg-emerald-950 border-emerald-500/40 text-emerald-300'
+                      : 'bg-rose-950 border-rose-500/40 text-rose-300'
+                  }`}
+                >
+                  {selectedProfileStudent.paymentStatus === 'paid' ? 'دفع هذا الشهر ✅' : 'لم يدفع بعد ❌'}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">إجمالي الحصص</span>
+                  <span className="font-bold text-white font-mono text-sm">{totalLessons}</span>
+                </div>
+                <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">المصروفات</span>
+                  <span className="font-bold text-amber-300 font-mono text-sm">
+                    {selectedProfileStudent.monthlyFee} ج.م
+                  </span>
+                </div>
+                <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">نسبة الحضور</span>
+                  <span className="font-bold text-emerald-400 font-mono text-sm">
+                    {totalLessons > 0 ? Math.round((presentCount / totalLessons) * 100) : 100}%
+                  </span>
+                </div>
+              </div>
+
+              {/* WhatsApp Payment Reminder Button */}
+              {selectedProfileStudent.whatsapp && (
+                <button
+                  onClick={handleSendPaymentReminder}
+                  className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-xs font-semibold transition cursor-pointer"
+                >
+                  <MessageCircle className="w-3.5 h-3.5 text-amber-300" />
+                  <span>تجهيز رسالة تذكير بالمصروفات عبر واتساب</span>
+                </button>
+              )}
+            </div>
+
+            {/* SECTION 2: SECTION "إزاي الطالب ده بيتعلم أحسن؟" (Learning Style & Smart Assistant) */}
+            <div className="rounded-2xl bg-gradient-to-r from-purple-950/40 to-indigo-950/40 border border-purple-500/25 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Brain className="w-4 h-4 text-amber-300" />
+                  <span className="text-xs font-bold text-white">إزاي الطالب ده بيتعلم أحسن؟</span>
+                </div>
+                <span className="text-[10px] text-purple-300 font-medium">مساعد التدريس الذكي</span>
+              </div>
+
+              {/* Quick Learning Style Tags */}
+              <div className="flex flex-wrap gap-1 text-[10px]">
+                {[
+                  'نمط بصري 👁️',
+                  'نمط سمعي 👂',
+                  'تطبيقي وحركي ✍️',
+                  'يحتاج تشجيع مستمر 🌟',
+                  'سريع الاستيعاب 🚀',
+                  'خطوة بخطوة 📐',
+                ].map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => {
+                      const current = profileLearningStyle;
+                      if (!current.includes(tag)) {
+                        setProfileLearningStyle(current ? `${current} • ${tag}` : tag);
+                      }
+                    }}
+                    className="px-2 py-0.5 rounded-lg bg-purple-900/40 hover:bg-purple-800/60 border border-purple-500/30 text-purple-200 transition cursor-pointer"
+                  >
+                    + {tag}
+                  </button>
+                ))}
+              </div>
+
+              {/* Editable Notes Field */}
+              <div className="space-y-1.5">
+                <textarea
+                  value={profileLearningStyle}
+                  onChange={(e) => setProfileLearningStyle(e.target.value)}
+                  placeholder="سجل ملاحظاتك عن أسلوب استيعاب الطالب ونقاط قوته..."
+                  rows={2}
+                  className="w-full rounded-xl bg-slate-950/80 border border-slate-700/80 p-2 text-xs text-slate-200 focus:outline-none focus:border-purple-400"
+                />
+
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-slate-400">
+                    💡 احفظ الملاحظات ليتم تضمينها تلقائياً في تقارير المتابعة
+                  </span>
+                  <button
+                    type="button"
+                    disabled={savingLearningStyle}
+                    onClick={handleSaveLearningStyle}
+                    className="px-3 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold transition disabled:opacity-50 cursor-pointer"
+                  >
+                    {savingLearningStyle ? 'جارٍ الحفظ...' : 'حفظ الملاحظة'}
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Add Lesson Form inside profile */}
             {showAddLessonInsideProfile && (
-              <form onSubmit={handleAddLessonSubmit} className="mb-4 p-3 rounded-2xl bg-slate-800/80 border border-purple-500/30 space-y-2.5">
+              <form onSubmit={handleAddLessonSubmit} className="p-3 rounded-2xl bg-slate-800/90 border border-purple-500/30 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-amber-300">تسجيل حصة لهذا الطالب</span>
                   <div className="flex items-center gap-1">
@@ -642,14 +893,14 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
             )}
 
             {/* Attendance & Lessons History List */}
-            <div className="flex-1 overflow-y-auto space-y-2 pr-0.5">
+            <div className="flex-1 overflow-y-auto space-y-2 pr-0.5 min-h-[140px]">
               <h4 className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 text-purple-400" />
                 <span>سجل الحصص السابقة ({studentLessons.length})</span>
               </h4>
 
               {studentLessons.length === 0 ? (
-                <div className="py-6 text-center text-xs text-slate-400">
+                <div className="py-6 text-center text-xs text-slate-400 bg-slate-950/40 rounded-xl border border-slate-800">
                   لا توجد حصص مسجلة لهذا الطالب حتى الآن.
                 </div>
               ) : (
@@ -704,6 +955,54 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students }) =
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: MONTHLY REPORT FOR PARENTS */}
+      {showMonthlyReportModal && selectedProfileStudent && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-slate-900 border border-emerald-500/40 rounded-3xl p-5 shadow-2xl text-right max-h-[90vh] flex flex-col space-y-3">
+            <div className="flex items-center justify-between border-b border-emerald-900/40 pb-3">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-base font-bold text-white">تقرير الشهر لولي الأمر</h3>
+              </div>
+              <button
+                onClick={() => setShowMonthlyReportModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300">
+              تقرير جاهز ومنسق بناءً على حصص وتقييمات الشهر الحالي ({currentMonthName}) لإرساله بضغطة زر:
+            </p>
+
+            {/* Report Preview Box */}
+            <div className="flex-1 overflow-y-auto bg-slate-950/80 border border-slate-800 rounded-2xl p-3.5 text-xs text-slate-200 font-mono whitespace-pre-wrap leading-relaxed select-text">
+              {generateMonthlyReportText()}
+            </div>
+
+            {/* Actions */}
+            <div className="space-y-2 pt-1">
+              <button
+                onClick={handleSendMonthlyReport}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-lg shadow-emerald-950/50"
+              >
+                <Send className="w-4 h-4" />
+                <span>إرسال التقرير عبر واتساب الآن</span>
+              </button>
+
+              <button
+                onClick={handleCopyReport}
+                className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition cursor-pointer"
+              >
+                {copiedReport ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                <span>{copiedReport ? 'تم نسخ التقرير بنجاح!' : 'نسخ نص التقرير'}</span>
+              </button>
             </div>
           </div>
         </div>

@@ -90,7 +90,7 @@ service cloud.firestore {
       let data = incoming();
       return data.teacherId == teacherId &&
         data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
-        data.whatsapp is string && data.whatsapp.size() >= 6 && data.whatsapp.size() <= 30 &&
+        (!('whatsapp' in data) || (data.whatsapp is string && data.whatsapp.size() <= 30)) &&
         data.subject is string && data.subject.size() <= 100 &&
         data.classType in ['online', 'center', 'private'] &&
         data.monthlyFee is number &&
@@ -113,7 +113,8 @@ service cloud.firestore {
         data.dayOfWeek is number && data.dayOfWeek >= 0 && data.dayOfWeek <= 6 &&
         data.time is string && data.time.size() <= 20 &&
         data.recurrence in ['daily', 'weekly', 'monthly', 'once'] &&
-        data.classType in ['online', 'center', 'private'];
+        data.classType in ['online', 'center', 'private'] &&
+        (!('color' in data) || (data.color is string && data.color.size() <= 50));
     }
 
     // Library Item validation

@@ -25,12 +25,13 @@ export interface Student {
   id: string;
   teacherId: string;
   name: string;
-  whatsapp: string;
+  whatsapp?: string;
   subject: string;
   classType: ClassType;
   monthlyFee: number;
   paymentStatus: PaymentStatus;
   lastPaymentMonth?: string;
+  learningStyle?: string;
   notes?: string;
   createdAt: any;
   updatedAt: any;
@@ -59,6 +60,7 @@ export interface ScheduleSlot {
   duration: number; // minutes
   recurrence: RecurrenceType;
   classType: ClassType;
+  color?: string;
   locationOrLink?: string;
   createdAt: any;
   updatedAt: any;

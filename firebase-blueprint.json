@@ -41,17 +41,18 @@
         "id": { "type": "string", "maxLength": 128 },
         "teacherId": { "type": "string", "maxLength": 128 },
         "name": { "type": "string", "minLength": 2, "maxLength": 100 },
-        "whatsapp": { "type": "string", "minLength": 8, "maxLength": 30 },
+        "whatsapp": { "type": "string", "maxLength": 30 },
         "subject": { "type": "string", "minLength": 2, "maxLength": 100 },
         "classType": { "type": "string", "enum": ["online", "center", "private"] },
         "monthlyFee": { "type": "number" },
         "paymentStatus": { "type": "string", "enum": ["paid", "unpaid"] },
         "lastPaymentMonth": { "type": "string", "maxLength": 20 },
+        "learningStyle": { "type": "string", "maxLength": 1000 },
         "notes": { "type": "string", "maxLength": 1000 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "teacherId", "name", "whatsapp", "subject", "classType", "monthlyFee", "paymentStatus", "createdAt", "updatedAt"]
+      "required": ["id", "teacherId", "name", "subject", "classType", "monthlyFee", "paymentStatus", "createdAt", "updatedAt"]
     },
     "LessonLog": {
       "title": "LessonLog",
@@ -85,6 +86,7 @@
         "duration": { "type": "number" },
         "recurrence": { "type": "string", "enum": ["daily", "weekly", "monthly", "once"] },
         "classType": { "type": "string", "enum": ["online", "center", "private"] },
+        "color": { "type": "string", "maxLength": 50 },
         "locationOrLink": { "type": "string", "maxLength": 500 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
