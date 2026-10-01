@@ -1,420 +1,1121 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Bell, 
-  Calendar, 
-  Clock, 
-  Users, 
-  BookOpen, 
-  DollarSign, 
-  CheckCircle2, 
-  Send, 
-  Volume2, 
+import React, { useState } from 'react';
+import { TeacherProfile, Student, ScheduleSlot, ClassType } from '../types';
+import { addLessonLog, toggleStudentPaymentStatus, toggleScheduleCompletedToday } from '../firebase';
+import { getColorStyle } from './ScheduleTab';
+import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import {
+  Calendar,
+  Users,
+  Play,
+  CheckCircle,
+  Clock,
   Sparkles,
+  MessageCircle,
+  Star,
+  ChevronLeft,
+  X,
+  CreditCard,
   Video,
-  MapPin,
-  Mic,
-  MicOff,
-  Percent
+  Building,
+  UserCheck,
+  Check,
+  PieChart as PieChartIcon,
+  Send,
+  FileText,
+  Copy,
+  DollarSign,
+  TrendingUp,
+  Bell,
 } from 'lucide-react';
 
-interface ScheduleSlot {
-  id: string;
-  studentName: string;
-  subject: string;
-  dayOfWeek: number;
-  startTime: string;
-  endTime: string;
-  type: 'online' | 'center' | 'home';
-  price: number;
-}
-
 interface HomeTabProps {
-  schedule: ScheduleSlot[];
-  subscriptionDaysLeft: number;
-  onNavigate: (tab: string) => void;
-  attendanceHistory?: { status: 'present' | 'absent' | 'excused' }[]; // لإحصائيات الحضور
+  profile: TeacherProfile;
+  students: Student[];
+  schedules: ScheduleSlot[];
+  onNavigateToTab: (tabIndex: number) => void;
+  onOpenUpgradeModal: () => void;
+  onOpenFinancialDashboard?: () => void;
 }
 
-export const HomeTab: React.FC<HomeTabProps> = ({ 
-  schedule = [], 
-  subscriptionDaysLeft = 15,
-  onNavigate,
-  attendanceHistory = []
+export const HomeTab: React.FC<HomeTabProps> = ({
+  profile,
+  students,
+  schedules: rawSchedules,
+  onNavigateToTab,
+  onOpenUpgradeModal,
+  onOpenFinancialDashboard,
 }) => {
-  const [currentTime, setCurrentTime] = useState(new Date());
-  const [notificationsAllowed, setNotificationsAllowed] = useState(false);
-  
-  // حالات Modal تسجيل الحصة وتقارير الواتساب
-  const [activeClass, setActiveClass] = useState<ScheduleSlot | null>(null);
-  const [showReportModal, setShowReportModal] = useState(false);
-  const [lessonNotes, setLessonNotes] = useState('');
-  const [homework, setHomework] = useState('');
-  const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'absent' | 'excused'>('present');
-  const [studentRating, setStudentRating] = useState(5);
+  const schedules = rawSchedules.filter((s) => students.some((st) => st.id === s.studentId));
+  const [showStartClassModal, setShowStartClassModal] = useState(false);
+  const [selectedStudentId, setSelectedStudentId] = useState<string>('');
+  const [classTopic, setClassTopic] = useState('');
+  const [classHomework, setClassHomework] = useState('');
+  const [attendance, setAttendance] = useState<'present' | 'absent' | 'excused'>('present');
+  const [rating, setRating] = useState<number>(5);
+  const [savingClass, setSavingClass] = useState(false);
 
-  // حالة المساعد الصوتي
-  const [isListening, setIsListening] = useState(false);
+  // Edit Before Send Modal for Class Report
+  const [showClassReportEditModal, setShowClassReportEditModal] = useState(false);
+  const [pendingReportStudent, setPendingReportStudent] = useState<Student | null>(null);
+  const [editableClassReportText, setEditableClassReportText] = useState('');
+  const [copiedClassReport, setCopiedClassReport] = useState(false);
 
-  // تحديث الساعات والدقائق
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+  // Current Arabic date & day
+  const now = new Date();
+  const currentDayOfWeek = now.getDay(); // 0 is Sunday, 1 is Monday, etc.
+  const todayStr = new Intl.DateTimeFormat('en-CA').format(now); // YYYY-MM-DD
+  const arabicDays = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+  const todayArabicName = arabicDays[currentDayOfWeek];
+  const dateFormatted = new Intl.DateTimeFormat('ar-EG', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(now);
 
-  // التحقق من صلاحية الإشعارات
-  useEffect(() => {
-    if ("Notification" in window && Notification.permission === "granted") {
-      setNotificationsAllowed(true);
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+  // Filter and sort today's classes
+  const todayClasses = schedules
+    .filter((s) => s.dayOfWeek === currentDayOfWeek)
+    .sort((a, b) => a.time.localeCompare(b.time));
+
+  // Determine completed vs upcoming status for each class
+  const evaluatedTodayClasses = todayClasses.map((item) => {
+    let startMin = 0;
+    let endMin = 0;
+    if (item.time && item.time.includes(':')) {
+      const [h, m] = item.time.split(':').map(Number);
+      startMin = h * 60 + m;
+      endMin = startMin + (item.duration || 60);
     }
-  }, []);
+    const isExplicitlyCompleted = item.completedTodayDate === todayStr;
+    const isPastTime = nowMinutes >= endMin;
+    const isCompleted = isExplicitlyCompleted || isPastTime;
+    const isOngoing = nowMinutes >= startMin && nowMinutes < endMin && !isExplicitlyCompleted;
+    const isUpcoming = startMin > nowMinutes && !isExplicitlyCompleted;
+    const diffToStart = startMin - nowMinutes;
+    const isUpcomingSoon = isUpcoming && diffToStart <= 30;
 
-  // دالة طلب إذن الإشعارات الفعلي
-  const requestNotificationPermission = async () => {
-    if (!("Notification" in window)) {
-      alert("متصفحك لا يدعم إشعارات سطح المكتب.");
-      return;
-    }
-    const permission = await Notification.requestPermission();
-    if (permission === "granted") {
-      setNotificationsAllowed(true);
-      new Notification("تطبيق سند المعلم", { body: "تم تفعيل الإشعارات بنجاح لمتابعة حصصك!", dir: "rtl" });
-    } else {
-      alert("تم رفض إذن الإشعارات من إعدادات المتصفح.");
-    }
-  };
-
-  // إرسال إشعار فوري
-  const triggerBrowserNotification = (title: string, body: string) => {
-    if ("Notification" in window && Notification.permission === "granted") {
-      if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.ready.then(registration => {
-          registration.showNotification(title, { body, icon: "/icon.png", dir: "rtl" } as NotificationOptions);
-        });
-      } else {
-        new Notification(title, { body, dir: "rtl" });
-      }
-    }
-  };
-
-  // تنبيه صوتي
-  const playAlertSound = () => {
-    try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const oscillator = audioCtx.createOscillator();
-      const gainNode = audioCtx.createGain();
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(587.33, audioCtx.currentTime);
-      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
-      oscillator.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-      oscillator.start();
-      oscillator.stop(audioCtx.currentTime + 0.4);
-    } catch (e) {
-      console.log("Audio error");
-    }
-  };
-
-  // حساب الحصة الحالية أو القادمة بدقة والعد التنازلي
-  const currentDay = currentTime.getDay();
-  const currentHour = currentTime.getHours();
-  const currentMinute = currentTime.getMinutes();
-  const currentTotalMins = currentHour * 60 + currentMinute;
-
-  const todaysClasses = schedule.filter(s => s.dayOfWeek === currentDay).sort((a, b) => {
-    const [aH, aM] = a.startTime.split(':').map(Number);
-    const [bH, bM] = b.startTime.split(':').map(Number);
-    return (aH * 60 + aM) - (bH * 60 + bM);
+    return {
+      slot: item,
+      startMin,
+      endMin,
+      isCompleted,
+      isOngoing,
+      isUpcoming,
+      diffToStart,
+      isUpcomingSoon,
+    };
   });
 
-  let activeOrUpcomingClass: ScheduleSlot | null = null;
-  let classStatusText = 'لا توجد حصص أخرى اليوم';
-  let remainingMinutes = 0;
+  // Find the next upcoming or ongoing class
+  const upcomingOrOngoing = evaluatedTodayClasses.find((c) => c.isOngoing || c.isUpcoming);
 
-  for (const cls of todaysClasses) {
-    const [sH, sM] = cls.startTime.split(':').map(Number);
-    const [eH, eM] = cls.endTime.split(':').map(Number);
-    const startMins = sH * 60 + sM;
-    const endMins = eH * 60 + eM;
+  // Calculate subscription remaining days
+  const getSubscriptionPill = () => {
+    if (!profile.subscriptionExpiresAt) return null;
+    const expiry = profile.subscriptionExpiresAt.toDate
+      ? profile.subscriptionExpiresAt.toDate()
+      : new Date(profile.subscriptionExpiresAt);
+    const diffMs = expiry.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 
-    if (currentTotalMins >= startMins && currentTotalMins <= endMins) {
-      activeOrUpcomingClass = cls;
-      classStatusText = 'الحصة جارية الآن 🔴';
-      break;
-    } else if (startMins > currentTotalMins) {
-      activeOrUpcomingClass = cls;
-      remainingMinutes = startMins - currentTotalMins;
-      classStatusText = `تبدأ الحصة القادمة خلال ${remainingMinutes} دقيقة`;
-      
-      if (remainingMinutes === 10) {
-        triggerBrowserNotification("⏰ تنبيه حصة قادمة", `متبقي 10 دقائق على حصة ${cls.subject} مع الطالب ${cls.studentName}`);
-        playAlertSound();
-      }
-      break;
-    }
-  }
-
-  // حساب نسبة الحضور والغياب الأسبوعية
-  const totalRecorded = attendanceHistory.length;
-  const presentCount = attendanceHistory.filter(h => h.status === 'present').length;
-  const attendanceRate = totalRecorded > 0 ? Math.round((presentCount / totalRecorded) * 100) : 95; // قيمة افتراضية للتحفيز إذا لم توجد بيانات سابقة
-
-  // نظام الإدخال الصوتي الذكي (Speech Recognition)
-  const startVoiceInput = (targetField: 'notes' | 'homework') => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert("متصفحك لا يدعم الإدخال الصوتي المباشر.");
-      return;
+    if (profile.subscriptionStatus === 'active') {
+      return (
+        <div
+          onClick={onOpenUpgradeModal}
+          className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/70 border border-emerald-500/30 text-emerald-300 text-xs font-semibold cursor-pointer hover:bg-emerald-900/60 transition"
+        >
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span>مشترك حتى {new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'short' }).format(expiry)}</span>
+        </div>
+      );
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'ar-SA';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
+    if (diffDays <= 0 || profile.subscriptionStatus === 'expired') {
+      return (
+        <div
+          onClick={onOpenUpgradeModal}
+          className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-950/70 border border-rose-500/30 text-rose-300 text-xs font-semibold cursor-pointer hover:bg-rose-900/60 transition"
+        >
+          <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />
+          <span>انتهى الاشتراك (تجديد الآن)</span>
+        </div>
+      );
+    }
 
-    recognition.onstart = () => setIsListening(true);
-    recognition.onend = () => setIsListening(false);
-
-    recognition.onresult = (event: any) => {
-      const speechText = event.results[0][0].transcript;
-      if (targetField === 'notes') {
-        setLessonNotes(prev => (prev ? prev + ' ' + speechText : speechText));
-      } else {
-        setHomework(prev => (prev ? prev + ' ' + speechText : speechText));
-      }
-    };
-
-    recognition.start();
+    return (
+      <div
+        onClick={onOpenUpgradeModal}
+        className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-950/80 border border-purple-500/40 text-purple-300 text-xs font-semibold cursor-pointer hover:bg-purple-900/70 transition"
+      >
+        <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+        <span>تجريبي (متبقي {diffDays} {diffDays === 1 ? 'يوم' : 'أيام'})</span>
+      </div>
+    );
   };
 
-  const getWhatsAppReportLink = () => {
-    if (!activeClass) return '#';
-    const message = `مرحباً ولي أمر الطالب/ة ${activeClass.studentName}\n` +
-      `إليك تقرير حصة مادة (${activeClass.subject}):\n` +
-      `- الحالة: ${attendanceStatus === 'present' ? 'حاضر ✅' : attendanceStatus === 'absent' ? 'غائب ❌' : 'معتذر ⚠️'}\n` +
-      `- ما تم شرحه: ${lessonNotes || 'تم استكمال الدرس بنجاح'}\n` +
-      `- الواجب المنزلي: ${homework || 'لا يوجد واجب جديد'}\n` +
-      `- التقييم: ${'⭐'.repeat(studentRating)}\n` +
-      `مع تحيات أكاديمية سند المعلم 📚`;
-    return `https://wa.me/?text=${encodeURIComponent(message)}`;
+  // Payment statistics
+  const paidStudents = students.filter((s) => s.paymentStatus === 'paid').length;
+  const totalStudents = students.length;
+
+  // Class types distribution for active students
+  const inPersonCount = students.filter(
+    (s) => s.classType === 'in_person' || s.classType === 'private' || s.classType === 'center' || !s.classType
+  ).length;
+  const onlineCount = students.filter((s) => s.classType === 'online').length;
+  const trialCount = students.filter((s) => s.classType === 'trial').length;
+
+  const classTypeData = [
+    {
+      name: 'حضور شخصي (مباشر)',
+      shortName: 'شخصي 👤',
+      value: inPersonCount,
+      color: '#10b981',
+    },
+    {
+      name: 'أونلاين (عن بعد)',
+      shortName: 'أونلاين 🌐',
+      value: onlineCount,
+      color: '#0284c7',
+    },
+    {
+      name: 'حصة تجريبية (تقييم)',
+      shortName: 'تجريبية ✨',
+      value: trialCount,
+      color: '#f59e0b',
+    },
+  ];
+
+  const hasChartData = inPersonCount > 0 || onlineCount > 0 || trialCount > 0;
+
+  const handleStartClassSubmit = async (sendWhatsApp: boolean) => {
+    if (!selectedStudentId || !classTopic.trim()) return;
+    const student = students.find((s) => s.id === selectedStudentId);
+    if (!student) return;
+
+    setSavingClass(true);
+    try {
+      const todayStr = new Intl.DateTimeFormat('en-CA').format(new Date()); // YYYY-MM-DD
+      const todaySlot = schedules.find((s) => s.studentId === student.id && s.dayOfWeek === currentDayOfWeek);
+      const duration = todaySlot?.duration || 60;
+      const hourlyRate = student.hourlyRate || (student.monthlyFee ? Math.round(student.monthlyFee / 4) : 100);
+      const cost = Math.round((duration / 60) * hourlyRate);
+
+      await addLessonLog(profile.id, student.id, {
+        date: todayStr,
+        topic: classTopic.trim(),
+        homework: classHomework.trim(),
+        attendance,
+        duration,
+        hourlyRate,
+        cost,
+        settled: false,
+        rating,
+        notes: '',
+      });
+
+      // Mark slot completed today in schedule
+      if (todaySlot) {
+        await toggleScheduleCompletedToday(profile.id, todaySlot.id, true);
+      }
+
+      if (sendWhatsApp && student.whatsapp) {
+        const attendanceAr =
+          attendance === 'present' ? 'حاضر ✅' : attendance === 'absent' ? 'غائب ❌' : 'معتذر ⚠️';
+        const msgText =
+          `السلام عليكم، تقرير حصة مادة ${profile.subject} للطالب/ـة: ${student.name}\n` +
+          `📅 التاريخ: ${todayArabicName} ${dateFormatted}\n` +
+          `🎯 الحالة: ${attendanceAr}\n` +
+          `📖 ما تم شرحه: ${classTopic.trim()}\n` +
+          (classHomework.trim() ? `📝 الواجب المطلوب: ${classHomework.trim()}\n` : '') +
+          `⭐ التقييم: ${'★'.repeat(rating)}${'☆'.repeat(5 - rating)}\n\n` +
+          `تحياتي، أ. ${profile.name}`;
+
+        setPendingReportStudent(student);
+        setEditableClassReportText(msgText);
+        setShowClassReportEditModal(true);
+      }
+
+      setShowStartClassModal(false);
+      setClassTopic('');
+      setClassHomework('');
+      setSelectedStudentId('');
+    } catch (e) {
+      console.error('Error saving class log', e);
+    } finally {
+      setSavingClass(false);
+    }
+  };
+
+  const handleSendClassReportWhatsApp = () => {
+    if (!pendingReportStudent?.whatsapp) return;
+    const cleanPhone = pendingReportStudent.whatsapp.replace(/[^0-9]/g, '');
+    const phoneParam = cleanPhone.startsWith('0') ? '2' + cleanPhone : cleanPhone;
+    const url = `https://wa.me/${phoneParam}?text=${encodeURIComponent(editableClassReportText)}`;
+    window.open(url, '_blank');
+  };
+
+  const handleCopyClassReport = () => {
+    navigator.clipboard.writeText(editableClassReportText);
+    setCopiedClassReport(true);
+    setTimeout(() => setCopiedClassReport(false), 2000);
+  };
+
+  const getClassTypeBadge = (type?: ClassType) => {
+    switch (type) {
+      case 'online':
+        return (
+          <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-sky-950/80 border border-sky-500/40 text-sky-300 font-bold shadow-sm">
+            <Video className="w-3 h-3 text-sky-400" />
+            <span>أونلاين 🌐</span>
+          </span>
+        );
+      case 'trial':
+        return (
+          <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-amber-950/80 border border-amber-500/50 text-amber-300 font-bold shadow-sm ring-1 ring-amber-400/30">
+            <Sparkles className="w-3 h-3 text-amber-400" />
+            <span>حصة تجريبية ✨</span>
+          </span>
+        );
+      case 'in_person':
+      case 'private':
+      case 'center':
+      default:
+        return (
+          <span className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold shadow-sm">
+            <UserCheck className="w-3 h-3 text-emerald-400" />
+            <span>{type === 'center' ? 'سنتر 🏫' : 'حضور شخصي 👤'}</span>
+          </span>
+        );
+    }
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto bg-gray-50 min-h-screen text-right" dir="rtl">
-      
-      {/* رأس الصفحة مع الترحيب والاشتراك ونسبة الحضور */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="md:col-span-2 bg-gradient-to-l from-indigo-600 to-violet-700 rounded-2xl p-6 text-white shadow-xl flex flex-col justify-between">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
-              مرحباً بك يا شريف <Sparkles className="w-7 h-7 text-yellow-300 animate-pulse" />
-            </h1>
-            <p className="text-indigo-100 mt-2 text-sm md:text-base">
-              أهلاً بك في منصة "سند المعلم". جدولك منظم ومتابعة طلابك أصبحت أسهل بكثير.
-            </p>
+    <div className="space-y-4 pb-20">
+      {/* Header Greeting & Subscription Pill */}
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-bold text-white">مرحباً، أ. {profile.name} 👋</h2>
           </div>
-          <div className="flex items-center gap-4 mt-4 pt-4 border-t border-white/10 flex-wrap">
-            <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-xl border border-white/20">
-              <Calendar className="w-4 h-4 text-yellow-300" />
-              <span className="text-xs font-bold">الاشتراك: متبقي {subscriptionDaysLeft} يوماً</span>
+          <p className="text-xs text-purple-300/80 mt-0.5">
+            مادة: <span className="font-semibold text-amber-300">{profile.subject}</span> • {todayArabicName}، {dateFormatted}
+          </p>
+        </div>
+        {getSubscriptionPill()}
+      </div>
+
+      {/* Browser Notification Status Banner */}
+      {typeof window !== 'undefined' && 'Notification' in window && Notification.permission !== 'granted' && (
+        <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-950/40 via-slate-900 to-amber-950/40 border border-amber-500/30 flex items-center justify-between gap-3 text-right">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-300 flex items-center justify-center border border-amber-500/20 shrink-0">
+              <Bell className="w-4 h-4 text-amber-400" />
             </div>
-            {!notificationsAllowed && (
-              <button 
-                onClick={requestNotificationPermission}
-                className="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold shadow transition flex items-center gap-1"
-              >
-                <Bell className="w-3.5 h-3.5" /> تفعيل الإشعارات الفورية
-              </button>
-            )}
+            <div className="flex-1 min-w-0">
+              <h4 className="text-xs font-bold text-white">تفعيل إشعارات المتصفح التنبيهية 🔔</h4>
+              <p className="text-[10px] text-slate-300 mt-0.5 leading-snug">
+                يرجى تفعيل التنبيهات لتنبيهك قبل بدء الحصة بـ 15 دقيقة بصوت تنبيه مميز لضمان عدم نسيان أي موعد.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={async () => {
+              const perm = await Notification.requestPermission();
+              if (perm === 'granted') {
+                new Notification('سند المعلم 🔔', {
+                  body: 'تم تفعيل التنبيهات بنجاح! سنقوم بإرسال تنبيه قبل كل حصة بـ 15 دقيقة.',
+                });
+                try {
+                  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+                  if (AudioContextClass) {
+                    const ctx = new AudioContextClass();
+                    const now = ctx.currentTime;
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(587.33, now);
+                    gain.gain.setValueAtTime(0.18, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.35);
+                  }
+                } catch {}
+              }
+              // Force local re-render
+              window.location.reload();
+            }}
+            className="flex-shrink-0 px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-extrabold shadow cursor-pointer active:scale-95 transition"
+          >
+            تفعيل الآن 🔔
+          </button>
+        </div>
+      )}
+
+      {/* Main Action Banner: Smart Upcoming Lesson Countdown */}
+      {(() => {
+        let badgeText = 'جدول اليوم';
+        let mainTitle = 'لا توجد حصص متبقية اليوم 🌟';
+        let mainSubtitle = todayClasses.length > 0 ? 'اكتملت جميع حصص اليوم بنجاح، أحسنت عملاً!' : 'لا توجد حصص مجدولة لليوم في الجدول الأسبوعي.';
+        let targetStudentId = students.length > 0 ? students[0].id : '';
+
+        if (upcomingOrOngoing) {
+          targetStudentId = upcomingOrOngoing.slot.studentId;
+          if (upcomingOrOngoing.isOngoing) {
+            badgeText = 'حصة جارية الآن 🔴';
+            mainTitle = `الحصة الجارية: ${upcomingOrOngoing.slot.studentName}`;
+            mainSubtitle = `بدأت الساعة ${upcomingOrOngoing.slot.time} (متبقي ${upcomingOrOngoing.endMin - nowMinutes} دقيقة)`;
+          } else {
+            const diffM = upcomingOrOngoing.diffToStart;
+            const timeStr = diffM >= 60 ? `${Math.floor(diffM / 60)} ساعة و ${diffM % 60} دقيقة` : `${diffM} دقيقة`;
+            badgeText = `خلال ${timeStr} ⏰`;
+            mainTitle = `الحصة القادمة: ${upcomingOrOngoing.slot.studentName} - خلال ${timeStr}`;
+            mainSubtitle = `الساعة ${upcomingOrOngoing.slot.time} • مدة الحصة: ${upcomingOrOngoing.slot.duration || 60} دقيقة`;
+          }
+        }
+
+        return (
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-purple-800 via-indigo-800 to-purple-900 p-4 shadow-xl border border-purple-400/30 text-right">
+            <div className="relative z-10 flex items-center justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <span className="inline-block px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-full bg-amber-400 text-slate-950 mb-1.5 shadow">
+                  {badgeText}
+                </span>
+                <h3 className="text-sm font-extrabold text-white truncate">{mainTitle}</h3>
+                <p className="text-xs text-purple-200 mt-0.5 leading-relaxed">
+                  {mainSubtitle}
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 flex-shrink-0">
+                <button
+                  onClick={() => {
+                    if (targetStudentId) {
+                      setSelectedStudentId(targetStudentId);
+                    }
+                    setShowStartClassModal(true);
+                  }}
+                  className="flex-shrink-0 flex items-center justify-center gap-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 px-3.5 py-2.5 text-xs font-black shadow-lg shadow-amber-950/40 active:scale-95 transition cursor-pointer"
+                >
+                  <Play className="w-3.5 h-3.5 fill-slate-950" />
+                  <span>{upcomingOrOngoing ? 'بدء الحصة' : 'تسجيل حصة'}</span>
+                </button>
+
+                {upcomingOrOngoing && (() => {
+                  const matchedStudent = students.find((s) => s.id === upcomingOrOngoing.slot.studentId);
+                  if (matchedStudent?.whatsapp) {
+                    const cleanPhone = matchedStudent.whatsapp.replace(/[^0-9]/g, '');
+                    const fullPhone = cleanPhone.startsWith('01') ? '2' + cleanPhone : cleanPhone;
+                    const classTypeAr =
+                      upcomingOrOngoing.slot.classType === 'online'
+                        ? 'أونلاين (عن بُعد 🌐)'
+                        : upcomingOrOngoing.slot.classType === 'trial'
+                        ? 'حصة تجريبية ✨'
+                        : upcomingOrOngoing.slot.classType === 'center'
+                        ? 'في السنتر (مجموعة 🏫)'
+                        : 'حضور شخصي 👤';
+                    const msg =
+                      `👋 مرحباً ولي أمر الطالب/ـة: *${upcomingOrOngoing.slot.studentName}*\n\n` +
+                      `🔔 نود تذكيركم بأن موعد حصة *${matchedStudent.subject || profile.subject}* مع الأستاذ/ـة *${profile.name}* ستبدأ بعد *15 دقيقة* (الساعة ${upcomingOrOngoing.slot.time}).\n` +
+                      `📌 نوع الحصة: ${classTypeAr}\n` +
+                      (upcomingOrOngoing.slot.locationOrLink ? `🔗 الرابط / المكان: ${upcomingOrOngoing.slot.locationOrLink}\n` : '') +
+                      `\nنتمنى له/لها حصة دراسية موفقة وممتعة! 📚✨\n` +
+                      `— منصة سند المعلم`;
+                    const whatsappUrl = `https://wa.me/${fullPhone}?text=${encodeURIComponent(msg)}`;
+                    return (
+                      <a
+                        href={whatsappUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 text-[11px] font-bold shadow-md shadow-emerald-950/30 active:scale-95 transition cursor-pointer"
+                        title="إرسال تذكير واتساب للحصة القادمة"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        <span>تذكير واتساب</span>
+                      </a>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
+            </div>
+            <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-purple-500/20 blur-xl pointer-events-none" />
+          </div>
+        );
+      })()}
+
+      {/* Financial Snapshot Card linking to Financial Dashboard */}
+      {onOpenFinancialDashboard && (
+        <div
+          onClick={onOpenFinancialDashboard}
+          className="rounded-2xl bg-gradient-to-r from-emerald-950/70 via-slate-900 to-purple-950/70 border border-emerald-500/35 p-3 flex items-center justify-between cursor-pointer hover:border-emerald-400/50 transition shadow-lg group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30 shadow group-hover:scale-105 transition flex-shrink-0">
+              <DollarSign className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-bold text-white">الملخص المالي والأرباح (نظام سعر الساعة)</h3>
+                <span className="text-[9px] px-2 py-0.2 rounded-full bg-emerald-950 border border-emerald-500/30 text-emerald-300 font-bold">
+                  جديد 💰
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                متابعة أرباح الشهر وساعات التدريس والمستحقات المعلقة والتصفية لكل طالب
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 text-xs font-bold text-emerald-300 group-hover:translate-x-[-2px] transition flex-shrink-0">
+            <span>عرض الحسابات</span>
+            <ChevronLeft className="w-4 h-4" />
           </div>
         </div>
+      )}
 
-        {/* بطاقة إحصائية نسبة الحضور والغياب */}
-        <div className="bg-white rounded-2xl p-6 shadow-md border border-gray-100 flex flex-col justify-between items-center text-center">
-          <div className="w-full flex justify-between items-center">
-            <span className="text-xs font-bold text-gray-500">التزام الحضور الأسبوعي</span>
-            <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
-              <Percent className="w-5 h-5" />
-            </div>
+      {/* Quick Stats Grid (4 Responsive Cards) */}
+      <div className="grid grid-cols-4 gap-2">
+        <div
+          onClick={() => onNavigateToTab(1)}
+          className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-2.5 text-right cursor-pointer hover:border-purple-400/40 transition"
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] text-slate-400">الطلاب</span>
+            <Users className="w-3.5 h-3.5 text-purple-400" />
           </div>
-          <div className="my-2">
-            <span className="text-4xl font-extrabold text-gray-800">{attendanceRate}%</span>
-            <span className="block text-xs text-emerald-600 font-semibold mt-1">حضور ممتاز من الطلاب هذا الأسبوع 🌟</span>
+          <p className="text-lg font-black text-white">{totalStudents}</p>
+          <p className="text-[9px] text-purple-300/80">طالب نشط</p>
+        </div>
+
+        <div
+          onClick={() => onNavigateToTab(2)}
+          className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-2.5 text-right cursor-pointer hover:border-purple-400/40 transition"
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] text-slate-400">حصص اليوم</span>
+            <Calendar className="w-3.5 h-3.5 text-indigo-400" />
           </div>
-          <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
-            <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${attendanceRate}%` }}></div>
+          <p className="text-lg font-black text-white">{todayClasses.length}</p>
+          <p className="text-[9px] text-indigo-300/80">{todayArabicName}</p>
+        </div>
+
+        <div
+          onClick={() => onNavigateToTab(2)}
+          className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-2.5 text-right cursor-pointer hover:border-purple-400/40 transition"
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] text-slate-400">مواعيد ثابتة</span>
+            <Clock className="w-3.5 h-3.5 text-cyan-400" />
           </div>
+          <p className="text-lg font-black text-cyan-300">{schedules.length}</p>
+          <p className="text-[9px] text-cyan-200/80">موعد أسبوعي</p>
+        </div>
+
+        <div
+          onClick={onOpenUpgradeModal}
+          className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-2.5 text-right cursor-pointer hover:border-purple-400/40 transition"
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] text-slate-400">الاشتراك</span>
+            <CreditCard className="w-3.5 h-3.5 text-emerald-400" />
+          </div>
+          <p className="text-xs font-black text-emerald-300 truncate">
+            {profile.subscriptionStatus === 'active' ? 'مشترك 💎' : 'تجريبي 🎁'}
+          </p>
+          <p className="text-[9px] text-emerald-400/80">تجديد أو ترقية</p>
         </div>
       </div>
 
-      {/* بطاقة الحصة الحالية أو المنتظرة */}
-      <div className="bg-white rounded-2xl p-6 shadow-md border border-gray-100 relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-2 h-full bg-indigo-600"></div>
-        <div className="flex justify-between items-center mb-4">
-          <span className="text-xs font-bold px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full flex items-center gap-1">
-            <Clock className="w-3.5 h-3.5" /> {classStatusText}
-          </span>
-          <span className="text-sm font-semibold text-gray-500">
-            {currentTime.toLocaleDateString('ar-EG', { weekday: 'long', hour: '2-digit', minute: '2-digit' })}
+      {/* Quick Links Grid (روابط سريعة) */}
+      <div className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-3.5 space-y-2.5">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+            <span>روابط سريعة</span>
+          </h3>
+          <span className="text-[10px] text-slate-400">وصول فوري للأقسام</span>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 text-xs">
+          <button
+            onClick={() => onNavigateToTab(1)}
+            className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-purple-950/40 hover:bg-purple-900/50 border border-purple-500/30 text-purple-200 transition cursor-pointer active:scale-95"
+          >
+            <span className="text-base mb-1">➕</span>
+            <span className="font-bold text-[11px]">إضافة طالب</span>
+          </button>
+
+          <button
+            onClick={() => onNavigateToTab(2)}
+            className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-indigo-950/40 hover:bg-indigo-900/50 border border-indigo-500/30 text-indigo-200 transition cursor-pointer active:scale-95"
+          >
+            <span className="text-base mb-1">📅</span>
+            <span className="font-bold text-[11px]">جدول المواعيد</span>
+          </button>
+
+          <button
+            onClick={() => onNavigateToTab(3)}
+            className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-blue-950/40 hover:bg-blue-900/50 border border-blue-500/30 text-blue-200 transition cursor-pointer active:scale-95"
+          >
+            <span className="text-base mb-1">📖</span>
+            <span className="font-bold text-[11px]">مكتبتي</span>
+          </button>
+
+          <button
+            onClick={() => onNavigateToTab(1)}
+            className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-amber-950/40 hover:bg-amber-900/50 border border-amber-500/30 text-amber-200 transition cursor-pointer active:scale-95"
+          >
+            <span className="text-base mb-1">📝</span>
+            <span className="font-bold text-[11px]">ملاحظات الطلاب</span>
+          </button>
+
+          <button
+            onClick={onOpenUpgradeModal}
+            className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-500/30 text-emerald-200 transition cursor-pointer active:scale-95"
+          >
+            <span className="text-base mb-1">💳</span>
+            <span className="font-bold text-[11px]">الاشتراك</span>
+          </button>
+
+          <button
+            onClick={() => onNavigateToTab(4)}
+            className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700 text-slate-200 transition cursor-pointer active:scale-95"
+          >
+            <span className="text-base mb-1">⚙️</span>
+            <span className="font-bold text-[11px]">الإعدادات</span>
+          </button>
+        </div>
+      </div>
+
+      {/* WhatsApp Teachers Community Card */}
+      <div className="rounded-2xl bg-gradient-to-r from-emerald-950/70 via-slate-900 to-purple-950/60 border border-emerald-500/40 p-3.5 space-y-2.5 shadow-lg">
+        <div className="flex items-center gap-2.5">
+          <div className="w-10 h-10 rounded-xl bg-emerald-600/30 border border-emerald-500/40 flex items-center justify-center flex-shrink-0 text-emerald-300">
+            <MessageCircle className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="text-xs font-bold text-white">انضم لمجتمع المعلمين المشتركين على واتساب</h4>
+            <p className="text-[11px] text-slate-300 mt-0.5 leading-snug">
+              تبادل الخبرات، بنوك الأسئلة، ونماذج المتابعة مع زملائك من نخبة المعلمين الخصوصيين.
+            </p>
+          </div>
+        </div>
+
+        <a
+          href={`https://wa.me/201025967471?text=${encodeURIComponent(
+            `مرحباً، أنا أ. ${profile.name} (معلم ${profile.subject}) وأرغب في الانضمام إلى مجتمع معلمي سند المعلم على واتساب.`
+          )}`}
+          target="_blank"
+          rel="noreferrer"
+          className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-md shadow-emerald-950/40"
+        >
+          <MessageCircle className="w-4 h-4" />
+          <span>انضم للمجموعة الآن 💬</span>
+        </a>
+      </div>
+
+      {/* Class Types Distribution Card (Recharts) */}
+      <div className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-xl bg-purple-950/80 border border-purple-500/30 text-purple-300">
+              <PieChartIcon className="w-4 h-4 text-purple-400" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white">توزيع أنواع الحصص للطلاب</h3>
+              <p className="text-[11px] text-slate-400">نظرة سريعة على نسب الحصص (أونلاين، سنتر، برايفيت)</p>
+            </div>
+          </div>
+          <span className="text-xs font-mono font-bold text-purple-300 bg-purple-950/60 px-2 py-0.5 rounded-full border border-purple-500/30">
+            {totalStudents} طالب
           </span>
         </div>
 
-        {activeOrUpcomingClass ? (
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div className="space-y-1">
-              <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                {activeOrUpcomingClass.subject}
-                <span className="text-sm font-normal text-gray-500">مع الطالب: {activeOrUpcomingClass.studentName}</span>
-              </h2>
-              <div className="flex items-center gap-4 text-sm text-gray-600 pt-1">
-                <span className="flex items-center gap-1">
-                  <Clock className="w-4 h-4 text-indigo-500" /> 
-                  {activeOrUpcomingClass.startTime} - {activeOrUpcomingClass.endTime}
-                </span>
-                <span className="flex items-center gap-1">
-                  {activeOrUpcomingClass.type === 'online' ? <Video className="w-4 h-4 text-blue-500" /> : <MapPin className="w-4 h-4 text-emerald-500" />}
-                  {activeOrUpcomingClass.type === 'online' ? 'أونلاين' : 'حضوري / سنتر'}
-                </span>
+        {hasChartData ? (
+          <div className="flex items-center justify-between gap-3 pt-1">
+            {/* Donut Chart */}
+            <div className="w-[135px] h-[125px] flex-shrink-0 relative">
+              <ResponsiveContainer width="100%" height="100%">
+                <RechartsPie>
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const item = payload[0].payload;
+                        return (
+                          <div className="bg-slate-950/95 border border-purple-500/40 px-2.5 py-1.5 rounded-xl text-right shadow-xl text-xs z-50">
+                            <p className="font-bold text-white">{item.name}</p>
+                            <p className="text-purple-300">
+                              {item.value} طالب ({totalStudents > 0 ? Math.round((item.value / totalStudents) * 100) : 0}%)
+                            </p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Pie
+                    data={classTypeData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={34}
+                    outerRadius={54}
+                    paddingAngle={3}
+                    dataKey="value"
+                    stroke="#0b0718"
+                    strokeWidth={2}
+                  >
+                    {classTypeData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                </RechartsPie>
+              </ResponsiveContainer>
+              {/* Inner Center Label */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="text-xs font-black text-white">{totalStudents}</span>
+                <span className="text-[8px] text-slate-400">طالب</span>
               </div>
             </div>
 
-            <div className="flex items-center gap-3 w-full md:w-auto">
-              <button 
-                onClick={() => {
-                  setActiveClass(activeOrUpcomingClass);
-                  setShowReportModal(true);
-                }}
-                className="flex-1 md:flex-none bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-md transition flex items-center justify-center gap-2"
-              >
-                <CheckCircle2 className="w-4 h-4" /> تسجيل الحصة وإرسال التقرير
-              </button>
-              <button 
-                onClick={playAlertSound}
-                title="اختبار نغمة التنبيه"
-                className="p-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition"
-              >
-                <Volume2 className="w-5 h-5" />
-              </button>
+            {/* Custom Interactive Legend / Summary Badges */}
+            <div className="flex-1 space-y-1.5">
+              {classTypeData.map((item) => {
+                const percent = totalStudents > 0 ? Math.round((item.value / totalStudents) * 100) : 0;
+                return (
+                  <div
+                    key={item.shortName}
+                    className="flex items-center justify-between p-2 rounded-xl bg-slate-950/50 border border-slate-800/80 text-xs"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: item.color }}
+                      />
+                      <span className="font-semibold text-slate-200">{item.shortName}</span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 font-mono">
+                      <span className="font-bold text-white">{item.value}</span>
+                      <span className="text-[10px] text-slate-400">({percent}%)</span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         ) : (
-          <div className="text-center py-6 text-gray-400">
-            <BookOpen className="w-10 h-10 mx-auto mb-2 opacity-50" />
-            <p>لا توجد حصص أخرى مجدولة لهذا اليوم. استرح قليلاً أو راجع مهامك!</p>
+          <div className="py-4 text-center text-xs text-slate-400 bg-slate-950/40 rounded-xl border border-slate-800/60">
+            <p>لا توجد بيانات طلاب لعرض الرسم البياني حتى الآن.</p>
+            <p className="text-[11px] text-purple-300/80 mt-0.5">أضف طلابك لتوزيعهم بين أونلاين، سنتر، وبرايفيت.</p>
           </div>
         )}
       </div>
 
-      {/* اختصارات التبويبات السريعة */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <button onClick={() => onNavigate('schedule')} className="bg-white hover:bg-indigo-50 p-4 rounded-xl shadow-sm border border-gray-100 flex items-center gap-3 transition group">
-          <div className="p-3 bg-indigo-100 text-indigo-600 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition"><Calendar className="w-6 h-6" /></div>
-          <div className="text-right"><span className="block font-bold text-gray-800 text-sm">جدول المواعيد</span><span className="text-xs text-gray-500">إدارة الحصص الأسبوعية</span></div>
-        </button>
+      {/* Today's Schedule Section */}
+      <div className="space-y-2.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <Clock className="w-4 h-4 text-purple-400" />
+            <h3 className="text-sm font-bold text-white">جدول حصص اليوم ({todayArabicName})</h3>
+          </div>
+          <button
+            onClick={() => onNavigateToTab(2)}
+            className="text-xs text-purple-300 hover:text-white flex items-center gap-0.5 cursor-pointer"
+          >
+            <span>كل المواعيد</span>
+            <ChevronLeft className="w-3.5 h-3.5" />
+          </button>
+        </div>
 
-        <button onClick={() => onNavigate('students')} className="bg-white hover:bg-violet-50 p-4 rounded-xl shadow-sm border border-gray-100 flex items-center gap-3 transition group">
-          <div className="p-3 bg-violet-100 text-violet-600 rounded-lg group-hover:bg-violet-600 group-hover:text-white transition"><Users className="w-6 h-6" /></div>
-          <div className="text-right"><span className="block font-bold text-gray-800 text-sm">قائمة الطلاب</span><span className="text-xs text-gray-500">بيانات وأسعار الحصص</span></div>
-        </button>
+        {todayClasses.length === 0 ? (
+          <div className="rounded-2xl bg-slate-900/50 border border-slate-800 p-6 text-center">
+            <div className="w-12 h-12 rounded-full bg-purple-950/60 border border-purple-500/30 flex items-center justify-center mx-auto mb-2 text-purple-400">
+              <Calendar className="w-6 h-6" />
+            </div>
+            <p className="text-sm font-bold text-slate-200">لا توجد حصص مجدولة لليوم!</p>
+            <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+              وقت رائع للراحة أو تحضير الدروس، أو يمكنك إضافة موعد حصة جديد للجدول.
+            </p>
+            <button
+              onClick={() => onNavigateToTab(2)}
+              className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600/30 border border-purple-500/30 text-purple-300 text-xs font-bold hover:bg-purple-600/50 transition cursor-pointer"
+            >
+              <span>إضافة موعد جديد</span>
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {evaluatedTodayClasses.map((evalItem) => {
+              const item = evalItem.slot;
+              const matchedStudent = students.find((s) => s.id === item.studentId);
+              const colorInfo = getColorStyle(item.color);
+              const isCompleted = evalItem.isCompleted;
+              const isUpcomingSoon = evalItem.isUpcomingSoon;
+              const diffMins = evalItem.diffToStart;
 
-        <button onClick={() => onNavigate('library')} className="bg-white hover:bg-blue-50 p-4 rounded-xl shadow-sm border border-gray-100 flex items-center gap-3 transition group">
-          <div className="p-3 bg-blue-100 text-blue-600 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition"><BookOpen className="w-6 h-6" /></div>
-          <div className="text-right"><span className="block font-bold text-gray-800 text-sm">مكتبة الملفات</span><span className="text-xs text-gray-500">الامتحانات والملخصات</span></div>
-        </button>
+              // Build pre-filled 15-minute reminder message for WhatsApp
+              let whatsappReminderUrl = '';
+              if (matchedStudent?.whatsapp) {
+                const cleanPhone = matchedStudent.whatsapp.replace(/[^0-9]/g, '');
+                const fullPhone = cleanPhone.startsWith('01') ? '2' + cleanPhone : cleanPhone;
+                const classTypeAr =
+                  item.classType === 'online'
+                    ? 'أونلاين (عن بُعد 🌐)'
+                    : item.classType === 'trial'
+                    ? 'حصة تجريبية ✨'
+                    : item.classType === 'center'
+                    ? 'في السنتر (مجموعة 🏫)'
+                    : 'حضور شخصي 👤';
+                const msg =
+                  `👋 مرحباً ولي أمر الطالب/ـة: *${item.studentName}*\n\n` +
+                  `🔔 نود تذكيركم بأن موعد حصة *${matchedStudent.subject || profile.subject}* مع الأستاذ/ـة *${profile.name}* ستبدأ بعد *15 دقيقة* (الساعة ${item.time}).\n` +
+                  `📌 نوع الحصة: ${classTypeAr}\n` +
+                  (item.locationOrLink ? `🔗 الرابط / المكان: ${item.locationOrLink}\n` : '') +
+                  `\nنتمنى له/لها حصة دراسية موفقة وممتعة! 📚✨\n` +
+                  `— منصة سند المعلم`;
+                whatsappReminderUrl = `https://wa.me/${fullPhone}?text=${encodeURIComponent(msg)}`;
+              }
 
-        <button onClick={() => onNavigate('financial')} className="bg-white hover:bg-emerald-50 p-4 rounded-xl shadow-sm border border-gray-100 flex items-center gap-3 transition group">
-          <div className="p-3 bg-emerald-100 text-emerald-600 rounded-lg group-hover:bg-emerald-600 group-hover:text-white transition"><DollarSign className="w-6 h-6" /></div>
-          <div className="text-right"><span className="block font-bold text-gray-800 text-sm">الملخص المالي</span><span className="text-xs text-gray-500">المصروفات والأرباح</span></div>
-        </button>
+              return (
+                <div
+                  key={item.id}
+                  style={{ borderColor: isCompleted ? 'rgba(16, 185, 129, 0.4)' : colorInfo.border }}
+                  className={`rounded-2xl border p-3.5 flex items-center justify-between transition shadow-md ${
+                    isCompleted
+                      ? 'bg-slate-900/60 opacity-80 border-emerald-500/30'
+                      : isUpcomingSoon
+                      ? 'bg-slate-900/90 ring-1 ring-amber-500/50 shadow-amber-950/30'
+                      : 'bg-slate-900/80 hover:border-purple-400/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      style={{
+                        backgroundColor: isCompleted ? 'rgba(6, 78, 59, 0.5)' : colorInfo.bg,
+                        borderColor: isCompleted ? 'rgba(16, 185, 129, 0.4)' : colorInfo.border,
+                      }}
+                      className="w-10 h-10 rounded-xl border flex flex-col items-center justify-center font-mono text-xs font-bold"
+                    >
+                      <span style={{ color: isCompleted ? '#34d399' : colorInfo.text }}>
+                        {isCompleted ? '✓' : item.time}
+                      </span>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4
+                          className={`text-sm font-bold ${
+                            isCompleted ? 'line-through text-slate-300 decoration-emerald-400' : 'text-white'
+                          }`}
+                        >
+                          {item.studentName}
+                        </h4>
+                        {getClassTypeBadge(item.classType)}
+
+                        {isCompleted ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/90 text-emerald-300 border border-emerald-500/40 font-bold flex items-center gap-1 shadow-sm">
+                            <Check className="w-3 h-3 text-emerald-400 stroke-[3]" />
+                            <span>تمت الحصة ✅</span>
+                          </span>
+                        ) : isUpcomingSoon ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse font-bold">
+                            خلال {diffMins} دقيقة ⏰
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        الساعة: {item.time} • المدة: {item.duration} دقيقة {item.locationOrLink && `• ${item.locationOrLink}`}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {/* Attendance / Completed Toggle Button */}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        toggleScheduleCompletedToday(profile.id, item.id, !item.completedTodayDate)
+                      }
+                      className={`p-2 rounded-xl border transition cursor-pointer ${
+                        item.completedTodayDate
+                          ? 'bg-emerald-900/40 border-emerald-500/40 text-emerald-300 hover:bg-emerald-800/40'
+                          : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-emerald-300 hover:bg-slate-800'
+                      }`}
+                      title={item.completedTodayDate ? 'إلغاء وسم تمت الحصة' : 'تسجيل حضور / تمت الحصة'}
+                    >
+                      <CheckCircle className={`w-4 h-4 ${item.completedTodayDate ? 'text-emerald-400' : ''}`} />
+                    </button>
+
+                    {!isCompleted && whatsappReminderUrl && (
+                      <a
+                        href={whatsappReminderUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={`p-2 rounded-xl border transition flex items-center gap-1 ${
+                          isUpcomingSoon
+                            ? 'bg-emerald-600 border-emerald-400 text-white shadow-lg shadow-emerald-950/50 animate-pulse'
+                            : 'bg-emerald-950/60 border-emerald-500/30 text-emerald-400 hover:bg-emerald-900/50'
+                        }`}
+                        title="إرسال تذكير الحصة (قبل 15 دقيقة) عبر واتساب"
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                        {isUpcomingSoon && <span className="text-[10px] font-bold hidden sm:inline">تذكير</span>}
+                      </a>
+                    )}
+                    <button
+                      onClick={() => {
+                        setSelectedStudentId(item.studentId);
+                        setShowStartClassModal(true);
+                      }}
+                      className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-white text-xs font-bold transition active:scale-95 cursor-pointer shadow-md ${
+                        isCompleted
+                          ? 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                          : 'bg-purple-600 hover:bg-purple-500'
+                      }`}
+                    >
+                      <Play className="w-3 h-3 fill-white" />
+                      <span>{isCompleted ? 'تفاصيل' : 'بدء'}</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* نافذة تسجيل الحصة (مع الإدخال الصوتي الذكي) */}
-      {showReportModal && activeClass && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in duration-200">
-            <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                تسجيل تقرير حصة: {activeClass.studentName}
-              </h3>
-              <button onClick={() => setShowReportModal(false)} className="text-gray-400 hover:text-gray-600 text-xl font-bold">✕</button>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-bold text-gray-600 block mb-1">حالة الحضور</label>
-                <div className="grid grid-cols-3 gap-2">
-                  <button type="button" onClick={() => setAttendanceStatus('present')} className={`py-2 rounded-lg text-xs font-bold border transition ${attendanceStatus === 'present' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-gray-50 text-gray-700'}`}>حاضر ✅</button>
-                  <button type="button" onClick={() => setAttendanceStatus('absent')} className={`py-2 rounded-lg text-xs font-bold border transition ${attendanceStatus === 'absent' ? 'bg-rose-600 text-white border-rose-600' : 'bg-gray-50 text-gray-700'}`}>غائب ❌</button>
-                  <button type="button" onClick={() => setAttendanceStatus('excused')} className={`py-2 rounded-lg text-xs font-bold border transition ${attendanceStatus === 'excused' ? 'bg-amber-600 text-white border-amber-600' : 'bg-gray-50 text-gray-700'}`}>معتذر ⚠</button>
-                </div>
+      {/* Start Class Modal */}
+      {showStartClassModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-slate-900 border border-purple-500/30 rounded-3xl p-5 shadow-2xl text-right">
+            <div className="flex items-center justify-between border-b border-purple-900/40 pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <Play className="w-5 h-5 text-amber-400 fill-amber-400" />
+                <h3 className="text-base font-bold text-white">تسجيل تفاصيل الحصة</h3>
               </div>
-
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-xs font-bold text-gray-600">ما تم شرحه اليوم</label>
-                  <button 
-                    type="button" 
-                    onClick={() => startVoiceInput('notes')}
-                    className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${isListening ? 'bg-rose-500 text-white animate-pulse' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
-                  >
-                    {isListening ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />} إملاء صوتي
-                  </button>
-                </div>
-                <input 
-                  type="text" 
-                  value={lessonNotes}
-                  onChange={(e) => setLessonNotes(e.target.value)}
-                  placeholder="اكتب أو انطق ما تم شرحه..."
-                  className="w-full border rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-xs font-bold text-gray-600">الواجب المنزلي المطلوب</label>
-                  <button 
-                    type="button" 
-                    onClick={() => startVoiceInput('homework')}
-                    className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 hover:bg-indigo-100 flex items-center gap-1"
-                  >
-                    <Mic className="w-3 h-3" /> إملاء صوتي
-                  </button>
-                </div>
-                <input 
-                  type="text" 
-                  value={homework}
-                  onChange={(e) => setHomework(e.target.value)}
-                  placeholder="اكتب أو انطق الواجب..."
-                  className="w-full border rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-gray-600 block mb-1">تقييم مستوى الطالب ({studentRating} نجوم)</label>
-                <div className="flex gap-2">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <button key={star} type="button" onClick={() => setStudentRating(star)} className={`text-2xl transition ${studentRating >= star ? 'text-yellow-400 scale-110' : 'text-gray-300'}`}>★</button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-3 border-t">
-              <button onClick={() => setShowReportModal(false)} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold rounded-xl transition">إلغاء</button>
-              <a 
-                href={getWhatsAppReportLink()}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => setShowReportModal(false)}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow transition flex items-center gap-2"
+              <button
+                onClick={() => setShowStartClassModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white"
               >
-                <Send className="w-4 h-4" /> إرسال التقرير عبر واتساب
-              </a>
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">اختر الطالب</label>
+                <select
+                  value={selectedStudentId}
+                  onChange={(e) => setSelectedStudentId(e.target.value)}
+                  className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-white focus:outline-none focus:border-purple-400"
+                >
+                  <option value="" disabled>
+                    -- اختر من قائمة الطلاب --
+                  </option>
+                  {students.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.subject})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Attendance */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">حالة الحضور</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAttendance('present')}
+                    className={`py-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                      attendance === 'present'
+                        ? 'bg-emerald-600/30 border-emerald-500 text-emerald-300'
+                        : 'bg-slate-800/60 border-slate-700 text-slate-400'
+                    }`}
+                  >
+                    حاضر ✅
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAttendance('absent')}
+                    className={`py-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                      attendance === 'absent'
+                        ? 'bg-rose-600/30 border-rose-500 text-rose-300'
+                        : 'bg-slate-800/60 border-slate-700 text-slate-400'
+                    }`}
+                  >
+                    غائب ❌
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAttendance('excused')}
+                    className={`py-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                      attendance === 'excused'
+                        ? 'bg-amber-600/30 border-amber-500 text-amber-300'
+                        : 'bg-slate-800/60 border-slate-700 text-slate-400'
+                    }`}
+                  >
+                    معتذر ⚠️
+                  </button>
+                </div>
+              </div>
+
+              {/* Topic */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  ما تم شرحه في الحصة *
+                </label>
+                <textarea
+                  value={classTopic}
+                  onChange={(e) => setClassTopic(e.target.value)}
+                  placeholder="مثال: شرح درس المعادلات من الدرجة الثانية وحل تمارين 1 و 2..."
+                  rows={2}
+                  required
+                  className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
+                />
+              </div>
+
+              {/* Homework */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  الواجب المطلوب (اختياري)
+                </label>
+                <input
+                  type="text"
+                  value={classHomework}
+                  onChange={(e) => setClassHomework(e.target.value)}
+                  placeholder="مثال: حل صفحة 45 من كراسة التدريبات"
+                  className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
+                />
+              </div>
+
+              {/* Rating */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  تقييم استيعاب الطالب اليوم
+                </label>
+                <div className="flex items-center gap-1">
+                  {[1, 2, 3, 4, 5].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => setRating(num)}
+                      className="p-1 cursor-pointer transition hover:scale-110"
+                    >
+                      <Star
+                        className={`w-6 h-6 ${
+                          num <= rating
+                            ? 'text-amber-400 fill-amber-400'
+                            : 'text-slate-600'
+                        }`}
+                      />
+                    </button>
+                  ))}
+                  <span className="text-xs text-slate-400 mr-2">
+                    {rating === 5 ? 'ممتاز جداً 🌟' : rating >= 4 ? 'جيد جداً' : rating >= 3 ? 'متوسط' : 'يحتاج تركيز'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-2 flex flex-col gap-2">
+                <button
+                  type="button"
+                  disabled={savingClass || !selectedStudentId || !classTopic.trim()}
+                  onClick={() => handleStartClassSubmit(true)}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 py-2.5 text-xs font-bold text-white transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-lg shadow-emerald-950/40"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  <span>حفظ وإرسال التقرير لولي الأمر عبر واتساب</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={savingClass || !selectedStudentId || !classTopic.trim()}
+                  onClick={() => handleStartClassSubmit(false)}
+                  className="w-full rounded-xl bg-purple-600/40 hover:bg-purple-600/60 border border-purple-500/40 py-2 text-xs font-bold text-purple-200 transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                >
+                  <span>حفظ في سجل الطالب فقط (بدون واتساب)</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
+      {/* MODAL: Edit Class Report Before Send */}
+      {showClassReportEditModal && pendingReportStudent && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 text-right">
+          <div className="w-full max-w-lg bg-slate-900 border border-emerald-500/40 rounded-3xl p-5 shadow-2xl text-right max-h-[92vh] flex flex-col space-y-3">
+            <div className="flex items-center justify-between border-b border-emerald-900/40 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30">
+                  <FileText className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">معاينة وتعديل تقرير الحصة لولي الأمر</h3>
+                  <p className="text-[10px] text-slate-400">
+                    الطالب/ـة: {pendingReportStudent.name} • {pendingReportStudent.whatsapp ? `واتساب: ${pendingReportStudent.whatsapp}` : ''}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowClassReportEditModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300">
+              يمكنك مراجعة وتعديل نص التقرير بحرية قبل الضغط على زر الإرسال عبر الواتساب:
+            </p>
+
+            {/* Editable Textarea */}
+            <div className="flex-1 flex flex-col">
+              <textarea
+                value={editableClassReportText}
+                onChange={(e) => setEditableClassReportText(e.target.value)}
+                rows={9}
+                className="w-full rounded-2xl bg-slate-950/90 border border-emerald-500/30 focus:border-emerald-400 p-3.5 text-xs text-slate-100 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition resize-y"
+                placeholder="نص التقرير..."
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={handleSendClassReportWhatsApp}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-lg shadow-emerald-950/50 active:scale-98"
+              >
+                <Send className="w-4 h-4" />
+                <span>إرسال التقرير عبر واتساب الآن 💬</span>
+              </button>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyClassReport}
+                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition cursor-pointer active:scale-98"
+                >
+                  {copiedClassReport ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                  <span>{copiedClassReport ? 'تم النسخ بنجاح!' : 'نسخ النص'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowClassReportEditModal(false)}
+                  className="flex items-center justify-center py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition cursor-pointer active:scale-98"
+                >
+                  إغلاق
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
