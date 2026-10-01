@@ -2,26 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { TeacherProfile, Student, LessonLog } from '../types';
 import { fetchAllStudentLessons, settleStudentAccount } from '../firebase';
 import {
-  DollarSign,
   Clock,
   CheckCircle2,
   AlertCircle,
   TrendingUp,
   CreditCard,
-  UserCheck,
   MessageCircle,
   RefreshCw,
   Search,
-  Filter,
   ChevronRight,
   Sparkles,
-  ArrowDownLeft,
-  ArrowUpRight,
   Calendar,
   X,
   Send,
   Copy,
   Check,
+  FileText,
 } from 'lucide-react';
 
 interface FinancialDashboardProps {
@@ -48,7 +44,15 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
   const [editableInvoiceText, setEditableInvoiceText] = useState('');
   const [copiedInvoice, setCopiedInvoice] = useState(false);
 
-  // Load all lessons for students
+  // Today's date key (e.g. "2026-10-01") and Current Month Key (e.g. "2026-10")
+  const now = new Date();
+  const todayKey = now.toISOString().split('T')[0];
+  const currentMonthKey = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
+  
+  // Selected Month State (Default to current month key)
+  const [selectedMonthKey, setSelectedMonthKey] = useState<string>(currentMonthKey);
+
+  // Load all lessons for students from Firebase
   const loadLessons = async () => {
     setLoadingLessons(true);
     try {
@@ -69,34 +73,70 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
     }
   }, [profile.id, students]);
 
-  // Current month prefix YYYY-MM
-  const now = new Date();
-  const currentMonthPrefix = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
-  const currentMonthName = new Intl.DateTimeFormat('ar-EG', { month: 'long', year: 'numeric' }).format(now);
+  // Build dynamic list of months from lessons and past months
+  const availableMonths = React.useMemo(() => {
+    const keysSet = new Set<string>();
+    keysSet.add(currentMonthKey);
 
-  // Calculate calculations per student
+    Object.values(lessonsMap).forEach((lessons) => {
+      lessons.forEach((l) => {
+        if (l.date && l.date.length >= 7) {
+          keysSet.add(l.date.substring(0, 7));
+        }
+      });
+    });
+
+    for (let i = 0; i <= 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const k = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+      keysSet.add(k);
+    }
+
+    const sortedKeys = Array.from(keysSet).sort().reverse();
+
+    return sortedKeys.map((k) => {
+      const [y, m] = k.split('-').map(Number);
+      const d = new Date(y, m - 1, 1);
+      const label = new Intl.DateTimeFormat('ar-EG', { month: 'long', year: 'numeric' }).format(d);
+      return {
+        key: k,
+        label,
+        isCurrent: k === currentMonthKey,
+      };
+    });
+  }, [lessonsMap, currentMonthKey]);
+
+  const selectedMonthInfo = availableMonths.find((m) => m.key === selectedMonthKey) || {
+    key: selectedMonthKey,
+    label: selectedMonthKey === 'all' ? 'كامل السجل التراكمي' : selectedMonthKey,
+    isCurrent: selectedMonthKey === currentMonthKey,
+  };
+
+  const isAllTime = selectedMonthKey === 'all';
+
+  // Calculate statistics per student
   const studentFinancials = students.map((st) => {
     const studentLessons = lessonsMap[st.id] || [];
     const hourlyRate = st.hourlyRate || (st.monthlyFee ? Math.round(st.monthlyFee / 4) : 100);
 
-    let totalMinutesAll = 0;
-    let totalMinutesMonth = 0;
+    // 1. Filter lessons for the Selected Month / Period
+    const periodLessons = isAllTime
+      ? studentLessons
+      : studentLessons.filter((l) => l.date && l.date.startsWith(selectedMonthKey));
+
+    let periodMinutes = 0;
+    let periodAmount = 0;
     let pendingMinutes = 0;
     let pendingAmount = 0;
     let collectedAmount = 0;
-    let monthTotalAmount = 0;
 
-    studentLessons.forEach((l) => {
+    periodLessons.forEach((l) => {
       const dur = l.duration || 60;
       const rate = l.hourlyRate || hourlyRate;
       const cost = l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate);
 
-      totalMinutesAll += dur;
-
-      if (l.date && l.date.startsWith(currentMonthPrefix)) {
-        totalMinutesMonth += dur;
-        monthTotalAmount += cost;
-      }
+      periodMinutes += dur;
+      periodAmount += cost;
 
       if (l.settled) {
         collectedAmount += cost;
@@ -106,32 +146,63 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
       }
     });
 
-    const pendingHours = (pendingMinutes / 60).toFixed(1);
-    const totalHoursAll = (totalMinutesAll / 60).toFixed(1);
-    const monthHours = (totalMinutesMonth / 60).toFixed(1);
+    const periodHours = Number((periodMinutes / 60).toFixed(1));
+
+    // 2. Filter lessons specifically for TODAY (ساعات اليوم منفصلة)
+    const todayLessons = studentLessons.filter((l) => l.date === todayKey);
+    const todayMinutes = todayLessons.reduce((sum, l) => sum + (l.duration || 60), 0);
+    const todayHours = Number((todayMinutes / 60).toFixed(1));
+    const todayEarnings = todayLessons.reduce((sum, l) => {
+      const dur = l.duration || 60;
+      const rate = l.hourlyRate || hourlyRate;
+      return sum + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
+    }, 0);
 
     return {
       student: st,
       hourlyRate,
-      lessonsCount: studentLessons.length,
-      totalMinutesAll,
-      totalHoursAll: Number(totalHoursAll),
-      monthHours: Number(monthHours),
-      pendingHours: Number(pendingHours),
+      lessonsCount: periodLessons.length,
+      periodMinutes,
+      periodHours,
+      periodAmount,
+      pendingMinutes,
       pendingAmount,
       collectedAmount,
-      monthTotalAmount,
+      todayLessonsCount: todayLessons.length,
+      todayHours,
+      todayEarnings,
     };
   });
 
-  // Global Aggregates
-  const totalMonthEarnings = studentFinancials.reduce((sum, item) => sum + item.monthTotalAmount, 0);
-  const totalTeachingMinutes = studentFinancials.reduce((sum, item) => sum + item.totalMinutesAll, 0);
-  const totalTeachingHours = (totalTeachingMinutes / 60).toFixed(1);
-  const totalPendingDues = studentFinancials.reduce((sum, item) => sum + item.pendingAmount, 0);
-  const totalCollectedDues = studentFinancials.reduce((sum, item) => sum + item.collectedAmount, 0);
+  // Global Aggregates for Selected Period
+  const totalPeriodEarnings = studentFinancials.reduce((sum, item) => sum + item.periodAmount, 0);
+  const totalPeriodTeachingMinutes = studentFinancials.reduce((sum, item) => sum + item.periodMinutes, 0);
+  const totalPeriodTeachingHours = (totalPeriodTeachingMinutes / 60).toFixed(1);
+  const totalPeriodPendingDues = studentFinancials.reduce((sum, item) => sum + item.pendingAmount, 0);
+  const totalPeriodCollectedDues = studentFinancials.reduce((sum, item) => sum + item.collectedAmount, 0);
+  const totalPeriodLessonsCount = studentFinancials.reduce((sum, item) => sum + item.lessonsCount, 0);
 
-  // Filtered List
+  // Global Aggregates for TODAY (ساعات وأرباح اليوم الإجمالية)
+  const totalTodayHours = studentFinancials.reduce((sum, item) => sum + item.todayHours, 0).toFixed(1);
+  const totalTodayEarnings = studentFinancials.reduce((sum, item) => sum + item.todayEarnings, 0);
+  const totalTodayLessonsCount = studentFinancials.reduce((sum, item) => sum + item.todayLessonsCount, 0);
+
+  // Month navigation helpers
+  const handlePrevMonth = () => {
+    const currentIndex = availableMonths.findIndex((m) => m.key === selectedMonthKey);
+    if (currentIndex !== -1 && currentIndex < availableMonths.length - 1) {
+      setSelectedMonthKey(availableMonths[currentIndex + 1].key);
+    }
+  };
+
+  const handleNextMonth = () => {
+    const currentIndex = availableMonths.findIndex((m) => m.key === selectedMonthKey);
+    if (currentIndex > 0) {
+      setSelectedMonthKey(availableMonths[currentIndex - 1].key);
+    }
+  };
+
+  // Filter list by search & status
   const filteredList = studentFinancials.filter((item) => {
     const matchesSearch =
       item.student.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -139,11 +210,11 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
     if (!matchesSearch) return false;
 
     if (filterDues === 'pending') return item.pendingAmount > 0;
-    if (filterDues === 'settled') return item.pendingAmount === 0;
+    if (filterDues === 'settled') return item.pendingAmount === 0 && item.collectedAmount > 0;
     return true;
   });
 
-  // Handle Settle
+  // Settle Account Handler
   const handleConfirmSettleAccount = async (student: Student) => {
     setSettlingStudentId(student.id);
     try {
@@ -157,11 +228,15 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
     }
   };
 
-  // Generate Invoice/Statement Text for WhatsApp
+  // WhatsApp Invoice Generator
   const handleOpenInvoiceModal = (item: (typeof studentFinancials)[0]) => {
     const st = item.student;
-    const unsettledLessons = (lessonsMap[st.id] || []).filter((l) => !l.settled);
-    const lessonsListText = unsettledLessons
+    const studentLessons = lessonsMap[st.id] || [];
+    const targetLessons = isAllTime
+      ? studentLessons.filter((l) => !l.settled)
+      : studentLessons.filter((l) => l.date && l.date.startsWith(selectedMonthKey) && !l.settled);
+
+    const lessonsListText = targetLessons
       .map(
         (l, i) =>
           `  ${i + 1}. [${l.date}] ${l.topic} (${l.duration || 60} دقيقة) - ${l.cost || Math.round(((l.duration || 60) / 60) * item.hourlyRate)} ${currency}`
@@ -170,16 +245,16 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
 
     const text =
       `السلام عليكم ورحمة الله وبركاته 🌷\n` +
-      `🧾 كشف حساب ومطالبة مالية - مادة (${st.subject})\n\n` +
+      `🧾 كشف حساب ومطالبة مالية (${selectedMonthInfo.label}) - مادة (${st.subject})\n\n` +
       `👤 الطالب/ـة: ${st.name}\n` +
       `👨‍🏫 إعداد المعلم: أ. ${profile.name}\n` +
-      `📅 التاريخ: ${new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}\n\n` +
-      `📊 تفاصيل الحساب الحالي:\n` +
-      `• سعر الساعة: ${item.hourlyRate} ${currency}/ساعة\n` +
-      `• عدد الساعات المنفذة: ${item.pendingHours} ساعة (${unsettledLessons.length} حصص)\n` +
+      `📅 الفترة: ${selectedMonthInfo.label}\n\n` +
+      `📊 تفاصيل الحساب:\n` +
+      `• سعر الساعة: ${item.hourlyRate} ${currency}\n` +
+      `• عدد الساعات المنفذة: ${item.pendingMinutes / 60} ساعة\n` +
       `• إجمالي المستحقات المطلوبة: ${item.pendingAmount} ${currency} 💰\n\n` +
-      (lessonsListText ? `📋 تفاصيل الحصص المنفذة غير المصفاة:\n${lessonsListText}\n\n` : '') +
-      `شاكرين ومقدرين لكم حسن التعاون والاهتمام الدائم 🌟`;
+      (lessonsListText ? `📋 تفاصيل الحصص:\n${lessonsListText}\n\n` : '') +
+      `شاكرين حسن تعاملك 🌟`;
 
     setEditableInvoiceText(text);
     setShowInvoiceModal(st);
@@ -195,6 +270,73 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
     window.open(url, '_blank');
   };
 
+  // Export PDF Report
+  const handleExportPDF = () => {
+    const printContent = `
+      <!DOCTYPE html>
+      <html lang="ar" dir="rtl">
+        <head>
+          <meta charset="UTF-8" />
+          <title>التقرير المالي (${selectedMonthInfo.label}) - سند المعلم</title>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
+            body { font-family: 'Cairo', sans-serif; direction: rtl; text-align: right; padding: 20px; color: #0f172a; }
+            h1 { color: #4c1d95; font-size: 20px; margin-bottom: 5px; }
+            p { font-size: 12px; color: #64748b; }
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px; }
+            th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: right; }
+            th { background: #f1f5f9; font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <h1>التقرير المالي والأرباح 💰</h1>
+          <p>المعلم: أ. ${profile.name} • المادة: ${profile.subject || 'عام'} • الفترة: ${selectedMonthInfo.label}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>اسم الطالب</th>
+                <th>المادة</th>
+                <th>سعر الساعة</th>
+                <th>حصص الفترة</th>
+                <th>ساعات الفترة</th>
+                <th>المستحقات المعلقة</th>
+                <th>المحصل</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${studentFinancials.map((item, idx) => `
+                <tr>
+                  <td>${idx + 1}</td>
+                  <td><strong>${item.student.name}</strong></td>
+                  <td>${item.student.subject}</td>
+                  <td>${item.hourlyRate}${currency}</td>
+                  <td>${item.lessonsCount}</td>
+                  <td>${item.periodHours} س</td>
+                  <td>${item.pendingAmount}${currency}</td>
+                  <td>${item.collectedAmount}${currency}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+    const printFrame = document.createElement('iframe');
+    printFrame.style.display = 'none';
+    document.body.appendChild(printFrame);
+    const doc = printFrame.contentWindow?.document;
+    if (doc) {
+      doc.open();
+      doc.write(printContent);
+      doc.close();
+      setTimeout(() => {
+        printFrame.contentWindow?.print();
+        document.body.removeChild(printFrame);
+      }, 500);
+    }
+  };
+
   return (
     <div className="space-y-4 pb-20 select-none text-right">
       {/* Top Header */}
@@ -202,113 +344,180 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={handleExportPDF}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition cursor-pointer shadow"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>تصدير PDF</span>
+          </button>
+          <button
+            type="button"
             onClick={onBackToApp}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-purple-900/50 hover:bg-purple-800/70 border border-purple-500/40 text-xs font-bold text-purple-200 hover:text-white transition cursor-pointer"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-purple-900/50 hover:bg-purple-800/70 border border-purple-500/40 text-xs font-bold text-purple-200 transition cursor-pointer"
           >
             <ChevronRight className="w-4 h-4 text-amber-300" />
-            <span>العودة للرئيسية</span>
+            <span>الرئيسية</span>
           </button>
-          <h2 className="text-base font-extrabold text-white flex items-center gap-2">
-            <span>الملخص المالي والأرباح 💰</span>
-          </h2>
+          <h2 className="text-base font-extrabold text-white">الملخص المالي والأرباح 💰</h2>
         </div>
 
         <button
           type="button"
           disabled={loadingLessons}
           onClick={loadLessons}
-          className="p-2 rounded-xl bg-slate-900 border border-purple-500/30 text-purple-300 hover:text-white transition cursor-pointer disabled:opacity-50"
-          title="تحديث الحسابات والأرباح"
+          className="p-2 rounded-xl bg-slate-900 border border-purple-500/30 text-purple-300 hover:text-white transition cursor-pointer"
+          title="تحديث الحسابات"
         >
           <RefreshCw className={`w-4 h-4 ${loadingLessons ? 'animate-spin' : ''}`} />
         </button>
       </div>
 
-      {/* 4 Hero KPI Cards */}
+      {/* TODAY'S QUICK STATS (ساعات وأرباح اليوم الواحد) */}
+      <div className="rounded-2xl bg-gradient-to-r from-blue-950/80 via-slate-900 to-indigo-950/80 border border-blue-500/40 p-3.5 shadow-md flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-blue-600/30 text-blue-300 flex items-center justify-center border border-blue-400/30">
+            <Clock className="w-4 h-4" />
+          </div>
+          <div>
+            <span className="text-xs font-bold text-white block">إنجاز اليوم ({todayKey})</span>
+            <span className="text-[10px] text-blue-200/80">
+              {totalTodayLessonsCount > 0 ? `${totalTodayLessonsCount} حصص منفذة اليوم` : 'لا توجد حصص مسجلة اليوم'}
+            </span>
+          </div>
+        </div>
+        <div className="text-left">
+          <span className="text-sm font-black text-amber-300 font-mono">{totalTodayHours} ساعة</span>
+          <span className="block text-[10px] text-slate-300 font-mono">({totalTodayEarnings} {currency})</span>
+        </div>
+      </div>
+
+      {/* MONTH / YEAR ARCHIVE PICKER (فلتر الشهور المستقلة) */}
+      <div className="rounded-2xl bg-gradient-to-r from-purple-950/80 via-slate-900 to-indigo-950/80 border border-purple-500/40 p-3.5 space-y-2.5 shadow-lg">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-purple-600/30 text-amber-300 flex items-center justify-center border border-purple-400/30">
+              <Calendar className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-bold text-white">دورة الشهر المالي (أرشيف مستقل)</span>
+                {selectedMonthInfo.isCurrent && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-500/40 text-emerald-300 font-bold">
+                    الشهر الحالي 🟢
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-purple-300/80">حساب الأرباح والساعات لكل شهر بشكل منفصل تماماً</p>
+            </div>
+          </div>
+
+          {!selectedMonthInfo.isCurrent && (
+            <button
+              type="button"
+              onClick={() => setSelectedMonthKey(currentMonthKey)}
+              className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-purple-600 hover:bg-purple-500 text-white transition cursor-pointer"
+            >
+              الشهر الحالي ⚡
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 pt-1">
+          <button
+            type="button"
+            onClick={handlePrevMonth}
+            disabled={selectedMonthKey === 'all' || availableMonths.findIndex((m) => m.key === selectedMonthKey) >= availableMonths.length - 1}
+            className="px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-300 hover:text-white disabled:opacity-40 text-xs font-bold transition cursor-pointer"
+          >
+            ‹ السابق
+          </button>
+
+          <div className="flex-1">
+            <select
+              value={selectedMonthKey}
+              onChange={(e) => setSelectedMonthKey(e.target.value)}
+              className="w-full rounded-xl bg-slate-950 border border-purple-500/40 px-3 py-1.5 text-xs font-bold text-white focus:outline-none cursor-pointer text-center"
+            >
+              {availableMonths.map((m) => (
+                <option key={m.key} value={m.key}>
+                  {m.label} {m.isCurrent ? '(الحالي)' : ''}
+                </option>
+              ))}
+              <option value="all">📊 كامل السجل التراكمي</option>
+            </select>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleNextMonth}
+            disabled={selectedMonthKey === 'all' || availableMonths.findIndex((m) => m.key === selectedMonthKey) <= 0}
+            className="px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-300 hover:text-white disabled:opacity-40 text-xs font-bold transition cursor-pointer"
+          >
+            التالي ›
+          </button>
+        </div>
+      </div>
+
+      {/* 4 HERO KPI CARDS */}
       <div className="grid grid-cols-2 gap-2.5">
-        {/* Card 1: إجمالي أرباح الشهر */}
-        <div className="rounded-2xl bg-gradient-to-br from-purple-950/80 via-slate-900 to-indigo-950/80 border border-purple-500/40 p-3.5 space-y-2 shadow-xl relative overflow-hidden">
+        <div className="rounded-2xl bg-slate-900/90 border border-purple-500/40 p-3.5 space-y-1.5 shadow-xl">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-purple-200">أرباح هذا الشهر ({currentMonthName})</span>
-            <div className="w-7 h-7 rounded-xl bg-purple-600/30 text-amber-300 flex items-center justify-center border border-purple-400/30 shadow">
-              <TrendingUp className="w-4 h-4" />
-            </div>
+            <span className="text-[11px] font-bold text-purple-200">أرباح الفترة ({selectedMonthInfo.label})</span>
+            <TrendingUp className="w-4 h-4 text-amber-300" />
           </div>
-          <div>
-            <div className="flex items-baseline gap-1">
-              <span className="text-xl font-black text-white font-mono">{totalMonthEarnings.toLocaleString()}</span>
-              <span className="text-xs text-amber-300 font-bold">{currency}</span>
-            </div>
-            <p className="text-[10px] text-purple-300/80 mt-0.5">محسوبة لكافة الطلاب لشهر {currentMonthName}</p>
+          <div className="flex items-baseline gap-1">
+            <span className="text-xl font-black text-white font-mono">{totalPeriodEarnings.toLocaleString()}</span>
+            <span className="text-xs text-amber-300 font-bold">{currency}</span>
           </div>
+          <p className="text-[10px] text-purple-300/80">{totalPeriodLessonsCount} حصص منفذة</p>
         </div>
 
-        {/* Card 2: إجمالي ساعات التدريس */}
-        <div className="rounded-2xl bg-gradient-to-br from-indigo-950/80 via-slate-900 to-slate-950 border border-indigo-500/40 p-3.5 space-y-2 shadow-xl relative overflow-hidden">
+        <div className="rounded-2xl bg-slate-900/90 border border-indigo-500/40 p-3.5 space-y-1.5 shadow-xl">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-indigo-200">إجمالي ساعات التدريس</span>
-            <div className="w-7 h-7 rounded-xl bg-indigo-600/30 text-indigo-300 flex items-center justify-center border border-indigo-400/30 shadow">
-              <Clock className="w-4 h-4" />
-            </div>
+            <span className="text-[11px] font-bold text-indigo-200">ساعات تدريس الفترة</span>
+            <Clock className="w-4 h-4 text-indigo-300" />
           </div>
-          <div>
-            <div className="flex items-baseline gap-1">
-              <span className="text-xl font-black text-white font-mono">{totalTeachingHours}</span>
-              <span className="text-xs text-indigo-300 font-bold">ساعة</span>
-            </div>
-            <p className="text-[10px] text-slate-400 mt-0.5">مجموع الساعات المنفذة كلياً</p>
+          <div className="flex items-baseline gap-1">
+            <span className="text-xl font-black text-white font-mono">{totalPeriodTeachingHours}</span>
+            <span className="text-xs text-indigo-300 font-bold">ساعة</span>
           </div>
+          <p className="text-[10px] text-slate-400">إجمالي مدة الحصص</p>
         </div>
 
-        {/* Card 3: المستحقات المعلقة */}
-        <div className="rounded-2xl bg-gradient-to-br from-amber-950/70 via-slate-900 to-slate-950 border border-amber-500/40 p-3.5 space-y-2 shadow-xl relative overflow-hidden">
+        <div className="rounded-2xl bg-slate-900/90 border border-amber-500/40 p-3.5 space-y-1.5 shadow-xl">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold text-amber-200">المستحقات المعلقة</span>
-            <div className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30 shadow">
-              <AlertCircle className="w-4 h-4" />
-            </div>
+            <AlertCircle className="w-4 h-4 text-amber-400" />
           </div>
-          <div>
-            <div className="flex items-baseline gap-1">
-              <span className="text-xl font-black text-amber-300 font-mono">{totalPendingDues.toLocaleString()}</span>
-              <span className="text-xs text-amber-400 font-bold">{currency}</span>
-            </div>
-            <p className="text-[10px] text-slate-400 mt-0.5">مبالغ بانتظار استلام الأجر والتصفية</p>
+          <div className="flex items-baseline gap-1">
+            <span className="text-xl font-black text-amber-300 font-mono">{totalPeriodPendingDues.toLocaleString()}</span>
+            <span className="text-xs text-amber-400 font-bold">{currency}</span>
           </div>
+          <p className="text-[10px] text-slate-400">تحت انتظار التحصيل</p>
         </div>
 
-        {/* Card 4: المبالغ المحصلة */}
-        <div className="rounded-2xl bg-gradient-to-br from-emerald-950/70 via-slate-900 to-slate-950 border border-emerald-500/40 p-3.5 space-y-2 shadow-xl relative overflow-hidden">
+        <div className="rounded-2xl bg-slate-900/90 border border-emerald-500/40 p-3.5 space-y-1.5 shadow-xl">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold text-emerald-200">المبالغ المحصلة</span>
-            <div className="w-7 h-7 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30 shadow">
-              <CheckCircle2 className="w-4 h-4" />
-            </div>
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
           </div>
-          <div>
-            <div className="flex items-baseline gap-1">
-              <span className="text-xl font-black text-emerald-400 font-mono">{totalCollectedDues.toLocaleString()}</span>
-              <span className="text-xs text-emerald-300 font-bold">{currency}</span>
-            </div>
-            <p className="text-[10px] text-slate-400 mt-0.5">تم تصفية حسابها واستلامها بالفعل</p>
+          <div className="flex items-baseline gap-1">
+            <span className="text-xl font-black text-emerald-400 font-mono">{totalPeriodCollectedDues.toLocaleString()}</span>
+            <span className="text-xs text-emerald-300 font-bold">{currency}</span>
           </div>
+          <p className="text-[10px] text-slate-400">تمت تصفيتها بنجاح</p>
         </div>
       </div>
 
-      {/* Hourly Rate Engine Equation Banner */}
+      {/* Hourly Rate Rule Notice */}
       <div className="rounded-2xl bg-slate-900/90 border border-purple-500/30 p-3 text-xs flex items-center gap-2.5">
-        <div className="w-8 h-8 rounded-xl bg-purple-600/30 text-amber-300 flex items-center justify-center border border-purple-400/30 flex-shrink-0">
-          <Sparkles className="w-4 h-4" />
-        </div>
-        <div className="flex-1">
-          <p className="font-bold text-white text-[11px]">محرك الحساب التلقائي بالساعة (Hourly Rate Engine):</p>
-          <p className="text-[10px] text-purple-300/90 font-mono mt-0.5">
-            قيمة الحصة = (مدة الحصة بالدقائق / 60) × سعر الساعة
-          </p>
-        </div>
+        <Sparkles className="w-4 h-4 text-amber-300 flex-shrink-0" />
+        <p className="text-[11px] text-purple-200">
+          <strong className="text-white">نظام الحساب الأوتوماتيكي:</strong> قيمة الحصة = (الدقائق ÷ 60) × سعر الساعة.
+        </p>
       </div>
 
-      {/* Search & Filter Controls */}
+      {/* Search & Filters */}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
@@ -322,46 +531,37 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
             />
           </div>
 
-          <div className="flex items-center gap-1 text-xs">
+          <div className="flex items-center gap-1">
             {(['all', 'pending', 'settled'] as const).map((mode) => (
               <button
                 key={mode}
                 type="button"
                 onClick={() => setFilterDues(mode)}
-                className={`px-2.5 py-2 rounded-xl font-bold transition cursor-pointer text-[11px] ${
-                  filterDues === mode
-                    ? 'bg-purple-600 text-white shadow'
-                    : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                className={`px-2.5 py-2 rounded-xl font-bold text-[11px] transition cursor-pointer ${
+                  filterDues === mode ? 'bg-purple-600 text-white' : 'bg-slate-900 text-slate-400 border border-slate-800'
                 }`}
               >
-                {mode === 'all' ? 'الكل' : mode === 'pending' ? 'مستحقات معلقة' : 'مصفاة ✅'}
+                {mode === 'all' ? 'الكل' : mode === 'pending' ? 'المعلق' : 'المصفى'}
               </button>
             ))}
           </div>
         </div>
       </div>
 
-      {/* Detailed Student Financial Cards */}
+      {/* STUDENTS LIST */}
       <div className="space-y-2.5">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-bold text-slate-300">
-            قائمة حسابات الطلاب والمستحقات ({filteredList.length})
-          </h3>
-          {totalPendingDues > 0 && (
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-              إجمالي المعلق: {totalPendingDues.toLocaleString()} {currency}
-            </span>
-          )}
-        </div>
+        <h3 className="text-xs font-bold text-slate-300">
+          حسابات الطلاب لفترة ({selectedMonthInfo.label}) ({filteredList.length})
+        </h3>
 
         {loadingLessons ? (
           <div className="py-8 text-center text-xs text-purple-300 bg-slate-900/50 rounded-2xl border border-slate-800">
             <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-purple-400" />
-            <p>جارٍ جمع واحتساب الساعات والحسابات لجميع الطلاب...</p>
+            <p>جارٍ تحميل الحسابات...</p>
           </div>
         ) : filteredList.length === 0 ? (
           <div className="py-8 text-center text-xs text-slate-400 bg-slate-900/40 rounded-2xl border border-slate-800">
-            لا توجد حسابات مطابقة للبحث المحدد.
+            لا توجد حسابات مطابقة لهذه الفترة.
           </div>
         ) : (
           filteredList.map((item) => {
@@ -372,69 +572,58 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
               <div
                 key={st.id}
                 className={`rounded-2xl bg-slate-900/90 border p-3.5 space-y-3 transition shadow-md ${
-                  hasPending ? 'border-amber-500/30 hover:border-amber-400/50' : 'border-slate-800 hover:border-purple-500/40'
+                  hasPending ? 'border-amber-500/40' : 'border-slate-800'
                 }`}
               >
-                {/* Card Header: Student Name & Hourly Rate */}
                 <div className="flex items-start justify-between">
                   <div>
                     <div className="flex items-center gap-2">
                       <h4 className="text-sm font-bold text-white">{st.name}</h4>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-950/80 border border-purple-500/30 text-purple-300">
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-950 border border-purple-500/30 text-purple-300">
                         {st.subject}
                       </span>
                     </div>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      سعر الساعة: <span className="font-bold text-amber-300 font-mono">{item.hourlyRate} {currency}/ساعة</span>
+                      سعر الساعة: <span className="font-bold text-amber-300 font-mono">{item.hourlyRate} {currency}</span>
                       {st.whatsapp && ` • ${st.whatsapp}`}
                     </p>
                   </div>
 
-                  {/* Pending Badge */}
                   {hasPending ? (
-                    <div className="text-right">
-                      <span className="inline-block text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono">
-                        {item.pendingAmount.toLocaleString()} {currency}
-                      </span>
-                      <span className="block text-[9px] text-amber-400/80 mt-0.5">مستحقات معلقة</span>
-                    </div>
-                  ) : (
-                    <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-950 border border-emerald-500/30 text-emerald-400">
-                      تمت التصفية ✅
+                    <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono">
+                      {item.pendingAmount.toLocaleString()} {currency}
                     </span>
+                  ) : item.collectedAmount > 0 ? (
+                    <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-950 border border-emerald-500/30 text-emerald-400">
+                      مصفى ✅
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-400">لا حصص</span>
                   )}
                 </div>
 
-                {/* 3 Metrics Mini Grid */}
-                <div className="grid grid-cols-3 gap-2 bg-slate-950/70 p-2.5 rounded-xl border border-slate-800 text-center text-xs">
+                <div className="grid grid-cols-3 gap-2 bg-slate-950/70 p-2 rounded-xl border border-slate-800 text-center text-xs">
                   <div>
-                    <span className="text-[10px] text-slate-400 block">الساعات المعلقة</span>
-                    <span className="font-bold text-white font-mono text-xs">
-                      {item.pendingHours} <span className="text-[9px] text-slate-400">ساعة</span>
-                    </span>
+                    <span className="text-[10px] text-slate-400 block">ساعات الفترة</span>
+                    <span className="font-bold text-white font-mono">{item.periodHours} س ({item.lessonsCount})</span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-slate-400 block">إجمالي المنفذ كلياً</span>
-                    <span className="font-bold text-indigo-300 font-mono text-xs">
-                      {item.totalHoursAll} <span className="text-[9px] text-slate-400">ساعة</span>
-                    </span>
+                    <span className="text-[10px] text-slate-400 block">المعلق</span>
+                    <span className="font-bold text-amber-300 font-mono">{item.pendingAmount} {currency}</span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-slate-400 block">المحصل سابقاً</span>
-                    <span className="font-bold text-emerald-400 font-mono text-xs">
-                      {item.collectedAmount.toLocaleString()} <span className="text-[9px] text-slate-400">{currency}</span>
-                    </span>
+                    <span className="text-[10px] text-slate-400 block">المحصل</span>
+                    <span className="font-bold text-emerald-400 font-mono">{item.collectedAmount} {currency}</span>
                   </div>
                 </div>
 
-                {/* Action Buttons Row */}
-                <div className="flex items-center gap-2 pt-1 border-t border-slate-800/80">
+                <div className="flex items-center gap-2 pt-1 border-t border-slate-800">
                   {hasPending ? (
                     <button
                       type="button"
                       disabled={settlingStudentId === st.id}
                       onClick={() => setShowConfirmSettle(st)}
-                      className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition cursor-pointer shadow flex items-center justify-center gap-1.5 active:scale-98"
+                      className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
                     >
                       <CheckCircle2 className="w-3.5 h-3.5" />
                       <span>تصفية الحساب ({item.pendingAmount} {currency})</span>
@@ -443,9 +632,9 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
                     <button
                       type="button"
                       onClick={() => handleOpenInvoiceModal(item)}
-                      className="flex-1 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+                      className="flex-1 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition cursor-pointer flex items-center justify-center"
                     >
-                      <span>كشف حساب الطالب</span>
+                      <span>كشف حساب الفترة</span>
                     </button>
                   )}
 
@@ -454,10 +643,9 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
                       type="button"
                       onClick={() => handleOpenInvoiceModal(item)}
                       className="py-2 px-3 rounded-xl bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-500/40 text-emerald-300 font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1"
-                      title="إرسال فاتورة ومطالبة عبر واتساب"
                     >
                       <MessageCircle className="w-3.5 h-3.5" />
-                      <span>مطالبة واتساب</span>
+                      <span>واتساب</span>
                     </button>
                   )}
 
@@ -468,8 +656,7 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
                         onBackToApp();
                         onOpenStudentDetails(st);
                       }}
-                      className="py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition cursor-pointer"
-                      title="عرض سجل حصص الطالب"
+                      className="py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition cursor-pointer"
                     >
                       <span>السجل ←</span>
                     </button>
@@ -481,39 +668,26 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
         )}
       </div>
 
-      {/* MODAL: Confirmation Settle Account */}
+      {/* CONFIRM SETTLE MODAL */}
       {showConfirmSettle && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 text-right">
-          <div className="w-full max-w-sm bg-gradient-to-b from-slate-900 to-slate-950 border border-emerald-500/40 rounded-3xl p-6 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30 flex-shrink-0">
-                <CheckCircle2 className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-white">تأكيد تصفية واستلام الحساب</h3>
-                <p className="text-xs text-slate-300 mt-0.5">
-                  الطالب/ـة: <span className="font-bold text-emerald-400">{showConfirmSettle.name}</span>
-                </p>
-              </div>
-            </div>
-
-            <p className="text-xs text-slate-300 leading-relaxed bg-slate-950 p-3 rounded-xl border border-slate-800">
-              هل تم استلام كامل المستحقات لهذا الطالب وبدء دورة حسابية جديدة؟ سيتم تعليم جميع الحصص السابقة كمصفاة ومحصلة بنجاح.
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-slate-900 border border-emerald-500/40 rounded-3xl p-5 space-y-4 shadow-2xl">
+            <h3 className="text-sm font-bold text-white">تأكيد تصفية واستلام الحساب</h3>
+            <p className="text-xs text-slate-300">
+              هل أنت متأكد من استلام كامل مستحقات الطالب <span className="text-emerald-400 font-bold">{showConfirmSettle.name}</span>؟
             </p>
-
-            <div className="flex items-center gap-2 pt-1">
+            <div className="flex gap-2">
               <button
                 type="button"
-                disabled={settlingStudentId === showConfirmSettle.id}
                 onClick={() => handleConfirmSettleAccount(showConfirmSettle)}
-                className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition cursor-pointer shadow-lg shadow-emerald-950/50 active:scale-98 disabled:opacity-50"
+                className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-xs cursor-pointer"
               >
-                {settlingStudentId === showConfirmSettle.id ? 'جارٍ التصفية...' : 'تأكيد التصفية ✅'}
+                تأكيد التصفية ✅
               </button>
               <button
                 type="button"
                 onClick={() => setShowConfirmSettle(null)}
-                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition cursor-pointer active:scale-98"
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs cursor-pointer"
               >
                 إلغاء
               </button>
@@ -522,80 +696,30 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
         </div>
       )}
 
-      {/* MODAL: Invoice / Statement WhatsApp Text Preview & Edit */}
+      {/* WHATSAPP INVOICE MODAL */}
       {showInvoiceModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 text-right">
-          <div className="w-full max-w-lg bg-slate-900 border border-emerald-500/40 rounded-3xl p-5 shadow-2xl text-right max-h-[92vh] flex flex-col space-y-3">
-            <div className="flex items-center justify-between border-b border-emerald-900/40 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30">
-                  <CreditCard className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-white">معاينة وتعديل كشف الحساب والمطالبة</h3>
-                  <p className="text-[10px] text-slate-400">
-                    الطالب/ـة: {showInvoiceModal.name} {showInvoiceModal.whatsapp ? `• ${showInvoiceModal.whatsapp}` : ''}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowInvoiceModal(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
-              >
+        <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-slate-900 border border-emerald-500/40 rounded-3xl p-5 space-y-3 shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between border-b border-emerald-900/40 pb-2">
+              <h3 className="text-sm font-bold text-white">مطالبة واتساب المالية</h3>
+              <button type="button" onClick={() => setShowInvoiceModal(null)} className="text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
-
-            <p className="text-xs text-slate-300">
-              يمكنك تعديل نص المطالبة المالية بحرية داخل مربع النص قبل الضغط على زر الإرسال عبر الواتساب:
-            </p>
-
-            {/* Editable Textarea */}
-            <div className="flex-1 flex flex-col">
-              <textarea
-                value={editableInvoiceText}
-                onChange={(e) => setEditableInvoiceText(e.target.value)}
-                rows={11}
-                className="w-full rounded-2xl bg-slate-950/90 border border-emerald-500/30 focus:border-emerald-400 p-3.5 text-xs text-slate-100 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition resize-y"
-                placeholder="نص المطالبة المالية..."
-              />
-            </div>
-
-            {/* Action Buttons */}
-            <div className="space-y-2 pt-1">
-              <button
-                type="button"
-                onClick={handleSendInvoiceWhatsApp}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-lg shadow-emerald-950/50 active:scale-98"
-              >
-                <Send className="w-4 h-4" />
-                <span>إرسال المطالبة المالية عبر واتساب الآن 💬</span>
-              </button>
-
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(editableInvoiceText);
-                    setCopiedInvoice(true);
-                    setTimeout(() => setCopiedInvoice(false), 2000);
-                  }}
-                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition cursor-pointer active:scale-98"
-                >
-                  {copiedInvoice ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                  <span>{copiedInvoice ? 'تم النسخ بنجاح!' : 'نسخ نص المطالبة'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowInvoiceModal(null)}
-                  className="flex items-center justify-center py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition cursor-pointer active:scale-98"
-                >
-                  إغلاق
-                </button>
-              </div>
-            </div>
+            <textarea
+              value={editableInvoiceText}
+              onChange={(e) => setEditableInvoiceText(e.target.value)}
+              rows={10}
+              className="w-full rounded-xl bg-slate-950 border border-emerald-500/30 p-3 text-xs text-slate-100 focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={handleSendInvoiceWhatsApp}
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow"
+            >
+              <Send className="w-4 h-4" />
+              <span>إرسال عبر واتساب الآن 💬</span>
+            </button>
           </div>
         </div>
       )}
