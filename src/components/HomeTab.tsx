@@ -1118,3 +1118,4 @@ export const HomeTab: React.FC<HomeTabProps> = ({
       )}
     </div>
   );
+};
