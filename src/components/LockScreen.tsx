@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { TeacherProfile, SubscriptionPlan } from '../types';
-import { Lock, ShieldCheck, CheckCircle2, MessageCircle, Sparkles, X, HeartHandshake, Shield, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Lock, ShieldCheck, CheckCircle2, MessageCircle, Sparkles, X, Shield } from 'lucide-react';
 
 interface LockScreenProps {
   profile: TeacherProfile;
+  isAdmin?: boolean;
   isVoluntary?: boolean; // opened from settings to upgrade voluntarily
   onClose?: () => void;
   onSignOut?: () => void;
@@ -12,29 +13,13 @@ interface LockScreenProps {
 
 export const LockScreen: React.FC<LockScreenProps> = ({
   profile,
+  isAdmin = false,
   isVoluntary = false,
   onClose,
   onSignOut,
   onOpenAdmin,
 }) => {
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan>('six_months');
-  const [showAdminModal, setShowAdminModal] = useState(false);
-  const [adminPin, setAdminPin] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [pinError, setPinError] = useState<string | null>(null);
-
-  const handleVerifyPin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (adminPin.trim() === '2882026') {
-      setShowAdminModal(false);
-      setAdminPin('');
-      setPinError(null);
-      if (onOpenAdmin) onOpenAdmin();
-    } else {
-      setPinError('رمز الدخول غير صحيح');
-      setAdminPin('');
-    }
-  };
 
   const plans = [
     {
@@ -228,11 +213,11 @@ export const LockScreen: React.FC<LockScreenProps> = ({
             >
               تسجيل الخروج من هذا الحساب
             </button>
-            {onOpenAdmin && (
+            {isAdmin && onOpenAdmin && (
               <div>
                 <button
                   type="button"
-                  onClick={() => setShowAdminModal(true)}
+                  onClick={onOpenAdmin}
                   className="text-[11px] text-slate-500 hover:text-amber-400 transition cursor-pointer flex items-center justify-center gap-1 mx-auto"
                 >
                   <Shield className="w-3 h-3" />
@@ -240,82 +225,6 @@ export const LockScreen: React.FC<LockScreenProps> = ({
                 </button>
               </div>
             )}
-          </div>
-        )}
-
-        {/* Admin Passcode Modal from LockScreen */}
-        {showAdminModal && (
-          <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 text-right">
-            <div className="w-full max-w-sm bg-gradient-to-b from-slate-900 to-slate-950 border border-purple-500/40 rounded-3xl p-6 shadow-2xl relative space-y-4">
-              <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30">
-                    <Shield className="w-4 h-4" />
-                  </div>
-                  <h3 className="text-sm font-bold text-white">دخول المشرف</h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAdminModal(false);
-                    setPinError(null);
-                    setAdminPin('');
-                  }}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-white"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <p className="text-xs text-slate-300 leading-relaxed">
-                أدخل رمز المرور السري للدخول إلى لوحة إدارة وتفعيل الاشتراكات:
-              </p>
-
-              {pinError && (
-                <div className="p-3 rounded-2xl bg-rose-950/90 border border-rose-500/50 text-rose-200 text-xs font-bold flex items-center gap-2 animate-bounce">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400" />
-                  <span>{pinError}</span>
-                </div>
-              )}
-
-              <form onSubmit={handleVerifyPin} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                    رمز المرور السري (Admin Passcode)
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      autoFocus
-                      required
-                      value={adminPin}
-                      onChange={(e) => {
-                        setAdminPin(e.target.value);
-                        if (pinError) setPinError(null);
-                      }}
-                      placeholder="••••••••"
-                      className="w-full text-center tracking-widest text-base font-black rounded-xl bg-slate-950 border border-purple-500/40 px-3 py-2.5 text-white placeholder-slate-600 focus:outline-none focus:border-amber-400"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute left-3 top-3 text-slate-400 hover:text-white transition cursor-pointer"
-                      title={showPassword ? 'إخفاء الرمز' : 'إظهار الرمز'}
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs transition cursor-pointer shadow-lg shadow-amber-600/30 flex items-center justify-center gap-2 active:scale-98"
-                >
-                  <Lock className="w-4 h-4" />
-                  <span>تحقق ودخول لوحة المشرف</span>
-                </button>
-              </form>
-            </div>
           </div>
         )}
       </div>

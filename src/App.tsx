@@ -312,7 +312,7 @@ export default function App() {
     );
   }
 
-  // Admin Dashboard View (activated from Settings Tab PIN 2882026 or LockScreen)
+  // Admin Dashboard View (activated from Settings Tab or LockScreen for verified admins)
   if (showAdminView) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex justify-center">
@@ -374,6 +374,7 @@ export default function App() {
         <OfflineIndicator />
         <LockScreen
           profile={profile}
+          isAdmin={isAdmin}
           onSignOut={() => signOut(auth)}
           onOpenAdmin={() => setShowAdminView(true)}
         />

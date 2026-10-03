@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { TeacherProfile, LibraryItem, LibraryItemType } from '../types';
 import {
+  auth,
   addLibraryItem,
   updateLibraryItem,
   deleteLibraryItem,
@@ -115,9 +116,13 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
         content: s.content || s.title,
       }));
 
+      const token = await auth.currentUser?.getIdToken();
       const res = await fetch('/api/ai/ask', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           question: promptToSend,
           teacherName: profile.name,

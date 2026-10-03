@@ -25,13 +25,19 @@ service cloud.firestore {
 
     function isAdmin() {
       return isSignedIn() && (
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
-        (request.auth.token.email != null && request.auth.token.email == 'moniskacadmy@gmail.com')
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
     }
 
     function isTeacherOwner(teacherId) {
       return isSignedIn() && request.auth.uid == teacherId;
+    }
+
+    function isTeacherSubscriptionActive(teacherId) {
+      return isAdmin() || (
+        exists(/databases/$(database)/documents/teachers/$(teacherId)) &&
+        get(/databases/$(database)/documents/teachers/$(teacherId)).data.subscriptionExpiresAt > request.time
+      );
     }
 
     // Validation for new teacher profile registration
@@ -164,18 +170,22 @@ service cloud.firestore {
         allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
         allow create, update: if isValidId(teacherId) && isValidId(studentId) &&
                                  (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isTeacherSubscriptionActive(teacherId) &&
                                  isValidStudent(teacherId);
         allow delete: if isValidId(teacherId) && isValidId(studentId) &&
-                         (isTeacherOwner(teacherId) || isAdmin());
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId);
 
         // Subcollection: Lessons
         match /lessons/{lessonId} {
           allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
           allow create, update: if isValidId(teacherId) && isValidId(studentId) && isValidId(lessonId) &&
                                    (isTeacherOwner(teacherId) || isAdmin()) &&
+                                   isTeacherSubscriptionActive(teacherId) &&
                                    isValidLesson(teacherId);
           allow delete: if isValidId(teacherId) && isValidId(studentId) && isValidId(lessonId) &&
-                           (isTeacherOwner(teacherId) || isAdmin());
+                           (isTeacherOwner(teacherId) || isAdmin()) &&
+                           isTeacherSubscriptionActive(teacherId);
         }
       }
 
@@ -184,9 +194,11 @@ service cloud.firestore {
         allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
         allow create, update: if isValidId(teacherId) && isValidId(scheduleId) &&
                                  (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isTeacherSubscriptionActive(teacherId) &&
                                  isValidSchedule(teacherId);
         allow delete: if isValidId(teacherId) && isValidId(scheduleId) &&
-                         (isTeacherOwner(teacherId) || isAdmin());
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId);
       }
 
       // Subcollection: Library
@@ -194,9 +206,11 @@ service cloud.firestore {
         allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
         allow create, update: if isValidId(teacherId) && isValidId(itemId) &&
                                  (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isTeacherSubscriptionActive(teacherId) &&
                                  isValidLibraryItem(teacherId);
         allow delete: if isValidId(teacherId) && isValidId(itemId) &&
-                         (isTeacherOwner(teacherId) || isAdmin());
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId);
       }
 
       // Subcollection: Reminders
@@ -204,9 +218,11 @@ service cloud.firestore {
         allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
         allow create, update: if isValidId(teacherId) && isValidId(reminderId) &&
                                  (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isTeacherSubscriptionActive(teacherId) &&
                                  isValidReminder(teacherId);
         allow delete: if isValidId(teacherId) && isValidId(reminderId) &&
-                         (isTeacherOwner(teacherId) || isAdmin());
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId);
       }
     }
   }

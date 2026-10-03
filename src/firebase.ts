@@ -26,7 +26,6 @@ import {
   Timestamp,
   getDocFromServer,
   onSnapshot,
-  collectionGroup
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 import {
@@ -104,15 +103,14 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Check if user is system admin
+// Check if user is system admin based purely on uid existence in admins collection
 export async function checkIsAdmin(user: User | null): Promise<boolean> {
   if (!user) return false;
-  if (user.email === 'moniskacadmy@gmail.com') return true;
   try {
     const adminDoc = await getDoc(doc(db, 'admins', user.uid));
     return adminDoc.exists();
   } catch {
-    return user.email === 'moniskacadmy@gmail.com';
+    return false;
   }
 }
 
@@ -136,7 +134,13 @@ export async function registerTeacher(params: {
   const now = new Date();
   const trialEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-  const isAdminEmail = user.email === 'moniskacadmy@gmail.com';
+  let isUserAdmin = false;
+  try {
+    const adminDoc = await getDoc(doc(db, 'admins', user.uid));
+    isUserAdmin = adminDoc.exists();
+  } catch {
+    isUserAdmin = false;
+  }
   const normalizedEmail = (user.email || params.email).trim().toLowerCase();
 
   // Check if admin pre-provisioned a subscription for this email
@@ -172,7 +176,7 @@ export async function registerTeacher(params: {
     email: normalizedEmail,
     whatsapp: params.whatsapp.trim(),
     subject: params.subject.trim(),
-    role: isAdminEmail ? 'admin' : 'teacher',
+    role: isUserAdmin ? 'admin' : 'teacher',
     subscriptionStatus: initialStatus,
     plan: initialPlan,
     isActive: isActive,
@@ -188,20 +192,6 @@ export async function registerTeacher(params: {
     await setDoc(teacherDocRef, newProfile);
   } catch (err) {
     handleFirestoreError(err, OperationType.CREATE, `teachers/${user.uid}`);
-  }
-
-  // If bootstrap admin email, also record in admins collection
-  if (isAdminEmail) {
-    try {
-      await setDoc(doc(db, 'admins', user.uid), {
-        id: user.uid,
-        email: user.email,
-        role: 'admin',
-        createdAt: serverTimestamp(),
-      });
-    } catch {
-      // Non-fatal if fails
-    }
   }
 
   // Seed starter library templates
@@ -1280,43 +1270,8 @@ export async function importFullTeacherBackup(
   };
 }
 
-export async function runOrphanCleanup(teacherId: string, activeStudentIds: string[]) {
-  const studentIdsSet = new Set(activeStudentIds);
-
-  // 1. Clean up orphan schedules
-  try {
-    const schedulesSnap = await getDocs(collection(db, 'teachers', teacherId, 'schedules'));
-    const orphanSchedules = schedulesSnap.docs.filter((doc) => {
-      const data = doc.data();
-      return data.studentId && !studentIdsSet.has(data.studentId);
-    });
-
-    if (orphanSchedules.length > 0) {
-      console.log(`[Database Cleanup] Found ${orphanSchedules.length} orphan schedules. Deleting...`);
-      await Promise.all(orphanSchedules.map((doc) => deleteDoc(doc.ref)));
-    }
-  } catch (err) {
-    console.warn('[Database Cleanup] Error cleaning up orphan schedules:', err);
-  }
-
-  // 2. Clean up orphan lessons
-  try {
-    const lessonsQuery = query(
-      collectionGroup(db, 'lessons'),
-      where('teacherId', '==', teacherId)
-    );
-    const lessonsSnap = await getDocs(lessonsQuery);
-    const orphanLessons = lessonsSnap.docs.filter((doc) => {
-      const data = doc.data();
-      return data.studentId && !studentIdsSet.has(data.studentId);
-    });
-
-    if (orphanLessons.length > 0) {
-      console.log(`[Database Cleanup] Found ${orphanLessons.length} orphan lessons. Deleting...`);
-      await Promise.all(orphanLessons.map((doc) => deleteDoc(doc.ref)));
-    }
-  } catch (err) {
-    console.warn('[Database Cleanup] Error cleaning up orphan lessons:', err);
-  }
+export async function runOrphanCleanup(_teacherId: string, _activeStudentIds: string[]): Promise<void> {
+  console.log('[OrphanCleanup] Skipped: orphan cleanup is disabled / no-op.');
+  return;
 }
 
