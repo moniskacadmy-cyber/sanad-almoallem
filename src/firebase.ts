@@ -41,7 +41,7 @@ import {
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId || 'ai-studio-f9d7667a-6157-4def-8ccd-a9acd863d453');
 
 // Test Firestore Connection as required by skill
 async function testConnection() {

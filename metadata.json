@@ -1,6 +1,8 @@
 {
-  "name": "سند المعلم",
+  "name": "Remix سند المعلم",
   "description": "تطبيق ويب متكامل لتنظيم الحصص والطلاب والمواعيد والمدفوعات للمعلمين الخصوصيين مع إدارة الاشتراكات.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

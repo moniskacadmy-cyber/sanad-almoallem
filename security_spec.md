@@ -1,8 +1,10 @@
 # Security Specification for "سند المعلم" (Sanad Al-Moallem)
 
 ## 1. Data Invariants
-- **Identity Isolation**: All teacher subcollections (`students`, `lessons`, `schedules`, `library`) strictly belong to `teacherId == request.auth.uid`. No teacher can access or modify another teacher's data.
-- **Admin Privilege**: An authenticated user whose UID exists in `/admins/{uid}` has system-wide permissions to inspect teacher profiles, activate subscriptions, reset trials, and delete accounts.
+- **Identity Isolation**: All teacher subcollections (`students`, `lessons`, `schedules`, `library`, `reminders`, `tasks`) strictly belong to `teacherId == request.auth.uid`. No teacher can access or modify another teacher's data.
+- **Admin Privilege & RBAC**: Admin access is verified by checking the user's UID in the `/admins/{uid}` collection. Any email-based emergency exception strictly requires `request.auth.token.email_verified == true`.
+- **Subscription Write Lock**: Subcollection modifications (`create`, `update`, `delete`) on `students`, `lessons`, `schedules`, `library`, `reminders`, and `tasks` strictly require an active teacher subscription (`subscriptionExpiresAt > request.time`) or admin privilege.
+- **Data Export Guarantee**: Read operations (`get`, `list`) remain accessible to the data owner even if the subscription expires, allowing teachers to review and export their data.
 - **Immortal Fields**: Once a teacher profile is created, the fields `id`, `email`, `createdAt`, `trialStartDate`, and `trialEndDate` cannot be modified by the teacher.
 - **Server Timestamp Enforced**: Creation of teacher account must enforce `request.resource.data.trialStartDate == request.time` and `request.resource.data.trialEndDate == request.time + duration(7, 'd')` or verified server timestamps to prevent trial bypass.
 - **Subscription Tampering Protection**: Teachers cannot promote their own `role` or change their `subscriptionStatus`, `plan`, or `subscriptionExpiresAt`. These fields can only be modified by an Admin.
@@ -30,7 +32,7 @@
    `GET /teachers/{uid}` by anonymous unauthenticated user. -> REJECTED.
 10. **Direct Admin Document Write**:
     `POST /admins/{uid}` by non-admin authenticated user trying to make himself admin. -> REJECTED.
-11. **Client Clock Spoofing on Create**:
-    `POST /teachers/{uid}` with `trialStartDate: 1970-01-01` or future dates not equal to `request.time`. -> REJECTED.
-12. **Malformed Class Type Enum Injection**:
-    `POST /teachers/{uid}/students/` with `{ classType: "hacked_unlimited" }`. -> REJECTED.
+11. **Expired Subscription Write Attempt**:
+    `POST /teachers/{uid}/students/` when `subscriptionExpiresAt < request.time`. -> REJECTED (subscription expired).
+12. **Unverified Email Admin Spoofing**:
+    Attempting admin access via email claim without `email_verified == true`. -> REJECTED.

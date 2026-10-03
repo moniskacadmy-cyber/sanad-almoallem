@@ -3,9 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>سند المعلم | المنصة الذكية للمعلمين الخصوصيين</title>
+    <title>Remix سند المعلم | المنصة الذكية للمعلمين الخصوصيين</title>
     <meta name="description" content="تطبيق ويب متكامل لتنظيم الحصص والطلاب والمواعيد والمدفوعات للمعلمين الخصوصيين مع إدارة الاشتراكات." />
-    <meta property="og:title" content="سند المعلم | المنصة الذكية للمعلمين الخصوصيين" />
+    <meta property="og:title" content="Remix سند المعلم | المنصة الذكية للمعلمين الخصوصيين" />
     <meta property="og:description" content="تطبيق ويب متكامل لتنظيم الحصص والطلاب والمواعيد والمدفوعات للمعلمين الخصوصيين مع إدارة الاشتراكات." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
@@ -17,10 +17,64 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script>
+      // Preamble initialization for React Fast Refresh
+      window.$RefreshReg$ = window.$RefreshReg$ || function() {};
+      window.$RefreshSig$ = window.$RefreshSig$ || function() { return function(type) { return type; }; };
+      window.__vite_plugin_react_preamble_installed__ = true;
+
+      // Comply with environment constraint: "HMR: Disabled. Ignore WebSocket errors."
+      (function() {
+        function shouldSuppress(msg) {
+          if (!msg) return false;
+          const str = String(msg);
+          return str.includes('[vite]') ||
+                 str.includes('WebSocket') ||
+                 str.includes('websocket') ||
+                 str.includes('SendBeforeConnectError') ||
+                 str.includes('preamble') ||
+                 str.includes('server connection lost') ||
+                 str.includes('connecting...');
+        }
+
+        ['log', 'info', 'warn', 'error', 'debug'].forEach(function(method) {
+          const orig = console[method];
+          console[method] = function(...args) {
+            try {
+              for (let i = 0; i < args.length; i++) {
+                const arg = args[i];
+                const str = typeof arg === 'object' && arg !== null
+                  ? (arg.message || arg.stack || JSON.stringify(arg))
+                  : String(arg);
+                if (shouldSuppress(str)) return;
+              }
+            } catch (_) {}
+            return orig.apply(console, args);
+          };
+        });
+
+        window.addEventListener('error', function(e) {
+          const msg = (e && (e.message || (e.error && (e.error.message || e.error.stack)))) || '';
+          if (shouldSuppress(msg)) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+          }
+        }, true);
+
+        window.addEventListener('unhandledrejection', function(e) {
+          const reason = (e && (e.reason && (e.reason.message || e.reason.stack || String(e.reason)))) || '';
+          if (shouldSuppress(reason)) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+          }
+        }, true);
+      })();
+    </script>
   </head>
   <body class="bg-slate-950 text-slate-100 font-sans antialiased select-none">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

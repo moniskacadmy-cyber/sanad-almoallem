@@ -150,6 +150,19 @@
         "sentAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "teacherId", "studentName", "target", "classTime", "status", "messageText", "sentAt"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "Quick to-do list items.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "teacherId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 500 },
+        "completed": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "teacherId", "title", "completed", "createdAt"]
     }
   },
   "firestore": {
@@ -184,6 +197,10 @@
     "/teachers/{teacherId}/reminders/{reminderId}": {
       "schema": { "$ref": "#/entities/Reminder" },
       "description": "Stores automated class reminder logs."
+    },
+    "/teachers/{teacherId}/tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/Task" },
+      "description": "Stores quick to-do list items for a teacher."
     }
   }
 }
