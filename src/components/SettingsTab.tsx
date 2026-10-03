@@ -13,6 +13,7 @@ import {
   checkRemindersApi,
   fetchCronStatusApi,
   triggerTestReminderApi,
+  sendEndOfDaySummaryNotification,
 } from '../services/reminderService';
 import {
   User,
@@ -111,6 +112,18 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [testLocation, setTestLocation] = useState<string>('');
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [testSuccessData, setTestSuccessData] = useState<any | null>(null);
+  const [eodNotice, setEodNotice] = useState<string | null>(null);
+
+  const handleTestEndOfDaySummary = () => {
+    const res = sendEndOfDaySummaryNotification({
+      teacher: profile,
+      schedules,
+      students,
+      force: true,
+    });
+    setEodNotice(`تم إرسال إشعار التقرير الموجز (${res.completedCount} حصص منجزة اليوم) بنجاح! 🔔`);
+    setTimeout(() => setEodNotice(null), 4000);
+  };
 
   // WhatsApp Template Customization States
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<'welcome' | 'payment' | 'report' | 'lessonPrep'>('welcome');
@@ -822,7 +835,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         </button>
       </div>
 
-      {/* Automated Class Reminders Card (Cron Job 15-min) */}
+      {/* Automated Class Reminders Card */}
       <div className="rounded-2xl bg-gradient-to-r from-purple-950/50 via-slate-900 to-indigo-950/50 border border-purple-500/30 p-4 space-y-4 shadow-xl">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
@@ -834,14 +847,25 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 <h3 className="text-sm font-bold text-white">التذكير التلقائي بالحصص (قبل 15 دقيقة)</h3>
               </div>
               <p className="text-[11px] text-purple-200/80 mt-0.5">
-                فحص دوري كل 15 دقيقة عبر دالة Cron Job لإرسال رسائل واتساب وإشعارات للوالدين والمعلمين
+                تنبيهات فورية للمتصفح ورسائل واتساب للوالدين والمعلمين قبل موعد الحصة
               </p>
             </div>
           </div>
           <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 flex-shrink-0">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Cron Job نشط</span>
+            <span>تنبيهات فورية نشطة</span>
           </span>
+        </div>
+
+        {/* Clear Notice about Browser Running Reminders */}
+        <div className="p-3 rounded-2xl bg-amber-950/40 border border-amber-500/40 text-amber-200 text-xs flex items-start gap-2.5">
+          <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <span className="font-bold block">ملاحظة هامة حول عمل التذكيرات:</span>
+            <p className="text-[11px] text-amber-200/80 leading-relaxed">
+              تعمل التذكيرات التلقائية والإشعارات اللحظية أثناء فتح التطبيق أو تشغيل المتصفح في الخلفية دون الحاجة لأي خادم cron مدفوع.
+            </p>
+          </div>
         </div>
 
         {/* Status Notice */}
@@ -962,6 +986,68 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               >
                 {reminderSettings.soundEnabled ? 'مفعل 🔊' : 'صامت 🔇'}
               </button>
+            </div>
+
+            {/* End-of-Day Summary Report Section */}
+            <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-950/30 via-slate-950/60 to-purple-950/30 border border-emerald-500/30 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30">
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white">تقرير نهاية اليوم الموجز 📊</h4>
+                    <p className="text-[10px] text-slate-400">إشعار متصفح يومي يلخص عدد الحصص المنجزة</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleUpdateReminderSetting(
+                      'endOfDaySummaryEnabled',
+                      reminderSettings.endOfDaySummaryEnabled === false
+                    )
+                  }
+                  className={`w-10 h-5 flex items-center rounded-full p-0.5 transition cursor-pointer ${
+                    reminderSettings.endOfDaySummaryEnabled !== false
+                      ? 'bg-emerald-600 justify-end'
+                      : 'bg-slate-700 justify-start'
+                  }`}
+                >
+                  <span className="bg-white w-4 h-4 rounded-full shadow-md" />
+                </button>
+              </div>
+
+              {reminderSettings.endOfDaySummaryEnabled !== false && (
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-white/5 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-slate-300">وقت إرسال التقرير:</span>
+                    <input
+                      type="time"
+                      value={reminderSettings.endOfDaySummaryTime || '21:00'}
+                      onChange={(e) =>
+                        handleUpdateReminderSetting('endOfDaySummaryTime', e.target.value)
+                      }
+                      className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleTestEndOfDaySummary}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition flex items-center gap-1 shadow cursor-pointer active:scale-95"
+                  >
+                    <Bell className="w-3 h-3" />
+                    <span>تجربة إشعار نهاية اليوم الآن 🔔</span>
+                  </button>
+                </div>
+              )}
+
+              {eodNotice && (
+                <p className="text-[11px] font-bold text-emerald-300 animate-pulse text-center">
+                  {eodNotice}
+                </p>
+              )}
             </div>
           </div>
         )}

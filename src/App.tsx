@@ -18,15 +18,17 @@ import {
 import { AuthModal } from './components/AuthModal';
 import { LockScreen } from './components/LockScreen';
 import { HomeTab } from './components/HomeTab';
-import { StudentsTab } from './components/StudentsTab';
-import { ScheduleTab } from './components/ScheduleTab';
-import { LibraryTab } from './components/LibraryTab';
-import { SettingsTab } from './components/SettingsTab';
-import { FinancialDashboard } from './components/FinancialDashboard';
-import { AdminDashboard } from './components/AdminDashboard';
 import { AdminSecretGate } from './components/AdminSecretGate';
 import { NearExpiryOverlay } from './components/NearExpiryOverlay';
 import { OfflineIndicator } from './OfflineIndicator';
+
+// Code-split heavy screen tabs with React.lazy to accelerate initial load time
+const StudentsTab = React.lazy(() => import('./components/StudentsTab').then((m) => ({ default: m.StudentsTab })));
+const ScheduleTab = React.lazy(() => import('./components/ScheduleTab').then((m) => ({ default: m.ScheduleTab })));
+const LibraryTab = React.lazy(() => import('./components/LibraryTab').then((m) => ({ default: m.LibraryTab })));
+const SettingsTab = React.lazy(() => import('./components/SettingsTab').then((m) => ({ default: m.SettingsTab })));
+const FinancialDashboard = React.lazy(() => import('./components/FinancialDashboard').then((m) => ({ default: m.FinancialDashboard })));
+const AdminDashboard = React.lazy(() => import('./components/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
 import {
   Home,
   Users,
@@ -47,6 +49,7 @@ import {
   showBrowserNotification,
   playNotificationChime,
   checkRemindersApi,
+  sendEndOfDaySummaryNotification,
 } from './services/reminderService';
 
 export default function App() {
@@ -278,6 +281,27 @@ export default function App() {
               '🔔 تذكير بحصة قادمة!',
               `حصة الطالب/ـة ${first.studentName} تبدأ بعد ${settings.minutesBefore || 15} دقيقة (الساعة ${first.classTime}).`
             );
+          }
+        }
+
+        // Automatic End-of-Day Summary check
+        if (settings.endOfDaySummaryEnabled !== false && isMounted) {
+          const nowTime = new Date();
+          const currentHour = nowTime.getHours();
+          const currentMinute = nowTime.getMinutes();
+          const [targetHour, targetMin] = (settings.endOfDaySummaryTime || '21:00')
+            .split(':')
+            .map(Number);
+          const currentTotalMinutes = currentHour * 60 + currentMinute;
+          const targetTotalMinutes = (targetHour || 21) * 60 + (targetMin || 0);
+
+          if (currentTotalMinutes >= targetTotalMinutes) {
+            sendEndOfDaySummaryNotification({
+              teacher: profile,
+              schedules,
+              students,
+              force: false,
+            });
           }
         }
       } catch (err) {
@@ -514,59 +538,68 @@ export default function App() {
 
         {/* Main Body Content */}
         <main className="flex-1 p-4 pb-20 overflow-y-auto">
-          {showFinancialDashboard ? (
-            <FinancialDashboard
-              profile={profile}
-              students={students}
-              onBackToApp={() => setShowFinancialDashboard(false)}
-              onOpenStudentDetails={() => {
-                setShowFinancialDashboard(false);
-                setActiveTab(1);
-              }}
-            />
-          ) : (
-            <>
-              {activeTab === 0 && (
-                <HomeTab
-                  profile={profile}
-                  students={students}
-                  schedules={schedules}
-                  onNavigateToTab={(t) => setActiveTab(t)}
-                  onOpenUpgradeModal={() => setShowUpgradeModal(true)}
-                  onOpenFinancialDashboard={() => setShowFinancialDashboard(true)}
-                />
-              )}
-              {activeTab === 1 && (
-                <StudentsTab
-                  profile={profile}
-                  students={students}
-                  schedules={schedules}
-                />
-              )}
-              {activeTab === 2 && (
-                <ScheduleTab
-                  profile={profile}
-                  students={students}
-                  schedules={schedules}
-                />
-              )}
-              {activeTab === 3 && (
-                <LibraryTab profile={profile} libraryItems={libraryItems} />
-              )}
-              {activeTab === 4 && (
-                <SettingsTab
-                  profile={profile}
-                  students={students}
-                  schedules={schedules}
-                  libraryItems={libraryItems}
-                  isAdmin={isAdmin}
-                  onOpenUpgradeModal={() => setShowUpgradeModal(true)}
-                  onOpenAdminDashboard={() => setShowAdminView(true)}
-                  onOpenFinancialDashboard={() => setShowFinancialDashboard(true)}
-                />
-              )}
-            </>
-          )}
+          <React.Suspense
+            fallback={
+              <div className="flex flex-col items-center justify-center min-h-[40vh] text-purple-400 gap-3">
+                <Loader2 className="w-7 h-7 animate-spin text-purple-400" />
+                <span className="text-xs font-bold text-slate-300">جارٍ تحميل القسم...</span>
+              </div>
+            }
+          >
+            {showFinancialDashboard ? (
+              <FinancialDashboard
+                profile={profile}
+                students={students}
+                onBackToApp={() => setShowFinancialDashboard(false)}
+                onOpenStudentDetails={() => {
+                  setShowFinancialDashboard(false);
+                  setActiveTab(1);
+                }}
+              />
+            ) : (
+              <>
+                {activeTab === 0 && (
+                  <HomeTab
+                    profile={profile}
+                    students={students}
+                    schedules={schedules}
+                    onNavigateToTab={(t) => setActiveTab(t)}
+                    onOpenUpgradeModal={() => setShowUpgradeModal(true)}
+                    onOpenFinancialDashboard={() => setShowFinancialDashboard(true)}
+                  />
+                )}
+                {activeTab === 1 && (
+                  <StudentsTab
+                    profile={profile}
+                    students={students}
+                    schedules={schedules}
+                  />
+                )}
+                {activeTab === 2 && (
+                  <ScheduleTab
+                    profile={profile}
+                    students={students}
+                    schedules={schedules}
+                  />
+                )}
+                {activeTab === 3 && (
+                  <LibraryTab profile={profile} libraryItems={libraryItems} />
+                )}
+                {activeTab === 4 && (
+                  <SettingsTab
+                    profile={profile}
+                    students={students}
+                    schedules={schedules}
+                    libraryItems={libraryItems}
+                    isAdmin={isAdmin}
+                    onOpenUpgradeModal={() => setShowUpgradeModal(true)}
+                    onOpenAdminDashboard={() => setShowAdminView(true)}
+                    onOpenFinancialDashboard={() => setShowFinancialDashboard(true)}
+                  />
+                )}
+              </>
+            )}
+          </React.Suspense>
         </main>
 
         {/* Bottom Tab Navigation Bar */}

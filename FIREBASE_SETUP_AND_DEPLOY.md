@@ -4,7 +4,7 @@
 
 ---
 
-## 1. إعداد خدمات Firebase (Backend)
+## 1. إعداد خدمات Firebase (Backend & Auth)
 
 ### أ. تفعيل المصادقة (Authentication)
 1. ادخل إلى [Firebase Console](https://console.firebase.google.com).
@@ -13,7 +13,12 @@
    - فعّل خيار **Email/Password**.
    - فعّل خيار **Google** مع بريد الدعم.
 
-### ب. إعداد قواعد الأمان في Cloud Firestore
+### ب. إضافة النطاقات المصرح بها (Authorized Domains) ⚠️ خطوة هامة
+1. في صفحة **Authentication**، اذهب إلى تبويب **Settings** ثم **Authorized domains**.
+2. اضغط على **Add domain** وأضف نطاق مشروعك على Vercel (مثال: `your-project.vercel.app` أو نطاقك المخصص).
+3. هذه الخطوة ضرورية لضمان نجاح تسجيل الدخول عبر Google والبريد الإلكتروني من الإنتاج.
+
+### ج. إعداد قواعد الأمان في Cloud Firestore
 1. افتح **Firestore Database** في Firebase Console.
 2. انشر ملف `firestore.rules` المرفق مع المشروع لحماية بيانات المعلمين:
    ```bash
@@ -25,7 +30,7 @@
    - فحص سريان اشتراك المعلم (`subscriptionExpiresAt > request.time`) لعمليات الإنشاء والتعديل والحذف لكافة المجموعات (الطلاب، الحصص، الجداول، المكتبة، التذكيرات، المهام).
    - السماح بالقراءة وتصدير البيانات دائماً للمعلم حتى بعد انتهاء الاشتراك.
 
-### ج. استخراج مفتاح خدمة Firebase Admin (Service Account)
+### د. استخراج مفتاح خدمة Firebase Admin (Service Account)
 1. في Firebase Console، اذهب إلى **Project Settings** (أيقونة الترس) > **Service Accounts**.
 2. اضغط على **Generate new private key** وحمّل ملف الـ JSON.
 3. انسخ محتوى الملف لاستخدامه في المتغير `FIREBASE_SERVICE_ACCOUNT` على Vercel.
@@ -42,7 +47,7 @@
    - `role`: string قيمته `admin`
    - `email`: string قيمته بريدك الإلكتروني
    - `createdAt`: serverTimestamp
-5. بعد الحفظ، سجّل الدخول بحسابك في التطبيق وستفتح لك بوابة المشرف تلقائياً دون الحاجة لأي رمز PIN.
+5. بعد الحفظ، سجّل الدخول بحسابك في التطبيق وستفتح لك بوابة المشرف تلقائياً.
 
 ---
 
@@ -69,9 +74,9 @@
 
 ### الخطوة 4: النشر
 اضغط **Deploy**. سيقوم Vercel ببناء التطبيق ونشر:
-- واجهة الويب التفاعلية (SPA) مع دعم PWA.
-- دوال الـ Serverless داخل مجلد `/api` للذكاء الاصطناعي والتذكيرات.
-- مجدول Vercel Cron التلقائي كل 15 دقيقة الموضح في `vercel.json`.
+- واجهة الويب التفاعلية (SPA) مع دعم PWA والتقسيم الذكي للأكواد.
+- دوال الـ Serverless عبر `/api/index.ts` للمساعد الذكي والتحقق الآمن من التذكيرات.
+- نظام التنبيهات الفورية والتذكير بالحصة يعمل مباشرة أثناء فتح المعلم للتطبيق دون تكاليف cron إضافية.
 
 ---
 

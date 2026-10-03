@@ -1,4 +1,5 @@
 import { ScheduleSlot, Student, TeacherProfile, ReminderLog, ReminderSettings } from '../types';
+import { auth } from '../firebase';
 
 const REMINDER_SETTINGS_KEY = 'sanad_reminder_settings';
 const DEFAULT_SETTINGS: ReminderSettings = {
@@ -8,6 +9,8 @@ const DEFAULT_SETTINGS: ReminderSettings = {
   notifyParent: true,
   soundEnabled: true,
   autoOpenWhatsApp: false,
+  endOfDaySummaryEnabled: true,
+  endOfDaySummaryTime: '21:00',
 };
 
 // Play a pleasant two-tone audio alert using Web Audio API
@@ -119,10 +122,12 @@ export async function checkRemindersApi(params: {
   matchedReminders: ReminderLog[];
 }> {
   try {
+    const idToken = await auth.currentUser?.getIdToken();
     const response = await fetch('/api/reminders/check', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
       },
       body: JSON.stringify({
         teacherId: params.teacher.id,
@@ -163,7 +168,12 @@ export async function fetchCronStatusApi(): Promise<{
   recentLogs: ReminderLog[];
 }> {
   try {
-    const res = await fetch('/api/reminders/status');
+    const idToken = await auth.currentUser?.getIdToken();
+    const res = await fetch('/api/reminders/status', {
+      headers: {
+        ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+      },
+    });
     if (!res.ok) throw new Error('فشل جلب حالة Cron Job.');
     return await res.json();
   } catch (e) {
@@ -188,9 +198,13 @@ export async function triggerTestReminderApi(params: {
   teacherWhatsapp: string;
   locationOrLink?: string;
 }) {
+  const idToken = await auth.currentUser?.getIdToken();
   const res = await fetch('/api/reminders/trigger-test', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+    },
     body: JSON.stringify(params),
   });
   if (!res.ok) {
@@ -198,3 +212,97 @@ export async function triggerTestReminderApi(params: {
   }
   return await res.json();
 }
+
+// End-of-Day Summary Report Helpers
+export interface EndOfDaySummaryResult {
+  sent: boolean;
+  reason?: string;
+  completedCount: number;
+  totalScheduledCount: number;
+  completedStudentNames: string[];
+  message: string;
+}
+
+export function generateEndOfDaySummaryMessage(params: {
+  teacherName: string;
+  completedCount: number;
+  totalScheduledCount: number;
+  completedStudentNames: string[];
+}): { title: string; body: string } {
+  const { teacherName, completedCount, totalScheduledCount, completedStudentNames } = params;
+  const title = '📊 تقرير نهاية اليوم - سند المعلم';
+
+  if (completedCount > 0) {
+    const studentsStr =
+      completedStudentNames.length > 0
+        ? `مع الطلاب: (${completedStudentNames.slice(0, 3).join('، ')}${
+            completedStudentNames.length > 3 ? ' وغيرهم' : ''
+          })`
+        : '';
+    const body = `أحسنت أ. ${teacherName}! 🌟 تم إنجاز ${completedCount} من أصل ${totalScheduledCount} حصص مجدولة اليوم بنجاح ${studentsStr}. ارتح جيداً واستعد ليوم مثمر غداً! 📚✨`;
+    return { title, body };
+  }
+
+  if (totalScheduledCount > 0) {
+    const body = `أ. ${teacherName}، كان لديك ${totalScheduledCount} حصص مجدولة اليوم ولم تسجل أي حصة كمنجزة بعد. تذكّر تسجيل تقارير الطلاب لضبط الحسابات! 📝`;
+    return { title, body };
+  }
+
+  const body = `أ. ${teacherName}، يوم هادئ بدون حصص مجدولة اليوم ☕. نتمنى لك وقتاً ممتعاً وأمسية سعيدة!`;
+  return { title, body };
+}
+
+export function sendEndOfDaySummaryNotification(params: {
+  teacher: TeacherProfile;
+  schedules: ScheduleSlot[];
+  students: Student[];
+  force?: boolean;
+}): EndOfDaySummaryResult {
+  const { teacher, schedules, force = false } = params;
+  const now = new Date();
+  const todayStr = new Intl.DateTimeFormat('en-CA').format(now);
+  const currentDayOfWeek = now.getDay();
+  const eodKey = `sanad_eod_sent_${teacher.id}_${todayStr}`;
+
+  if (!force) {
+    const alreadySent = localStorage.getItem(eodKey);
+    if (alreadySent) {
+      return {
+        sent: false,
+        reason: 'already_sent_today',
+        completedCount: 0,
+        totalScheduledCount: 0,
+        completedStudentNames: [],
+        message: 'تم إرسال تقرير نهاية اليوم مسبقاً لهذا اليوم.',
+      };
+    }
+  }
+
+  // Calculate today's completed and scheduled classes
+  const todaySlots = schedules.filter((s) => s.dayOfWeek === currentDayOfWeek);
+  const completedSlots = todaySlots.filter((s) => s.completedTodayDate === todayStr);
+  const completedStudentNames = completedSlots.map((s) => s.studentName).filter(Boolean);
+
+  const { title, body } = generateEndOfDaySummaryMessage({
+    teacherName: teacher.name,
+    completedCount: completedSlots.length,
+    totalScheduledCount: todaySlots.length,
+    completedStudentNames,
+  });
+
+  showBrowserNotification(title, body);
+  playNotificationChime();
+
+  if (!force) {
+    localStorage.setItem(eodKey, new Date().toISOString());
+  }
+
+  return {
+    sent: true,
+    completedCount: completedSlots.length,
+    totalScheduledCount: todaySlots.length,
+    completedStudentNames,
+    message: body,
+  };
+}
+

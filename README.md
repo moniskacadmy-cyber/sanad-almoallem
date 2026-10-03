@@ -55,7 +55,8 @@ vercel dev
    - `VITE_FIREBASE_STORAGE_BUCKET`
    - `VITE_FIREBASE_MESSAGING_SENDER_ID`
    - `VITE_FIREBASE_APP_ID`
-3. سيتولى Vercel بناء الموقع تلقائياً وتشغيل مسارات الـ API كـ Serverless Functions ومجدول `cron` كل 15 دقيقة الموضح في `vercel.json`.
+3. في Firebase Console > Authentication > Settings > Authorized domains، أضف نطاق Vercel الخاص بمشروعك (مثل `your-app.vercel.app`).
+4. سيتولى Vercel بناء الموقع تلقائياً وتشغيل مسارات الـ API كـ Serverless Functions عبر `api/index.ts`.
 
 ---
 

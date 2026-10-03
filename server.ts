@@ -1,5 +1,4 @@
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
@@ -151,27 +150,33 @@ ${question}
   }
 });
 
-// Automated 15-Minute Class Reminders & WhatsApp/Notifications API Route
-app.use('/api/reminders', createRemindersRouter());
+// Automated 15-Minute Class Reminders & WhatsApp/Notifications API Route (Protected)
+app.use('/api/reminders', verifyFirebaseToken, userRateLimiter, createRemindersRouter());
 
-async function startServer() {
-  const isProd = process.env.NODE_ENV === 'production';
-  if (!isProd) {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    app.use(express.static(path.resolve(__dirname, 'dist')));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+// Local Server Runner (Vercel Serverless executes app directly via /api/index.ts)
+if (!process.env.VERCEL) {
+  async function startServer() {
+    const isProd = process.env.NODE_ENV === 'production';
+    if (!isProd) {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } else {
+      app.use(express.static(path.resolve(__dirname, 'dist')));
+      app.get('*', (_req, res) => {
+        res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+      });
+    }
+
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server listening on http://0.0.0.0:${PORT}`);
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server listening on http://0.0.0.0:${PORT}`);
-  });
+  startServer();
 }
 
-startServer();
+export default app;

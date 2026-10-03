@@ -161,6 +161,8 @@ export interface ReminderSettings {
   notifyParent: boolean;
   soundEnabled: boolean;
   autoOpenWhatsApp?: boolean;
+  endOfDaySummaryEnabled?: boolean;
+  endOfDaySummaryTime?: string; // e.g. "21:00"
 }
 
 export const DEFAULT_WHATSAPP_TEMPLATES = {

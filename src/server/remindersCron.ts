@@ -256,6 +256,11 @@ export function createRemindersRouter(): Router {
         minutesBefore = 15,
       } = req.body;
 
+      const authUserUid = (req as any).user?.uid;
+      if (authUserUid && teacherId && teacherId !== authUserUid) {
+        return res.status(403).json({ error: 'غير مصرح به: لا يمكنك فحص بيانات معلم آخر.' });
+      }
+
       const evalTime = clientTime ? new Date(clientTime) : new Date();
 
       const { matchedReminders, summary } = checkUpcomingSlots({
