@@ -37,6 +37,8 @@ import {
   SubscriptionPlan,
   SubscriptionStatus,
   BackupData,
+  QuickNote,
+  NoteColor,
 } from './types';
 
 const app = initializeApp(firebaseConfig);
@@ -1274,4 +1276,91 @@ export async function runOrphanCleanup(_teacherId: string, _activeStudentIds: st
   console.log('[OrphanCleanup] Skipped: orphan cleanup is disabled / no-op.');
   return;
 }
+
+// Quick Notes CRUD
+export function subscribeToQuickNotes(
+  teacherId: string,
+  onUpdate: (notes: QuickNote[]) => void
+) {
+  const path = `teachers/${teacherId}/notes`;
+  return onSnapshot(
+    collection(db, 'teachers', teacherId, 'notes'),
+    (snap) => {
+      const notes = snap.docs.map((d) => ({
+        ...d.data(),
+        id: d.id,
+      })) as QuickNote[];
+
+      // Sort: pinned first, then by createdAt desc
+      notes.sort((a, b) => {
+        if (a.isPinned && !b.isPinned) return -1;
+        if (!a.isPinned && b.isPinned) return 1;
+        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt || 0).getTime();
+        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt || 0).getTime();
+        return timeB - timeA;
+      });
+
+      onUpdate(notes);
+    },
+    (err) => handleFirestoreError(err, OperationType.LIST, path)
+  );
+}
+
+export async function addQuickNote(
+  teacherId: string,
+  note: { text: string; color?: NoteColor; isPinned?: boolean }
+) {
+  const path = `teachers/${teacherId}/notes`;
+  try {
+    const colRef = collection(db, 'teachers', teacherId, 'notes');
+    const newDoc = doc(colRef);
+    await setDoc(newDoc, {
+      id: newDoc.id,
+      teacherId,
+      text: note.text.trim(),
+      color: note.color || 'amber',
+      isPinned: !!note.isPinned,
+      isCompleted: false,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return newDoc.id;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export async function updateQuickNote(
+  teacherId: string,
+  noteId: string,
+  updates: Partial<QuickNote>
+) {
+  const path = `teachers/${teacherId}/notes/${noteId}`;
+  try {
+    await updateDoc(doc(db, 'teachers', teacherId, 'notes', noteId), {
+      ...updates,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function deleteQuickNote(teacherId: string, noteId: string) {
+  const path = `teachers/${teacherId}/notes/${noteId}`;
+  try {
+    await deleteDoc(doc(db, 'teachers', teacherId, 'notes', noteId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function togglePinQuickNote(teacherId: string, noteId: string, currentPinned: boolean) {
+  return updateQuickNote(teacherId, noteId, { isPinned: !currentPinned });
+}
+
+export async function toggleCompleteQuickNote(teacherId: string, noteId: string, currentCompleted: boolean) {
+  return updateQuickNote(teacherId, noteId, { isCompleted: !currentCompleted });
+}
+
 

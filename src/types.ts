@@ -170,6 +170,19 @@ export const DEFAULT_WHATSAPP_TEMPLATES = {
   lessonPrep: `السلام عليكم ورحمة الله وبركاته 🌷\n📋 بطاقة تحضير وخطة الحصة الدراسية\n\n👤 الطالب/ـة: {studentName}\n📚 المادة: {subject}\n👨‍🏫 إعداد المعلم: أ. {teacherName}\n📅 التاريخ: {date}\n🎯 عنوان الدرس: {topic}\n{notes}\n\n1️⃣ الأهداف التعليمية:\n• استيعاب المفاهيم والمصطلحات الأساسية لدرس ({topic}).\n• التدرب على حل أمثلة ونماذج تطبيقية متنوعة.\n• التأكد من إتقان الطالب للمهارات المطلوبة قبل نهاية الحصة.\n\n2️⃣ خطة سير الحصة:\n• مراجعة سريعة لما تم في الحصة السابقة (5 إلى 10 دقائق).\n• الشرح التفاعلي المبسط وطرح الأمثلة (25 دقيقة).\n• حل تمارين تطبيقية وتقييم الفهم الفوري (15 دقيقة).\n\n3️⃣ الواجب والتكليفات المنزلية:\n• حل التمارين المحددة ومراجعة الملاحظات.\n\nمع خالص تمنياتنا بالتفوق والنجاح المستمر دائماً 🌟`
 };
 
+export type NoteColor = 'amber' | 'emerald' | 'purple' | 'blue' | 'rose';
+
+export interface QuickNote {
+  id: string;
+  teacherId: string;
+  text: string;
+  color?: NoteColor;
+  isPinned?: boolean;
+  isCompleted?: boolean;
+  createdAt: any;
+  updatedAt?: any;
+}
+
 export function renderTemplate(templateText: string, vars: Record<string, any>): string {
   let result = templateText;
   Object.entries(vars).forEach(([key, val]) => {

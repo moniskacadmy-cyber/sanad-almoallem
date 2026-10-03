@@ -163,6 +163,22 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "teacherId", "title", "completed", "createdAt"]
+    },
+    "QuickNote": {
+      "title": "QuickNote",
+      "description": "Quick scratchpad note or reminder for teacher.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "teacherId": { "type": "string", "maxLength": 128 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "color": { "type": "string", "enum": ["amber", "emerald", "purple", "blue", "rose"] },
+        "isPinned": { "type": "boolean" },
+        "isCompleted": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "teacherId", "text", "createdAt"]
     }
   },
   "firestore": {
@@ -201,6 +217,10 @@
     "/teachers/{teacherId}/tasks/{taskId}": {
       "schema": { "$ref": "#/entities/Task" },
       "description": "Stores quick to-do list items for a teacher."
+    },
+    "/teachers/{teacherId}/notes/{noteId}": {
+      "schema": { "$ref": "#/entities/QuickNote" },
+      "description": "Stores quick notes and scratchpad ideas for a teacher."
     }
   }
 }

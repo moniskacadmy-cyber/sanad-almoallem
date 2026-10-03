@@ -164,6 +164,16 @@ service cloud.firestore {
         data.createdAt == request.time;
     }
 
+    // Quick Note validation
+    function isValidQuickNote(teacherId) {
+      let data = incoming();
+      return data.teacherId == teacherId &&
+        data.text is string && data.text.size() >= 1 && data.text.size() <= 2000 &&
+        (!('color' in data) || data.color in ['amber', 'emerald', 'purple', 'blue', 'rose']) &&
+        (!('isPinned' in data) || data.isPinned is bool) &&
+        (!('isCompleted' in data) || data.isCompleted is bool);
+    }
+
     // Admins collection
     match /admins/{adminId} {
       allow get: if isAdmin() || (isSignedIn() && request.auth.uid == adminId);
@@ -254,6 +264,18 @@ service cloud.firestore {
                                  isTeacherSubscriptionActive(teacherId) &&
                                  isValidTask(teacherId);
         allow delete: if isValidId(teacherId) && isValidId(taskId) &&
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId);
+      }
+
+      // Subcollection: Notes (Quick Notes)
+      match /notes/{noteId} {
+        allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+        allow create, update: if isValidId(teacherId) && isValidId(noteId) &&
+                                 (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isTeacherSubscriptionActive(teacherId) &&
+                                 isValidQuickNote(teacherId);
+        allow delete: if isValidId(teacherId) && isValidId(noteId) &&
                          (isTeacherOwner(teacherId) || isAdmin()) &&
                          isTeacherSubscriptionActive(teacherId);
       }
