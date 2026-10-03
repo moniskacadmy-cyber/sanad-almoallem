@@ -12,19 +12,5 @@
       "source": "/((?!api/|.*\\..*).*)",
       "destination": "/index.html"
     }
-  ],
-  "functions": {
-    "api/ai/*.ts": {
-      "maxDuration": 60,
-      "memory": 1024
-    },
-    "api/chat.ts": {
-      "maxDuration": 60,
-      "memory": 1024
-    },
-    "api/reminders/*.ts": {
-      "maxDuration": 30,
-      "memory": 512
-    }
-  }
+  ]
 }
