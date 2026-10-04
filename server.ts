@@ -209,6 +209,28 @@ async function generateGeminiTextWithFreeFallback(
   }
 }
 
+// Streaming Gemini/Gemma response. Streaming improves perceived latency because the client can render chunks immediately.
+async function* streamGeminiTextWithFreeFallback(
+  request: Parameters<typeof ai.models.generateContentStream>[0],
+) {
+  let stream;
+  try {
+    stream = await ai.models.generateContentStream(request);
+  } catch (error: any) {
+    const status = Number(error?.status ?? error?.code ?? error?.error?.code);
+    const message = String(error?.message ?? '').toLowerCase();
+    const fallbackEligible = status === 429 || status === 500 || status === 502 || status === 503 || status === 504 || message.includes('unavailable') || message.includes('high demand');
+    if (!fallbackEligible) throw error;
+    const fallbackModel = process.env.GEMINI_FREE_FALLBACK_MODEL || 'gemma-4-26b-a4b-it';
+    console.warn('Primary Gemini stream unavailable/quota exhausted; trying free Gemma fallback.', fallbackModel);
+    stream = await ai.models.generateContentStream({ ...request, model: fallbackModel });
+  }
+  for await (const chunk of stream) {
+    const text = chunk.text || '';
+    if (text) yield text;
+  }
+}
+
 // Middleware: Strictly verify Firebase ID Token (no unsigned fallbacks)
 async function verifyFirebaseToken(
   req: express.Request,
@@ -563,95 +585,87 @@ app.post('/api/ai/transcribe', verifyFirebaseToken, (req, res, next) => aiRateLi
 
 // AI Assistant Chat Endpoint
 app.post('/api/ai/assistant', verifyFirebaseToken, (req, res, next) => aiRateLimiter('assistant', req, res, next), requireActiveSubscription, async (req, res) => {
+  let streamStarted = false;
   try {
     const { message, messagesHistory, summary } = req.body;
-    if (!message || typeof message !== 'string') {
-      return res.status(400).json({ error: 'الرسالة مطلوبة.' });
-    }
+    if (!message || typeof message !== 'string') return res.status(400).json({ error: 'الرسالة مطلوبة.' });
+    if (message.length > 2000) return res.status(400).json({ error: 'الرسالة طويلة جداً. الحد الأقصى 2000 حرف.' });
+    if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: 'خدمة الذكاء الاصطناعي غير مهيأة حالياً.' });
 
-    if (message.length > 2000) {
-      return res.status(400).json({ error: 'الرسالة طويلة جداً. الحد الأقصى 2000 حرف.' });
-    }
-
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(500).json({ error: 'خدمة الذكاء الاصطناعي غير مهيأة حالياً.' });
-    }
-
-    const systemInstruction = `أنت المساعد الذكي التربوي لمنصة "سند المعلم". تساعد المعلم في تنظيم جدول دراسته ومتابعة طلابه، واقتراح خطط الدروس والأسئلة والتمارين، وإعداد تقارير ملخصة لأولياء الأمور. اعتمد فقط على المعلومات والمؤشرات المتاحة في الملخص المرفق لإجابة التساؤلات الخاصة بالطلاب والجدول. إذا لم تتوفر المعلومة في الملخص وضح ذلك للمعلم بأدب ولا تبتكر بيانات غير موجودة.`;
+    const systemInstruction = 'أنت المساعد الذكي التربوي لمنصة "سند المعلم". ساعد المعلم بإجابات عملية ومباشرة حول الجدول والطلاب وتحضير الدروس والتقارير. اعتمد فقط على المعلومات المتاحة في الملخص. إذا لم تتوفر معلومة، صرّح بذلك ولا تخترع بيانات. اجعل الإجابة مختصرة ومنظمة ما لم يطلب المعلم تفصيلاً.';
 
     let formattedContext = '';
     if (summary && typeof summary === 'object') {
-      const stringFieldLimits: Record<string, number> = {
-        teacherName: 150,
-        subject: 150,
-      };
+      const stringFieldLimits: Record<string, number> = { teacherName: 150, subject: 150 };
       for (const [key, max] of Object.entries(stringFieldLimits)) {
-        if (summary[key] !== undefined && (typeof summary[key] !== 'string' || summary[key].length > max)) {
-          return res.status(400).json({ error: 'بيانات الملخص غير صالحة.' });
-        }
+        if (summary[key] !== undefined && (typeof summary[key] !== 'string' || summary[key].length > max)) return res.status(400).json({ error: 'بيانات الملخص غير صالحة.' });
       }
       for (const key of ['studentNames', 'todayClasses', 'tomorrowClasses']) {
-        if (summary[key] !== undefined && (!Array.isArray(summary[key]) || summary[key].length > 100)) {
-          return res.status(400).json({ error: 'بيانات الملخص غير صالحة.' });
-        }
+        if (summary[key] !== undefined && (!Array.isArray(summary[key]) || summary[key].length > 50)) return res.status(400).json({ error: 'بيانات الملخص غير صالحة.' });
       }
-      const serializedSummary = JSON.stringify(summary);
-      if (serializedSummary.length > 12000) {
-        return res.status(400).json({ error: 'ملخص البيانات كبير جداً.' });
-      }
-
+      const compactSummary = {
+        teacherName: typeof summary.teacherName === 'string' ? summary.teacherName : '',
+        subject: typeof summary.subject === 'string' ? summary.subject : '',
+        activeStudentsCount: Number(summary.activeStudentsCount) || 0,
+        studentNames: Array.isArray(summary.studentNames) ? summary.studentNames.slice(0, 30) : [],
+        todayClasses: Array.isArray(summary.todayClasses) ? summary.todayClasses.slice(0, 12) : [],
+        tomorrowClasses: Array.isArray(summary.tomorrowClasses) ? summary.tomorrowClasses.slice(0, 12) : [],
+        unsettledLessonsCount: Number(summary.unsettledLessonsCount) || 0,
+      };
+      if (JSON.stringify(compactSummary).length > 7000) return res.status(400).json({ error: 'ملخص البيانات كبير جداً.' });
       formattedContext = `ملخص بيانات المعلم والجدول الحالي:
-- اسم المعلم: ${summary.teacherName || 'غير محدد'}
-- المادة الدراسية: ${summary.subject || 'غير محددة'}
-- عدد الطلاب النشطين: ${summary.activeStudentsCount || 0}
-- أسماء الطلاب: ${Array.isArray(summary.studentNames) ? summary.studentNames.join('، ') : 'لا يوجد'}
-- حصص اليوم: ${Array.isArray(summary.todayClasses) && summary.todayClasses.length > 0 ? summary.todayClasses.join(' | ') : 'لا توجد حصص اليوم'}
-- حصص الغد: ${Array.isArray(summary.tomorrowClasses) && summary.tomorrowClasses.length > 0 ? summary.tomorrowClasses.join(' | ') : 'لا توجد حصص غداً'}
-- عدد الحصص المنجزة غير المحاسبة (المعلقة): ${summary.unsettledLessonsCount || 0}
+- اسم المعلم: ${compactSummary.teacherName || 'غير محدد'}
+- المادة: ${compactSummary.subject || 'غير محددة'}
+- عدد الطلاب: ${compactSummary.activeStudentsCount}
+- أسماء الطلاب: ${compactSummary.studentNames.join('، ') || 'لا يوجد'}
+- حصص اليوم: ${compactSummary.todayClasses.join(' | ') || 'لا توجد'}
+- حصص الغد: ${compactSummary.tomorrowClasses.join(' | ') || 'لا توجد'}
+- الحصص المعلقة: ${compactSummary.unsettledLessonsCount}
 ===============================`;
     }
 
-    // Include recent 10 messages history if available, truncating each text to 2000 chars
     let historyText = '';
-    if (messagesHistory !== undefined && !Array.isArray(messagesHistory)) {
-      return res.status(400).json({ error: 'سجل المحادثة غير صالح.' });
-    }
-    if (Array.isArray(messagesHistory) && messagesHistory.length > 20) {
-      return res.status(400).json({ error: 'سجل المحادثة كبير جداً.' });
-    }
+    if (messagesHistory !== undefined && !Array.isArray(messagesHistory)) return res.status(400).json({ error: 'سجل المحادثة غير صالح.' });
+    if (Array.isArray(messagesHistory) && messagesHistory.length > 20) return res.status(400).json({ error: 'سجل المحادثة كبير جداً.' });
     if (Array.isArray(messagesHistory) && messagesHistory.length > 0) {
-      const recent = messagesHistory.slice(-10);
-      historyText =
-        'سجل المحادثة السابقة:\n' +
-        recent
-          .map((m: any) => {
-            const roleStr = m.role === 'user' ? 'المعلم' : 'المساعد';
-            const textStr = typeof m.text === 'string' ? m.text.slice(0, 2000) : '';
-            return `${roleStr}: ${textStr}`;
-          })
-          .join('\n') +
-        '\n===============================\n';
+      const recent = messagesHistory.slice(-6);
+      historyText = 'سجل المحادثة السابقة:\n' + recent.map((m: any) => {
+        const roleStr = m.role === 'user' ? 'المعلم' : 'المساعد';
+        const textStr = typeof m.text === 'string' ? m.text.slice(0, 1000) : '';
+        return ${roleStr}: ${textStr};
+      }).join('\n') + '\n===============================\n';
     }
 
-    const fullPrompt = `${formattedContext}\n${historyText}سؤال المعلم الحالي:\n${message.slice(0, 2000).trim()}`;
-    if (fullPrompt.length > 20000) {
-      return res.status(400).json({ error: 'حجم الطلب النهائي كبير جداً.' });
-    }
+    const fullPrompt = ${formattedContext}\n${historyText}سؤال المعلم الحالي:\n${message.trim()};
+    if (fullPrompt.length > 12000) return res.status(400).json({ error: 'حجم الطلب النهائي كبير جداً.' });
 
     const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-    const response = await generateGeminiTextWithFreeFallback({
+    const stream = streamGeminiTextWithFreeFallback({
       model: modelName,
       contents: fullPrompt,
-      config: { systemInstruction },
+      config: { systemInstruction, maxOutputTokens: 700 },
     });
 
-    const answer = response.text || 'لم أتمكن من الحصول على إجابة من نموذج الذكاء الاصطناعي.';
-    return res.json({ answer });
+    res.status(200);
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+    streamStarted = true;
+
+    for await (const chunk of stream) res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
+    res.write('data: [DONE]\n\n');
+    return res.end();
   } catch (error) {
     console.error('Gemini Assistant API Error:', error);
     const status = Number((error as any)?.status);
-    if (status === 429) return res.status(429).json({ error: 'تم استنفاد حصة Gemini API الحالية للمشروع. يرجى تفعيل الفوترة أو الانتظار حتى تتجدد الحصة.' });
-    return res.status(status === 503 ? 503 : 500).json({ error: status === 503 ? 'خدمة الذكاء الاصطناعي مشغولة حالياً. حاول مرة أخرى بعد قليل.' : 'حدث خطأ أثناء معالجة طلبك بواسطة المساعد الذكي.' });
+    const message = status === 429 ? 'تم استنفاد حصة Gemini API الحالية للمشروع. يرجى تفعيل الفوترة أو الانتظار حتى تتجدد الحصة.' : status === 503 ? 'خدمة الذكاء الاصطناعي مشغولة حالياً. حاول مرة أخرى بعد قليل.' : 'حدث خطأ أثناء معالجة طلبك بواسطة المساعد الذكي.';
+    if (streamStarted) {
+      res.write(`data: ${JSON.stringify({ error: message })}\n\n`);
+      return res.end();
+    }
+    return res.status(status === 429 || status === 503 ? status : 500).json({ error: message });
   }
 });
 
