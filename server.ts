@@ -327,8 +327,17 @@ const requireActiveSubscription = createSubscriptionGuard({
     return snap.exists;
   },
   logError(message, err) {
-    const e = err as { code?: string | number; name?: string };
-    console.error(message, e?.code ?? e?.name ?? 'unknown');
+    const e = err as { code?: string | number; name?: string; message?: string };
+    // Log only non-secret diagnostic metadata so Firestore failures can be
+    // diagnosed in Vercel without exposing credentials or document contents.
+    console.error(
+      message,
+      JSON.stringify({
+        code: e?.code ?? null,
+        name: e?.name ?? null,
+        message: e?.message ?? null,
+      })
+    );
   },
 });
 
