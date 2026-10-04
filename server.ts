@@ -154,6 +154,26 @@ const ai = new GoogleGenAI({
   },
 });
 
+// Gemini can temporarily return 503/UNAVAILABLE during provider demand spikes.
+// Retry a small number of times with backoff, then surface a truthful 503 to the client.
+async function generateGeminiContentWithRetry(request: Parameters<typeof ai.models.generateContent>[0]) {
+  const maxAttempts = 3;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await ai.models.generateContent(request);
+    } catch (error: any) {
+      lastError = error;
+      const status = Number(error?.status ?? error?.code ?? error?.error?.code);
+      const message = String(error?.message ?? '').toLowerCase();
+      const transient = status === 429 || status === 500 || status === 502 || status === 503 || status === 504 || message.includes('unavailable') || message.includes('high demand');
+      if (!transient || attempt === maxAttempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** (attempt - 1)));
+    }
+  }
+  throw lastError;
+}
+
 // Middleware: Strictly verify Firebase ID Token (no unsigned fallbacks)
 async function verifyFirebaseToken(
   req: express.Request,
@@ -436,7 +456,7 @@ ${question}
     }
 
     const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-    const response = await ai.models.generateContent({
+    const response = await generateGeminiContentWithRetry({
       model: modelName,
       contents: promptContext,
       config: {
@@ -448,8 +468,10 @@ ${question}
     return res.json({ answer });
   } catch (error) {
     console.error('Gemini API Error:', error);
-    return res.status(500).json({
-      error: 'حدث خطأ أثناء معالجة السؤال بواسطة الذكاء الاصطناعي.',
+    return res.status(Number((error as any)?.status) === 503 ? 503 : 500).json({
+      error: Number((error as any)?.status) === 503
+        ? 'خدمة الذكاء الاصطناعي مشغولة حالياً. حاول مرة أخرى بعد قليل.'
+        : 'حدث خطأ أثناء معالجة السؤال بواسطة الذكاء الاصطناعي.',
     });
   }
 });
@@ -500,7 +522,7 @@ app.post('/api/ai/transcribe', verifyFirebaseToken, (req, res, next) => aiRateLi
     return res.json({ text });
   } catch (error) {
     console.error('Gemini Audio Transcribe Error:', error);
-    return res.status(500).json({ error: 'حدث خطأ أثناء تفريغ المقطع الصوتي.' });
+    return res.status(Number((error as any)?.status) === 503 ? 503 : 500).json({ error: Number((error as any)?.status) === 503 ? 'خدمة الذكاء الاصطناعي مشغولة حالياً. حاول مرة أخرى بعد قليل.' : 'حدث خطأ أثناء تفريغ المقطع الصوتي.' });
   }
 });
 
@@ -594,7 +616,7 @@ app.post('/api/ai/assistant', verifyFirebaseToken, (req, res, next) => aiRateLim
     return res.json({ answer });
   } catch (error) {
     console.error('Gemini Assistant API Error:', error);
-    return res.status(500).json({ error: 'حدث خطأ أثناء معالجة طلبك بواسطة المساعد الذكي.' });
+    return res.status(Number((error as any)?.status) === 503 ? 503 : 500).json({ error: Number((error as any)?.status) === 503 ? 'خدمة الذكاء الاصطناعي مشغولة حالياً. حاول مرة أخرى بعد قليل.' : 'حدث خطأ أثناء معالجة طلبك بواسطة المساعد الذكي.' });
   }
 });
 
