@@ -21,6 +21,12 @@ jobs:
       - run: npm run lint
       - run: npm test
 
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
       - name: Start Firebase emulators
         run: |
           npx --yes firebase-tools emulators:start --only auth,firestore --project demo-sanad > /tmp/firebase-emulator.log 2>&1 &
