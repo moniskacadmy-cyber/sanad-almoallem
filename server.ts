@@ -26,6 +26,12 @@ function safeParseServiceAccount(raw: string | undefined): any {
     str = str.slice(1, -1).trim();
   }
 
+  // Some Vercel pastes can arrive without the outer JSON object braces.
+  // Accept a service-account payload that starts with the first quoted field.
+  if (!str.startsWith('{') && str.startsWith('"type"')) {
+    str = `{${str}}`;
+  }
+
   // Handle Base64 encoded string
   if (!str.startsWith('{') && (str.startsWith('ey') || str.includes('='))) {
     try {
