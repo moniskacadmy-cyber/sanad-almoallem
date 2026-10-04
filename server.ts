@@ -176,6 +176,39 @@ async function generateGeminiContentWithRetry(request: Parameters<typeof ai.mode
   throw lastError;
 }
 
+
+// Free Gemini/Gemma fallback: when the primary Gemini model exhausts quota or is
+// temporarily unavailable, try Gemma 4 using the same API key.
+async function generateGeminiTextWithFreeFallback(
+  request: Parameters<typeof ai.models.generateContent>[0],
+) {
+  try {
+    const response = await generateGeminiContentWithRetry(request);
+    return response;
+  } catch (error: any) {
+    const status = Number(error?.status ?? error?.code ?? error?.error?.code);
+    const message = String(error?.message ?? '').toLowerCase();
+    const fallbackEligible =
+      status === 429 ||
+      status === 500 ||
+      status === 502 ||
+      status === 503 ||
+      status === 504 ||
+      message.includes('unavailable') ||
+      message.includes('high demand');
+
+    if (!fallbackEligible) throw error;
+
+    const fallbackModel = process.env.GEMINI_FREE_FALLBACK_MODEL || 'gemma-4-31b-it';
+    console.warn('Primary Gemini model unavailable/quota exhausted; trying free Gemma fallback.', fallbackModel);
+
+    return await ai.models.generateContent({
+      ...request,
+      model: fallbackModel,
+    });
+  }
+}
+
 // Middleware: Strictly verify Firebase ID Token (no unsigned fallbacks)
 async function verifyFirebaseToken(
   req: express.Request,
@@ -458,12 +491,10 @@ ${question}
     }
 
     const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-    const response = await generateGeminiContentWithRetry({
+    const response = await generateGeminiTextWithFreeFallback({
       model: modelName,
       contents: promptContext,
-      config: {
-        systemInstruction,
-      },
+      config: { systemInstruction },
     });
 
     const answer = response.text || 'لم يتم استلام نص من نموذج الذكاء الاصطناعي.';
@@ -608,12 +639,10 @@ app.post('/api/ai/assistant', verifyFirebaseToken, (req, res, next) => aiRateLim
     }
 
     const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-    const response = await ai.models.generateContent({
+    const response = await generateGeminiTextWithFreeFallback({
       model: modelName,
       contents: fullPrompt,
-      config: {
-        systemInstruction,
-      },
+      config: { systemInstruction },
     });
 
     const answer = response.text || 'لم أتمكن من الحصول على إجابة من نموذج الذكاء الاصطناعي.';
