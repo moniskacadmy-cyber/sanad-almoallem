@@ -9,7 +9,7 @@ import { getMessaging as getAdminMessaging } from 'firebase-admin/messaging';
 import { GoogleGenAI } from '@google/genai';
 import fs from 'fs';
 import { createRemindersRouter } from './src/server/remindersCron.js';
-import { createSubscriptionGuard, parseExpiryDateServer, type TeacherSubscriptionData } from './src/server/subscriptionAccess.js';
+import { createSubscriptionGuard, evaluateSubscription, type TeacherSubscriptionData } from './src/server/subscriptionAccess.js';
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -165,45 +165,45 @@ async function verifyFirebaseToken(
   }
 }
 
-// Helper to check Upstash Redis or In-memory Rate Limiting
-async function isRateLimitedRedis(userId: string, windowSeconds: number, maxRequests: number): Promise<boolean> {
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) return false;
+type RedisLimitResult = { limited: boolean; unavailable: boolean };
+
+async function incrementRedisCounter(
+  key: string,
+  windowSeconds: number,
+  maxRequests: number
+): Promise<RedisLimitResult> {
+  const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
+  if (!url || !token) return { limited: false, unavailable: true };
 
   try {
-    const key = `ratelimit:${userId}`;
-    const cleanUrl = url.trim().replace(/\/$/, "");
-    const response = await fetch(`${cleanUrl}/pipeline`, {
+    const response = await fetch(`${url.replace(/\/$/, '')}/pipeline`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify([
-        ["INCR", key],
-        ["EXPIRE", key, windowSeconds],
+        ['INCR', key],
+        ['EXPIRE', key, windowSeconds],
       ]),
     });
-    if (!response.ok) {
-      console.warn('Upstash Redis rate limiter request failed, falling back to memory');
-      return false;
-    }
+
+    if (!response.ok) return { limited: false, unavailable: true };
     const data = await response.json();
-    const count = data[0]?.result;
-    if (typeof count === 'number' && count > maxRequests) {
-      return true;
-    }
+    const count = Number(data?.[0]?.result);
+    if (!Number.isFinite(count)) return { limited: false, unavailable: true };
+    return { limited: count > maxRequests, unavailable: false };
   } catch (err) {
-    console.warn('Upstash Redis Rate Limiter error:', err);
+    console.warn('Upstash Redis limiter unavailable:', err instanceof Error ? err.message : 'unknown');
+    return { limited: false, unavailable: true };
   }
-  return false;
 }
 
 // In-memory rate limiting map: userId -> timestamps[] (used as instance fallback)
 const rateLimitMap = new Map<string, number[]>();
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-const MAX_REQUESTS_PER_WINDOW = 30; // 30 requests per minute per user
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const MAX_REQUESTS_PER_WINDOW = 30;
 
 async function userRateLimiter(
   req: express.Request,
@@ -211,23 +211,80 @@ async function userRateLimiter(
   next: express.NextFunction
 ) {
   const userId = (req as any).user?.uid || req.ip || 'anonymous';
-  
-  // Try Redis-based rate limiting first (best for serverless / Vercel multiple instances)
-  const isLimited = await isRateLimitedRedis(userId, 60, MAX_REQUESTS_PER_WINDOW);
-  if (isLimited) {
+  const result = await incrementRedisCounter(`ratelimit:generic:${userId}`, 60, MAX_REQUESTS_PER_WINDOW);
+
+  if (result.limited) {
     return res.status(429).json({ error: 'تم تجاوز الحد المسموح به من الطلبات، يرجى المحاولة بعد دقيقة.' });
   }
 
-  // Local memory fallback
-  const now = Date.now();
-  const timestamps = rateLimitMap.get(userId) || [];
-  const recent = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
-  if (recent.length >= MAX_REQUESTS_PER_WINDOW) {
-    return res.status(429).json({ error: 'تم تجاوز الحد المسموح به من الطلبات، يرجى المحاولة بعد قليل.' });
+  if (result.unavailable) {
+    if (process.env.VERCEL) {
+      return res.status(503).json({ error: 'خدمة تحديد معدل الطلبات غير متاحة مؤقتاً. حاول بعد قليل.' });
+    }
+
+    const now = Date.now();
+    const timestamps = rateLimitMap.get(userId) || [];
+    const recent = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+    if (recent.length >= MAX_REQUESTS_PER_WINDOW) {
+      return res.status(429).json({ error: 'تم تجاوز الحد المسموح به من الطلبات، يرجى المحاولة بعد قليل.' });
+    }
+    recent.push(now);
+    rateLimitMap.set(userId, recent);
   }
 
-  recent.push(now);
-  rateLimitMap.set(userId, recent);
+  next();
+}
+
+const AI_LIMITS = {
+  ask: { perMinute: 10, daily: 100 },
+  assistant: { perMinute: 15, daily: 100 },
+  transcribe: { perMinute: 5, daily: 50 },
+} as const;
+
+async function aiRateLimiter(
+  routeName: keyof typeof AI_LIMITS,
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  const userId = (req as any).user?.uid;
+  if (!userId) return res.status(401).json({ error: 'غير مصرح به.' });
+
+  const limits = AI_LIMITS[routeName];
+  const totalDailyLimit = Number(process.env.AI_DAILY_REQUESTS || 100);
+
+  // Check limits in order so a request rejected by a tighter limit does not
+  // consume the remaining daily counters.
+  const minute = await incrementRedisCounter(`ai:${routeName}:minute:${userId}`, 60, limits.perMinute);
+  if (minute.unavailable) {
+    if (process.env.VERCEL) {
+      return res.status(503).json({ error: 'حماية الذكاء الاصطناعي غير متاحة مؤقتاً. حاول بعد قليل.' });
+    }
+  }
+  if (minute.limited) {
+    return res.status(429).json({ error: 'تم تجاوز الحد المسموح به من طلبات الذكاء الاصطناعي خلال الدقيقة.' });
+  }
+
+  const day = await incrementRedisCounter(`ai:${routeName}:day:${userId}`, 86400, limits.daily);
+  if (day.unavailable) {
+    if (process.env.VERCEL) {
+      return res.status(503).json({ error: 'حماية الذكاء الاصطناعي غير متاحة مؤقتاً. حاول بعد قليل.' });
+    }
+  }
+  if (day.limited) {
+    return res.status(429).json({ error: 'تم تجاوز الحد اليومي لهذه الخدمة من الذكاء الاصطناعي. حاول غداً.' });
+  }
+
+  const totalDay = await incrementRedisCounter(`ai:total-day:${userId}`, 86400, totalDailyLimit);
+  if (totalDay.unavailable) {
+    if (process.env.VERCEL) {
+      return res.status(503).json({ error: 'حماية الذكاء الاصطناعي غير متاحة مؤقتاً. حاول بعد قليل.' });
+    }
+  }
+  if (totalDay.limited) {
+    return res.status(429).json({ error: 'تم تجاوز إجمالي الحد اليومي للذكاء الاصطناعي. حاول غداً.' });
+  }
+
   next();
 }
 
@@ -270,7 +327,7 @@ const requireActiveSubscription = createSubscriptionGuard({
 });
 
 // AI Assistant Endpoint for "مكتبتي" (Ask Library Sources)
-app.post('/api/ai/ask', verifyFirebaseToken, userRateLimiter, requireActiveSubscription, async (req, res) => {
+app.post('/api/ai/ask', verifyFirebaseToken, (req, res, next) => aiRateLimiter('ask', req, res, next), requireActiveSubscription, async (req, res) => {
   try {
     const { question, teacherName, subject, sources } = req.body;
     if (!question || typeof question !== 'string') {
@@ -374,9 +431,13 @@ ${question}
 });
 
 // AI Audio Transcription Endpoint
-app.post('/api/ai/transcribe', verifyFirebaseToken, userRateLimiter, requireActiveSubscription, async (req, res) => {
+app.post('/api/ai/transcribe', verifyFirebaseToken, (req, res, next) => aiRateLimiter('transcribe', req, res, next), requireActiveSubscription, async (req, res) => {
   try {
     const { audioBase64, mimeType } = req.body;
+    const allowedAudioMimeTypes = new Set(['audio/webm', 'audio/wav', 'audio/mpeg', 'audio/mp4', 'audio/ogg']);
+    if (mimeType && (typeof mimeType !== 'string' || !allowedAudioMimeTypes.has(mimeType))) {
+      return res.status(400).json({ error: 'نوع الملف الصوتي غير مدعوم.' });
+    }
     if (!audioBase64 || typeof audioBase64 !== 'string') {
       return res.status(400).json({ error: 'البيانات الصوتية مطلوبة.' });
     }
@@ -420,7 +481,7 @@ app.post('/api/ai/transcribe', verifyFirebaseToken, userRateLimiter, requireActi
 });
 
 // AI Assistant Chat Endpoint
-app.post('/api/ai/assistant', verifyFirebaseToken, userRateLimiter, requireActiveSubscription, async (req, res) => {
+app.post('/api/ai/assistant', verifyFirebaseToken, (req, res, next) => aiRateLimiter('assistant', req, res, next), requireActiveSubscription, async (req, res) => {
   try {
     const { message, messagesHistory, summary } = req.body;
     if (!message || typeof message !== 'string') {
@@ -439,6 +500,25 @@ app.post('/api/ai/assistant', verifyFirebaseToken, userRateLimiter, requireActiv
 
     let formattedContext = '';
     if (summary && typeof summary === 'object') {
+      const stringFieldLimits: Record<string, number> = {
+        teacherName: 150,
+        subject: 150,
+      };
+      for (const [key, max] of Object.entries(stringFieldLimits)) {
+        if (summary[key] !== undefined && (typeof summary[key] !== 'string' || summary[key].length > max)) {
+          return res.status(400).json({ error: 'بيانات الملخص غير صالحة.' });
+        }
+      }
+      for (const key of ['studentNames', 'todayClasses', 'tomorrowClasses']) {
+        if (summary[key] !== undefined && (!Array.isArray(summary[key]) || summary[key].length > 100)) {
+          return res.status(400).json({ error: 'بيانات الملخص غير صالحة.' });
+        }
+      }
+      const serializedSummary = JSON.stringify(summary);
+      if (serializedSummary.length > 12000) {
+        return res.status(400).json({ error: 'ملخص البيانات كبير جداً.' });
+      }
+
       formattedContext = `ملخص بيانات المعلم والجدول الحالي:
 - اسم المعلم: ${summary.teacherName || 'غير محدد'}
 - المادة الدراسية: ${summary.subject || 'غير محددة'}
@@ -452,6 +532,12 @@ app.post('/api/ai/assistant', verifyFirebaseToken, userRateLimiter, requireActiv
 
     // Include recent 10 messages history if available, truncating each text to 2000 chars
     let historyText = '';
+    if (messagesHistory !== undefined && !Array.isArray(messagesHistory)) {
+      return res.status(400).json({ error: 'سجل المحادثة غير صالح.' });
+    }
+    if (Array.isArray(messagesHistory) && messagesHistory.length > 20) {
+      return res.status(400).json({ error: 'سجل المحادثة كبير جداً.' });
+    }
     if (Array.isArray(messagesHistory) && messagesHistory.length > 0) {
       const recent = messagesHistory.slice(-10);
       historyText =
@@ -467,6 +553,9 @@ app.post('/api/ai/assistant', verifyFirebaseToken, userRateLimiter, requireActiv
     }
 
     const fullPrompt = `${formattedContext}\n${historyText}سؤال المعلم الحالي:\n${message.slice(0, 2000).trim()}`;
+    if (fullPrompt.length > 20000) {
+      return res.status(400).json({ error: 'حجم الطلب النهائي كبير جداً.' });
+    }
 
     const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
     const response = await ai.models.generateContent({
@@ -599,19 +688,10 @@ app.get('/api/reminders/cron', async (req, res) => {
       const teacherData = teacherDoc.data();
       if (!teacherData) continue;
 
-      // Ignore teacher if subscription is actually expired (using unified helper)
-      const effectiveExpiry = teacherData.subscriptionEndDate || teacherData.subscriptionExpiresAt || teacherData.trialEndDate;
-      let isExpired = false;
-      if (effectiveExpiry) {
-        const expiryDate = parseExpiryDateServer(effectiveExpiry);
-        if (!expiryDate || expiryDate.getTime() <= Date.now()) {
-          isExpired = true;
-        }
-      } else if (teacherData.subscriptionStatus === 'expired') {
-        isExpired = true;
-      }
-
-      if (isExpired) continue;
+      // Ignore teachers whose subscription is not currently active.
+      // Keep this decision aligned with the same server-side subscription logic
+      // used by paid API routes.
+      if (evaluateSubscription(teacherData, new Date()) !== 'active') continue;
 
       teachersChecked++;
 
@@ -787,6 +867,13 @@ app.get('/api/reminders/cron', async (req, res) => {
 
 // Automated 15-Minute Class Reminders & WhatsApp/Notifications API Route (Protected)
 app.use('/api/reminders', verifyFirebaseToken, userRateLimiter, createRemindersRouter());
+
+// Centralized error boundary: never expose internal stack traces or provider details.
+app.use((error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (res.headersSent) return next(error);
+  console.error('Unhandled API error:', error instanceof Error ? error.message : 'unknown');
+  return res.status(500).json({ error: 'حدث خطأ داخلي غير متوقع.' });
+});
 
 // Local Server Runner (Vercel Serverless executes app directly via /api/index.ts)
 if (!process.env.VERCEL) {
