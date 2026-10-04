@@ -26,8 +26,11 @@ function safeParseServiceAccount(raw: string | undefined): any {
     str = str.slice(1, -1).trim();
   }
 
-  // Some Vercel pastes can arrive without the outer JSON object braces.
-  // Accept a service-account payload that starts with the first quoted field.
+  // Some Vercel pastes can arrive with JSON quotes escaped (\\\"type\\\": ...)
+  // or without the outer JSON object braces. Normalize both forms.
+  if (!str.startsWith('{') && str.includes('\\\"')) {
+    str = str.replace(/\\\"/g, '"');
+  }
   if (!str.startsWith('{') && str.startsWith('"type"')) {
     str = `{${str}}`;
   }
