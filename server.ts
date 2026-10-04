@@ -157,7 +157,7 @@ const ai = new GoogleGenAI({
 // Gemini can temporarily return 503/UNAVAILABLE during provider demand spikes.
 // Retry a small number of times with backoff, then surface a truthful 503 to the client.
 async function generateGeminiContentWithRetry(request: Parameters<typeof ai.models.generateContent>[0]) {
-  const maxAttempts = 3;
+  const maxAttempts = 1;
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
@@ -199,7 +199,7 @@ async function generateGeminiTextWithFreeFallback(
 
     if (!fallbackEligible) throw error;
 
-    const fallbackModel = process.env.GEMINI_FREE_FALLBACK_MODEL || 'gemma-4-31b-it';
+    const fallbackModel = process.env.GEMINI_FREE_FALLBACK_MODEL || 'gemma-4-26b-a4b-it';
     console.warn('Primary Gemini model unavailable/quota exhausted; trying free Gemma fallback.', fallbackModel);
 
     return await ai.models.generateContent({
