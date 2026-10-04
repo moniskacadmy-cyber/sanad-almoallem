@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "security/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+
+      - name: Start Firebase emulators
+        run: |
+          npx --yes firebase-tools emulators:start --only auth,firestore --project demo-sanad > /tmp/firebase-emulator.log 2>&1 &
+          echo $! > /tmp/firebase-emulator.pid
+          for i in {1..60}; do
+            if curl -sf http://127.0.0.1:8080/ > /dev/null 2>&1 && curl -sf http://127.0.0.1:9099/ > /dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8080/ > /dev/null
+          curl -sf http://127.0.0.1:9099/ > /dev/null
+
+      - name: Run Firebase Rules integration tests
+        env:
+          FIRESTORE_EMULATOR_HOST: 127.0.0.1:8080
+          FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
+          FIREBASE_PROJECT_ID: demo-sanad
+        run: node --import tsx --test tests/firestoreRules.emulator.test.ts
+
+      - name: Print emulator logs on failure
+        if: failure()
+        run: cat /tmp/firebase-emulator.log || true
