@@ -9,7 +9,7 @@ import { getMessaging as getAdminMessaging } from 'firebase-admin/messaging';
 import { GoogleGenAI } from '@google/genai';
 import fs from 'fs';
 import { createRemindersRouter } from './src/server/remindersCron.js';
-import { createSubscriptionGuard, parseExpiryDateServer, type TeacherSubscriptionData } from './src/server/subscriptionAccess.js';
+import { createSubscriptionGuard, evaluateSubscription, type TeacherSubscriptionData } from './src/server/subscriptionAccess.js';
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -251,18 +251,38 @@ async function aiRateLimiter(
   if (!userId) return res.status(401).json({ error: 'غير مصرح به.' });
 
   const limits = AI_LIMITS[routeName];
-  const minute = await incrementRedisCounter(`ai:${routeName}:minute:${userId}`, 60, limits.perMinute);
-  const day = await incrementRedisCounter(`ai:${routeName}:day:${userId}`, 86400, limits.daily);
-  const totalDay = await incrementRedisCounter(`ai:total-day:${userId}`, 86400, Number(process.env.AI_DAILY_REQUESTS || 100));
+  const totalDailyLimit = Number(process.env.AI_DAILY_REQUESTS || 100);
 
-  if (minute.unavailable || day.unavailable || totalDay.unavailable) {
+  // Check limits in order so a request rejected by a tighter limit does not
+  // consume the remaining daily counters.
+  const minute = await incrementRedisCounter(`ai:${routeName}:minute:${userId}`, 60, limits.perMinute);
+  if (minute.unavailable) {
     if (process.env.VERCEL) {
       return res.status(503).json({ error: 'حماية الذكاء الاصطناعي غير متاحة مؤقتاً. حاول بعد قليل.' });
     }
   }
+  if (minute.limited) {
+    return res.status(429).json({ error: 'تم تجاوز الحد المسموح به من طلبات الذكاء الاصطناعي خلال الدقيقة.' });
+  }
 
-  if (minute.limited || day.limited || totalDay.limited) {
-    return res.status(429).json({ error: 'تم تجاوز حد استخدام الذكاء الاصطناعي. حاول لاحقاً.' });
+  const day = await incrementRedisCounter(`ai:${routeName}:day:${userId}`, 86400, limits.daily);
+  if (day.unavailable) {
+    if (process.env.VERCEL) {
+      return res.status(503).json({ error: 'حماية الذكاء الاصطناعي غير متاحة مؤقتاً. حاول بعد قليل.' });
+    }
+  }
+  if (day.limited) {
+    return res.status(429).json({ error: 'تم تجاوز الحد اليومي لهذه الخدمة من الذكاء الاصطناعي. حاول غداً.' });
+  }
+
+  const totalDay = await incrementRedisCounter(`ai:total-day:${userId}`, 86400, totalDailyLimit);
+  if (totalDay.unavailable) {
+    if (process.env.VERCEL) {
+      return res.status(503).json({ error: 'حماية الذكاء الاصطناعي غير متاحة مؤقتاً. حاول بعد قليل.' });
+    }
+  }
+  if (totalDay.limited) {
+    return res.status(429).json({ error: 'تم تجاوز إجمالي الحد اليومي للذكاء الاصطناعي. حاول غداً.' });
   }
 
   next();
@@ -668,19 +688,10 @@ app.get('/api/reminders/cron', async (req, res) => {
       const teacherData = teacherDoc.data();
       if (!teacherData) continue;
 
-      // Ignore teacher if subscription is actually expired (using unified helper)
-      const effectiveExpiry = teacherData.subscriptionEndDate || teacherData.subscriptionExpiresAt || teacherData.trialEndDate;
-      let isExpired = false;
-      if (effectiveExpiry) {
-        const expiryDate = parseExpiryDateServer(effectiveExpiry);
-        if (!expiryDate || expiryDate.getTime() <= Date.now()) {
-          isExpired = true;
-        }
-      } else if (teacherData.subscriptionStatus === 'expired') {
-        isExpired = true;
-      }
-
-      if (isExpired) continue;
+      // Ignore teachers whose subscription is not currently active.
+      // Keep this decision aligned with the same server-side subscription logic
+      // used by paid API routes.
+      if (evaluateSubscription(teacherData, new Date()) !== 'active') continue;
 
       teachersChecked++;
 
