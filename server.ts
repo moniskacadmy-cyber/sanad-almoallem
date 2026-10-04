@@ -7,8 +7,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
 import { getMessaging as getAdminMessaging } from 'firebase-admin/messaging';
 import { GoogleGenAI } from '@google/genai';
-import { createRemindersRouter } from './src/server/remindersCron';
-
+import { createRemindersRouter } from './src/server/remindersCron.js';
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
