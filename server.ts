@@ -26,14 +26,7 @@ function safeParseServiceAccount(raw: string | undefined): any {
     str = str.slice(1, -1).trim();
   }
 
-  // Some Vercel pastes can arrive with JSON quotes escaped (\\\"type\\\": ...)
-  // or without the outer JSON object braces. Normalize both forms.
-  if (!str.startsWith('{') && str.includes('\\\"')) {
-    str = str.replace(/\\\"/g, '"');
-  }
-  if (!str.startsWith('{') && str.startsWith('"type"')) {
-    str = `{${str}}`;
-  }
+  // Vercel environment values may arrive with escaped quotes, leading backslashes,\n  // or without the outer JSON object braces. Normalize these forms before parsing.\n  str = str.replace(/\\\\\"/g, '\"').replace(/^\\\\+/, '').trim();\n  if (!str.startsWith('{')) {\n    const typeIndex = str.indexOf('\"type\"');\n    if (typeIndex >= 0) {\n      str = `{${str.slice(typeIndex)}}`;\n    }\n  }
 
   // Handle Base64 encoded string
   if (!str.startsWith('{') && (str.startsWith('ey') || str.includes('='))) {
