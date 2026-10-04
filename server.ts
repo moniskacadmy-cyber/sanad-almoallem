@@ -209,26 +209,19 @@ async function generateGeminiTextWithFreeFallback(
   }
 }
 
-// Streaming Gemini/Gemma response. Streaming improves perceived latency because the client can render chunks immediately.
-async function* streamGeminiTextWithFreeFallback(
-  request: Parameters<typeof ai.models.generateContentStream>[0],
-) {
+async function* streamGeminiTextWithFreeFallback(request: Parameters<typeof ai.models.generateContentStream>[0]) {
   let stream;
-  try {
-    stream = await ai.models.generateContentStream(request);
-  } catch (error: any) {
+  try { stream = await ai.models.generateContentStream(request); }
+  catch (error: any) {
     const status = Number(error?.status ?? error?.code ?? error?.error?.code);
     const message = String(error?.message ?? '').toLowerCase();
-    const fallbackEligible = status === 429 || status === 500 || status === 502 || status === 503 || status === 504 || message.includes('unavailable') || message.includes('high demand');
-    if (!fallbackEligible) throw error;
+    const eligible = status === 429 || status === 500 || status === 502 || status === 503 || status === 504 || message.includes('unavailable') || message.includes('high demand');
+    if (!eligible) throw error;
     const fallbackModel = process.env.GEMINI_FREE_FALLBACK_MODEL || 'gemma-4-26b-a4b-it';
     console.warn('Primary Gemini stream unavailable/quota exhausted; trying free Gemma fallback.', fallbackModel);
     stream = await ai.models.generateContentStream({ ...request, model: fallbackModel });
   }
-  for await (const chunk of stream) {
-    const text = chunk.text || '';
-    if (text) yield text;
-  }
+  for await (const chunk of stream) { const chunkText = chunk.text || ''; if (chunkText) yield chunkText; }
 }
 
 // Middleware: Strictly verify Firebase ID Token (no unsigned fallbacks)
@@ -591,84 +584,34 @@ app.post('/api/ai/assistant', verifyFirebaseToken, (req, res, next) => aiRateLim
     if (!message || typeof message !== 'string') return res.status(400).json({ error: 'الرسالة مطلوبة.' });
     if (message.length > 2000) return res.status(400).json({ error: 'الرسالة طويلة جداً. الحد الأقصى 2000 حرف.' });
     if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: 'خدمة الذكاء الاصطناعي غير مهيأة حالياً.' });
-
-    const systemInstruction = 'أنت المساعد الذكي التربوي لمنصة "سند المعلم". ساعد المعلم بإجابات عملية ومباشرة حول الجدول والطلاب وتحضير الدروس والتقارير. اعتمد فقط على المعلومات المتاحة في الملخص. إذا لم تتوفر معلومة، صرّح بذلك ولا تخترع بيانات. اجعل الإجابة مختصرة ومنظمة ما لم يطلب المعلم تفصيلاً.';
-
+    const systemInstruction = 'أنت المساعد الذكي التربوي لمنصة سند المعلم. ساعد المعلم بإجابات عملية ومباشرة. اعتمد فقط على المعلومات المتاحة. إذا لم تتوفر المعلومة وضح ذلك ولا تبتكر بيانات. اجعل الإجابة مختصرة ومنظمة.';
     let formattedContext = '';
     if (summary && typeof summary === 'object') {
       const stringFieldLimits: Record<string, number> = { teacherName: 150, subject: 150 };
-      for (const [key, max] of Object.entries(stringFieldLimits)) {
-        if (summary[key] !== undefined && (typeof summary[key] !== 'string' || summary[key].length > max)) return res.status(400).json({ error: 'بيانات الملخص غير صالحة.' });
-      }
-      for (const key of ['studentNames', 'todayClasses', 'tomorrowClasses']) {
-        if (summary[key] !== undefined && (!Array.isArray(summary[key]) || summary[key].length > 50)) return res.status(400).json({ error: 'بيانات الملخص غير صالحة.' });
-      }
-      const compactSummary = {
-        teacherName: typeof summary.teacherName === 'string' ? summary.teacherName : '',
-        subject: typeof summary.subject === 'string' ? summary.subject : '',
-        activeStudentsCount: Number(summary.activeStudentsCount) || 0,
-        studentNames: Array.isArray(summary.studentNames) ? summary.studentNames.slice(0, 30) : [],
-        todayClasses: Array.isArray(summary.todayClasses) ? summary.todayClasses.slice(0, 12) : [],
-        tomorrowClasses: Array.isArray(summary.tomorrowClasses) ? summary.tomorrowClasses.slice(0, 12) : [],
-        unsettledLessonsCount: Number(summary.unsettledLessonsCount) || 0,
-      };
-      if (JSON.stringify(compactSummary).length > 7000) return res.status(400).json({ error: 'ملخص البيانات كبير جداً.' });
-      formattedContext = `ملخص بيانات المعلم والجدول الحالي:
-- اسم المعلم: ${compactSummary.teacherName || 'غير محدد'}
-- المادة: ${compactSummary.subject || 'غير محددة'}
-- عدد الطلاب: ${compactSummary.activeStudentsCount}
-- أسماء الطلاب: ${compactSummary.studentNames.join('، ') || 'لا يوجد'}
-- حصص اليوم: ${compactSummary.todayClasses.join(' | ') || 'لا توجد'}
-- حصص الغد: ${compactSummary.tomorrowClasses.join(' | ') || 'لا توجد'}
-- الحصص المعلقة: ${compactSummary.unsettledLessonsCount}
-===============================`;
+      for (const [key, max] of Object.entries(stringFieldLimits)) if (summary[key] !== undefined && (typeof summary[key] !== 'string' || summary[key].length > max)) return res.status(400).json({ error: 'بيانات الملخص غير صالحة.' });
+      for (const key of ['studentNames', 'todayClasses', 'tomorrowClasses']) if (summary[key] !== undefined && (!Array.isArray(summary[key]) || summary[key].length > 50)) return res.status(400).json({ error: 'بيانات الملخص غير صالحة.' });
+      const compactSummary = { teacherName: typeof summary.teacherName === 'string' ? summary.teacherName.slice(0, 150) : '', subject: typeof summary.subject === 'string' ? summary.subject.slice(0, 150) : '', activeStudentsCount: Number(summary.activeStudentsCount) || 0, studentNames: Array.isArray(summary.studentNames) ? summary.studentNames.slice(0, 30) : [], todayClasses: Array.isArray(summary.todayClasses) ? summary.todayClasses.slice(0, 12) : [], tomorrowClasses: Array.isArray(summary.tomorrowClasses) ? summary.tomorrowClasses.slice(0, 12) : [], unsettledLessonsCount: Number(summary.unsettledLessonsCount) || 0 };
+      formattedContext = `ملخص بيانات المعلم والجدول الحالي:\n- اسم المعلم: ${compactSummary.teacherName || 'غير محدد'}\n- المادة الدراسية: ${compactSummary.subject || 'غير محددة'}\n- عدد الطلاب النشطين: ${compactSummary.activeStudentsCount}\n- أسماء الطلاب: ${compactSummary.studentNames.join('، ') || 'لا يوجد'}\n- حصص اليوم: ${compactSummary.todayClasses.join(' | ') || 'لا توجد'}\n- حصص الغد: ${compactSummary.tomorrowClasses.join(' | ') || 'لا توجد'}\n- الحصص المعلقة: ${compactSummary.unsettledLessonsCount}\n===============================`;
+      if (formattedContext.length > 7000) return res.status(400).json({ error: 'ملخص البيانات كبير جداً.' });
     }
-
     let historyText = '';
     if (messagesHistory !== undefined && !Array.isArray(messagesHistory)) return res.status(400).json({ error: 'سجل المحادثة غير صالح.' });
     if (Array.isArray(messagesHistory) && messagesHistory.length > 20) return res.status(400).json({ error: 'سجل المحادثة كبير جداً.' });
-    if (Array.isArray(messagesHistory) && messagesHistory.length > 0) {
-      const recent = messagesHistory.slice(-6);
-      historyText = 'سجل المحادثة السابقة:\n' + recent.map((m: any) => {
-        const roleStr = m.role === 'user' ? 'المعلم' : 'المساعد';
-        const textStr = typeof m.text === 'string' ? m.text.slice(0, 1000) : '';
-        return ${roleStr}: ${textStr};
-      }).join('\n') + '\n===============================\n';
-    }
-
-    const fullPrompt = ${formattedContext}\n${historyText}سؤال المعلم الحالي:\n${message.trim()};
+    if (Array.isArray(messagesHistory) && messagesHistory.length) { const recent = messagesHistory.slice(-6); historyText = 'سجل المحادثة السابقة:\n' + recent.map((m: any) => `${m.role === 'user' ? 'المعلم' : 'المساعد'}: ${typeof m.text === 'string' ? m.text.slice(0, 1000) : ''}`).join('\n') + '\n===============================\n'; }
+    const fullPrompt = `${formattedContext}\n${historyText}سؤال المعلم الحالي:\n${message.slice(0, 2000).trim()}`;
     if (fullPrompt.length > 12000) return res.status(400).json({ error: 'حجم الطلب النهائي كبير جداً.' });
-
-    const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-    const stream = streamGeminiTextWithFreeFallback({
-      model: modelName,
-      contents: fullPrompt,
-      config: { systemInstruction, maxOutputTokens: 700 },
-    });
-
-    res.status(200);
-    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-    res.setHeader('Cache-Control', 'no-cache, no-transform');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders?.();
-    streamStarted = true;
-
-    for await (const chunk of stream) res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
-    res.write('data: [DONE]\n\n');
-    return res.end();
+    const stream = streamGeminiTextWithFreeFallback({ model: process.env.GEMINI_MODEL || 'gemini-3.8-flash', contents: fullPrompt, config: { systemInstruction, maxOutputTokens: 700 } });
+    res.status(200); res.setHeader('Content-Type', 'text/event-stream; charset=utf-8'); res.setHeader('Cache-Control', 'no-cache, no-transform'); res.setHeader('Connection', 'keep-alive'); res.setHeader('X-Accel-Buffering', 'no'); res.flushHeaders?.(); streamStarted = true;
+    for await (const chunkText of stream) res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
+    res.write('data: [DONE]\n\n'); return res.end();
   } catch (error) {
     console.error('Gemini Assistant API Error:', error);
     const status = Number((error as any)?.status);
-    const message = status === 429 ? 'تم استنفاد حصة Gemini API الحالية للمشروع. يرجى تفعيل الفوترة أو الانتظار حتى تتجدد الحصة.' : status === 503 ? 'خدمة الذكاء الاصطناعي مشغولة حالياً. حاول مرة أخرى بعد قليل.' : 'حدث خطأ أثناء معالجة طلبك بواسطة المساعد الذكي.';
-    if (streamStarted) {
-      res.write(`data: ${JSON.stringify({ error: message })}\n\n`);
-      return res.end();
-    }
-    return res.status(status === 429 || status === 503 ? status : 500).json({ error: message });
+    const errorMessage = status === 429 ? 'تم استنفاد حصة Gemini API الحالية للمشروع. يرجى تفعيل الفوترة أو الانتظار حتى تتجدد الحصة.' : status === 503 ? 'خدمة الذكاء الاصطناعي مشغولة حالياً. حاول مرة أخرى بعد قليل.' : 'حدث خطأ أثناء معالجة طلبك بواسطة المساعد الذكي.';
+    if (streamStarted) { res.write(`data: ${JSON.stringify({ error: errorMessage })}\n\n`); return res.end(); }
+    return res.status(status === 429 || status === 503 ? status : 500).json({ error: errorMessage });
   }
 });
-
 // Helper to calculate timezone-aware date & time parts using Intl.DateTimeFormat
 function getTimezoneNowParts(tz = 'Africa/Cairo') {
   const now = new Date();

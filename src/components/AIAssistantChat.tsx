@@ -124,117 +124,44 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
     if (e) e.preventDefault();
     const trimmed = inputMessage.trim();
     if (!trimmed || isLoading) return;
-    if (trimmed.length > 2000) {
-      alert('الرسالة طويلة جداً. الحد الأقصى 2000 حرف لكل رسالة.');
-      return;
-    }
-    if (!isSubscriptionActive) {
-      alert('المساعد الذكي متاح فقط للأعضاء أصحاب الاشتراكات النشطة.');
-      onOpenUpgradeModal();
-      return;
-    }
-
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      text: trimmed,
-      timestamp: new Date(),
-    };
-    setMessages((prev) => [...prev, userMsg]);
-    setInputMessage('');
-    setIsLoading(true);
-
+    if (trimmed.length > 2000) { alert('الرسالة طويلة جداً. الحد الأقصى 2000 حرف لكل رسالة.'); return; }
+    if (!isSubscriptionActive) { alert('المساعد الذكي متاح فقط للأعضاء أصحاب الاشتراكات النشطة.'); onOpenUpgradeModal(); return; }
+    const userMsg: Message = { id: Date.now().toString(), role: 'user', text: trimmed, timestamp: new Date() };
+    setMessages((prev) => [...prev, userMsg]); setInputMessage(''); setIsLoading(true);
     try {
-      const recentHistory = messages.slice(-6).map((m) => ({
-        role: m.role === 'user' ? 'user' : 'model',
-        text: m.text.slice(0, 1000),
-      }));
-      const currentUser = auth.currentUser;
-      const token = currentUser ? await currentUser.getIdToken() : '';
+      const recentHistory = messages.slice(-6).map((m) => ({ role: m.role === 'user' ? 'user' : 'model', text: m.text.slice(0, 1000) }));
+      const currentUser = auth.currentUser; const token = currentUser ? await currentUser.getIdToken() : '';
       const summary = buildClientSummary();
-
       const response = await fetch('/api/ai/assistant', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: token ? `Bearer ${token}` : '',
-        },
-        body: JSON.stringify({
-          message: trimmed,
-          messagesHistory: recentHistory,
-          summary,
-        }),
+        headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
+        body: JSON.stringify({ message: trimmed, messagesHistory: recentHistory, summary }),
       });
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error || 'فشل الاتصال بالمساعد الذكي.');
-      }
+      if (!response.ok) { const errData = await response.json().catch(() => ({})); throw new Error(errData.error || 'فشل الاتصال بالمساعد الذكي.'); }
       if (!response.body) throw new Error('لم يتم استلام بث من المساعد الذكي.');
-
       const assistantId = (Date.now() + 1).toString();
-      setMessages((prev) => [
-        ...prev,
-        { id: assistantId, role: 'assistant', text: '', timestamp: new Date() },
-      ]);
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
+      setMessages((prev) => [...prev, { id: assistantId, role: 'assistant', text: '', timestamp: new Date() }]);
+      const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
       while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
+        const { value, done } = await reader.read(); if (done) break;
         buffer += decoder.decode(value, { stream: true });
-
-        const events = buffer.split('\n\n');
-        buffer = events.pop() || '';
-
+        const events = buffer.split('\n\n'); buffer = events.pop() || '';
         for (const event of events) {
-          const line = event.split('\n').find((item) => item.startsWith('data: '));
-          if (!line) continue;
-          const payload = line.slice(6);
-          if (payload === '[DONE]') continue;
-
-          const chunk = JSON.parse(payload);
-          if (chunk.error) throw new Error(chunk.error);
-          if (chunk.text) {
-            setMessages((prev) =>
-              prev.map((m) => (m.id === assistantId ? { ...m, text: m.text + chunk.text } : m))
-            );
-          }
+          const line = event.split('\n').find((item) => item.startsWith('data: ')); if (!line) continue;
+          const payload = line.slice(6); if (payload === '[DONE]') continue;
+          const chunk = JSON.parse(payload); if (chunk.error) throw new Error(chunk.error);
+          if (chunk.text) setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, text: m.text + chunk.text } : m));
         }
       }
-
       if (buffer.trim()) {
         const line = buffer.split('\n').find((item) => item.startsWith('data: '));
-        if (line) {
-          const payload = line.slice(6);
-          if (payload !== '[DONE]') {
-            const chunk = JSON.parse(payload);
-            if (chunk.error) throw new Error(chunk.error);
-            if (chunk.text) {
-              setMessages((prev) =>
-                prev.map((m) => (m.id === assistantId ? { ...m, text: m.text + chunk.text } : m))
-              );
-            }
-          }
-        }
+        if (line) { const payload = line.slice(6); if (payload !== '[DONE]') { const chunk = JSON.parse(payload); if (chunk.error) throw new Error(chunk.error); if (chunk.text) setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, text: m.text + chunk.text } : m)); } }
       }
     } catch (err: any) {
       console.error('AI Assistant Error:', err);
-      const errorMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        text: err.message || 'حدث خطأ غير متوقع أثناء التواصل مع المساعد الذكي.',
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, errorMsg]);
-    } finally {
-      setIsLoading(false);
-    }
+      setMessages((prev) => [...prev, { id: (Date.now() + 1).toString(), role: 'assistant', text: err.message || 'حدث خطأ غير متوقع أثناء التواصل مع المساعد الذكي.', timestamp: new Date() }]);
+    } finally { setIsLoading(false); }
   };
-
   const handleVoiceTranscript = (text: string) => {
     setInputMessage((prev) => (prev ? `${prev} ${text}` : text));
   };
