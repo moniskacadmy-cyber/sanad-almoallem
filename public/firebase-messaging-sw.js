@@ -1,3 +1,6 @@
+// ملاحظة هامة: يجب أن تطابق إعدادات Firebase (firebaseConfig) أدناه قيم المشروع المعتمد في تطبيقك لضمان استقبال إشعارات Web Push بنجاح.
+// IMPORTANT: The firebaseConfig object below MUST match your active Firebase project configuration.
+
 importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging-compat.js');
 
