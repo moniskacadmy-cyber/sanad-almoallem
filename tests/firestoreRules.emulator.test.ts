@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeApp, deleteApp, type FirebaseApp } from 'firebase/app';
 import { getAuth, connectAuthEmulator, createUserWithEmailAndPassword, type Auth } from 'firebase/auth';
-import { getFirestore, connectFirestoreEmulator, doc, getDoc, setDoc, type Firestore } from 'firebase/firestore';
+import { getFirestore, connectFirestoreEmulator, doc, getDoc, setDoc, serverTimestamp, type Firestore } from 'firebase/firestore';
 import { getApps, initializeApp as initializeAdminApp, cert } from 'firebase-admin/app';
 import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
 
@@ -53,11 +53,11 @@ test('teacher can create a legitimate 7-day trial', async () => {
     plan: 'none',
     isActive: true,
     subscriptionEndDate: trialEnd,
-    trialStartDate: now,
+    trialStartDate: serverTimestamp(),
     trialEndDate: trialEnd,
     subscriptionExpiresAt: trialEnd,
-    createdAt: now,
-    updatedAt: now,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
   });
   assert.equal((await getDoc(teacher)).exists(), true);
 });
@@ -78,11 +78,11 @@ test('teacher cannot forge a longer subscription at creation', async () => {
     plan: 'none',
     isActive: true,
     subscriptionEndDate: forgedEnd,
-    trialStartDate: now,
+    trialStartDate: serverTimestamp(),
     trialEndDate: trialEnd,
     subscriptionExpiresAt: trialEnd,
-    createdAt: now,
-    updatedAt: now,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
   }));
 });
 
