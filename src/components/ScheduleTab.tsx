@@ -4,6 +4,7 @@ import { addSchedule, updateSchedule, deleteSchedule, toggleScheduleCompletedTod
 import { VoiceInputButton } from './VoiceInputButton';
 import { CalendarView } from './CalendarView';
 import { useBackHandler } from '../services/backHandler';
+import { hasConflict } from '../services/conflictService';
 import {
   Calendar,
   Clock,
@@ -417,23 +418,22 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
     if (!formStudentName.trim() || !formTime || formSelectedDays.length === 0) return;
 
     // Schedule Conflict Check (منع تعارض المواعيد)
-    const newStartMin = getMinutesFromTime(formTime);
-    const newEndMin = newStartMin + (Number(formDuration) || 60);
-
     for (const day of formSelectedDays) {
-      const daySlots = schedules.filter((s) => s.dayOfWeek === Number(day));
-      for (const slot of daySlots) {
-        if (editingSchedule && slot.id === editingSchedule.id) continue;
-        const slotStart = getMinutesFromTime(slot.time);
-        const slotEnd = slotStart + (slot.duration || 60);
+      const conflictRes = hasConflict(
+        {
+          id: editingSchedule?.id,
+          dayOfWeek: Number(day),
+          time: formTime,
+          duration: Number(formDuration) || 60,
+          studentName: formStudentName.trim(),
+        },
+        schedules,
+        editingSchedule?.id
+      );
 
-        // Check if intervals overlap: startA < endB && endA > startB
-        if (newStartMin < slotEnd && newEndMin > slotStart) {
-          setConflictError(
-            `عفواً، لا يمكن إضافة الحصة لوجود تعارض في الموعد مع الطالب: ${slot.studentName}`
-          );
-          return;
-        }
+      if (conflictRes.hasConflict) {
+        setConflictError(conflictRes.message || 'تعارض في الموعد مع حصة أخرى!');
+        return;
       }
     }
 
@@ -1532,11 +1532,26 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
                     onChange={(e) => setFormTime(e.target.value)}
                     className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 cursor-pointer"
                   >
-                    {TIME_SLOTS.map((slot) => (
-                      <option key={slot.time24} value={slot.time24}>
-                        {slot.label} ({slot.time24})
-                      </option>
-                    ))}
+                    {TIME_SLOTS.map((slot) => {
+                      const isOccupied = formSelectedDays.some((day) => {
+                        const checkRes = hasConflict(
+                          {
+                            dayOfWeek: Number(day),
+                            time: slot.time24,
+                            duration: Number(formDuration) || 60,
+                          },
+                          schedules,
+                          editingSchedule?.id
+                        );
+                        return checkRes.hasConflict;
+                      });
+
+                      return (
+                        <option key={slot.time24} value={slot.time24}>
+                          {slot.label} ({slot.time24}) {isOccupied ? '⚠️ [مشغول]' : ''}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
               </div>

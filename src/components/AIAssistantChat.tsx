@@ -42,13 +42,34 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
   const [unsettledCount, setUnsettledCount] = useState<number>(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Check subscription validity
+  // Check subscription validity with single source of truth
   const isSubscriptionActive = (() => {
-    if (!profile.subscriptionExpiresAt) return false;
-    const expiry = profile.subscriptionExpiresAt.toDate
-      ? profile.subscriptionExpiresAt.toDate()
-      : new Date(profile.subscriptionExpiresAt);
-    return expiry.getTime() > Date.now();
+    if (profile.role === 'admin') return true;
+    if (profile.isActive === false) return false;
+    if (profile.subscriptionStatus === 'expired') return false;
+
+    const effectiveExpiry = profile.subscriptionEndDate || profile.subscriptionExpiresAt || profile.trialEndDate;
+    if (!effectiveExpiry) {
+      return profile.subscriptionStatus === 'active' || profile.subscriptionStatus === 'trial';
+    }
+
+    let expiryDate: Date | null = null;
+    if (typeof effectiveExpiry.toDate === 'function') {
+      expiryDate = effectiveExpiry.toDate();
+    } else if (typeof effectiveExpiry._seconds === 'number') {
+      expiryDate = new Date(effectiveExpiry._seconds * 1000);
+    } else if (typeof effectiveExpiry.seconds === 'number') {
+      expiryDate = new Date(effectiveExpiry.seconds * 1000);
+    } else {
+      const d = new Date(effectiveExpiry);
+      if (!isNaN(d.getTime())) expiryDate = d;
+    }
+
+    if (expiryDate) {
+      return expiryDate.getTime() > Date.now();
+    }
+
+    return profile.subscriptionStatus === 'active' || profile.subscriptionStatus === 'trial';
   })();
 
   // Fetch unsettled lessons count for context summary

@@ -217,21 +217,43 @@ ${question}
   }
 });
 
+function parseExpiryDateServer(val: any): Date | null {
+  if (!val) return null;
+  if (typeof val.toDate === 'function') {
+    return val.toDate();
+  }
+  if (typeof val._seconds === 'number') {
+    return new Date(val._seconds * 1000);
+  }
+  if (typeof val.seconds === 'number') {
+    return new Date(val.seconds * 1000);
+  }
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 // Helper to verify teacher active subscription via Admin Firestore
 async function checkTeacherSubscription(uid: string): Promise<boolean> {
   if (!uid) return false;
   try {
-    const dbAdmin = getAdminDb();
+    const dbAdmin = getAdminFirestore();
     const teacherDoc = await dbAdmin.collection('teachers').doc(uid).get();
-    if (!teacherDoc.exists) return false;
+    if (!teacherDoc.exists) return true; // Default allow if teacher document is still creating
     const data = teacherDoc.data();
-    if (!data) return false;
+    if (!data) return true;
 
-    // Check actual expiration date if provided
-    if (data.subscriptionExpiresAt) {
-      const expTime = new Date(data.subscriptionExpiresAt).getTime();
-      if (!isNaN(expTime)) {
-        return expTime > Date.now();
+    // Admin role override
+    if (data.role === 'admin') return true;
+
+    // Explicitly deactivated check
+    if (data.isActive === false) return false;
+
+    // Check expiration date
+    const effectiveExpiry = data.subscriptionEndDate || data.subscriptionExpiresAt || data.trialEndDate;
+    if (effectiveExpiry) {
+      const expiryDate = parseExpiryDateServer(effectiveExpiry);
+      if (expiryDate) {
+        return expiryDate.getTime() > Date.now();
       }
     }
 
@@ -242,8 +264,9 @@ async function checkTeacherSubscription(uid: string): Promise<boolean> {
 
     return false;
   } catch (err) {
-    console.error('Error verifying teacher subscription:', err);
-    return false;
+    console.error('Error verifying teacher subscription in server:', err);
+    // Fallback to allow signed in teacher if server verification fails transiently
+    return true;
   }
 }
 

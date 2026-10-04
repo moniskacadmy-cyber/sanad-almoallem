@@ -23,6 +23,7 @@ import {
   getColorStyle,
 } from './ScheduleTab';
 import { VoiceInputButton } from './VoiceInputButton';
+import { hasConflict } from '../services/conflictService';
 import {
   UserPlus,
   Search,
@@ -225,23 +226,26 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     return (h || 0) * 60 + (m || 0);
   };
 
+  // Toast and validation errors state
+  const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [formErrors, setFormErrors] = useState<{
+    name?: string;
+    subject?: string;
+    classType?: string;
+    hourlyRate?: string;
+  }>({});
+
   const checkScheduleConflict = (dayOfWeek: number, timeStr: string, durationMin: number, excludeScheduleId?: string): string | null => {
-    const newStart = getMinutesFromTime(timeStr);
-    const newEnd = newStart + durationMin;
-
-    for (const slot of schedules) {
-      if (excludeScheduleId && slot.id === excludeScheduleId) continue;
-      if (slot.dayOfWeek === dayOfWeek) {
-        const slotStart = getMinutesFromTime(slot.time);
-        const slotEnd = slotStart + (slot.duration || 60);
-
-        // Check overlap: startA < endB && endA > startB
-        if (newStart < slotEnd && newEnd > slotStart) {
-          return `عفواً، لا يمكن إضافة الحصة لوجود تعارض في الموعد مع الطالب: [${slot.studentName}]`;
-        }
-      }
-    }
-    return null;
+    const res = hasConflict(
+      {
+        dayOfWeek: Number(dayOfWeek),
+        time: timeStr,
+        duration: durationMin || 60,
+      },
+      schedules,
+      excludeScheduleId
+    );
+    return res.hasConflict ? res.message || 'تعارض في الموعد' : null;
   };
 
   // Actions for managing schedules directly inside Student Details Modal
@@ -430,6 +434,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
   const handleOpenAddModal = () => {
     setEditingStudent(null);
+    setFormErrors({});
     setFormName('');
     setFormWhatsapp('');
     setFormSubject(profile.subject || 'رياضيات');
@@ -442,15 +447,16 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     setIsAddStudentLearningStyleOpen(false);
     setIsAddStudentNotesOpen(false);
     setFormSchedules([]);
-    setFormColor('purple');
+    setFormColor('emerald');
     setShowAddModal(true);
   };
 
   const handleOpenEditModal = (student: Student) => {
     setEditingStudent(student);
+    setFormErrors({});
     setFormName(student.name);
     setFormWhatsapp(student.whatsapp || '');
-    setFormSubject(student.subject);
+    setFormSubject(student.subject || profile.subject || 'رياضيات');
     setFormClassType(student.classType || 'in_person');
     setFormHourlyRate(student.hourlyRate || (student.monthlyFee ? Math.round(student.monthlyFee / 4) : 100));
     setFormRemainingPaidLessons(
@@ -467,20 +473,42 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     setFormNotes(student.notes || '');
     setIsAddStudentLearningStyleOpen(false);
     setIsAddStudentNotesOpen(false);
-    setFormColor(student.color || 'purple');
+    setFormColor(student.color || 'emerald');
     setFormSchedules([]);
     setShowAddModal(true);
   };
 
   const handleSaveStudent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formName.trim()) return; // WhatsApp is optional!
 
-    // Overlapping Schedule Validation for new student schedules before writing to Firestore
+    // 1. Validate required fields
+    const errors: Record<string, string> = {};
+    if (!formName.trim()) {
+      errors.name = 'اسم الطالب مطلوب ولا يمكن أن يكون فارغاً';
+    }
+    if (!formSubject.trim()) {
+      errors.subject = 'المادة الدراسية مطلوبة';
+    }
+    if (!formClassType) {
+      errors.classType = 'يرجى اختيار تصنيف نوع الحصة';
+    }
+    if (formHourlyRate === undefined || formHourlyRate === null || isNaN(formHourlyRate) || Number(formHourlyRate) < 0) {
+      errors.hourlyRate = 'يرجى إدخال سعر الساعة بشكل صحيح';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+
+    setFormErrors({});
+
+    // 2. Overlapping Schedule Validation for new student schedules before writing to Firestore
     if (!editingStudent && formSchedules.length > 0) {
       for (const s of formSchedules) {
         const conflict = checkScheduleConflict(Number(s.dayOfWeek), s.time, Number(s.duration) || 60);
         if (conflict) {
+          setToastMessage({ type: 'error', text: conflict });
           alert(conflict);
           return;
         }
@@ -490,44 +518,38 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     setIsSubmitting(true);
 
     try {
-      const rate = Number(formHourlyRate) || 100;
+      const rate = Math.max(0, Number(formHourlyRate) || 100);
       const remPaid =
-        formRemainingPaidLessons.trim() !== '' ? Number(formRemainingPaidLessons) : undefined;
+        formRemainingPaidLessons.trim() !== '' && !isNaN(Number(formRemainingPaidLessons))
+          ? Math.max(0, Number(formRemainingPaidLessons))
+          : 0;
       const totPrepaid =
-        formTotalPrepaidLessons.trim() !== ''
-          ? Number(formTotalPrepaidLessons)
-          : remPaid !== undefined
-          ? remPaid
-          : undefined;
+        formTotalPrepaidLessons.trim() !== '' && !isNaN(Number(formTotalPrepaidLessons))
+          ? Math.max(remPaid, Number(formTotalPrepaidLessons))
+          : remPaid;
+
+      // Construct clean object payload - NO undefined values allowed for Firestore
+      const studentData = {
+        name: formName.trim(),
+        whatsapp: formWhatsapp.trim() || '',
+        subject: formSubject.trim(),
+        classType: formClassType,
+        hourlyRate: rate,
+        monthlyFee: rate * 4,
+        remainingPaidLessons: remPaid,
+        totalPrepaidLessons: totPrepaid,
+        learningStyle: formLearningStyle.trim() || '',
+        notes: formNotes.trim() || '',
+        color: formColor || 'emerald',
+      };
 
       if (editingStudent) {
-        await updateStudent(profile.id, editingStudent.id, {
-          name: formName.trim(),
-          whatsapp: formWhatsapp.trim(),
-          subject: formSubject.trim(),
-          classType: formClassType,
-          hourlyRate: rate,
-          monthlyFee: rate * 4,
-          remainingPaidLessons: remPaid,
-          totalPrepaidLessons: totPrepaid,
-          learningStyle: formLearningStyle.trim(),
-          notes: formNotes.trim(),
-          color: formColor,
-        });
+        await updateStudent(profile.id, editingStudent.id, studentData);
+        setToastMessage({ type: 'success', text: 'تم تعديل بيانات الطالب بنجاح! 🎉' });
       } else {
         const newStudentId = await addStudent(profile.id, {
-          name: formName.trim(),
-          whatsapp: formWhatsapp.trim(),
-          subject: formSubject.trim(),
-          classType: formClassType,
-          hourlyRate: rate,
-          monthlyFee: rate * 4,
+          ...studentData,
           paymentStatus: 'unpaid',
-          remainingPaidLessons: remPaid,
-          totalPrepaidLessons: totPrepaid,
-          learningStyle: formLearningStyle.trim(),
-          notes: formNotes.trim(),
-          color: formColor,
         });
 
         // Automatically save weekly schedules to timetable
@@ -541,15 +563,22 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
               duration: Number(s.duration) || 60,
               recurrence: 'weekly',
               classType: formClassType,
-              color: formColor,
+              color: formColor || 'emerald',
             });
           }
         }
+        setToastMessage({ type: 'success', text: 'تم إضافة الطالب الجديد بنجاح! 🎉' });
       }
+
       await loadAllLessons();
       setShowAddModal(false);
-    } catch (err) {
-      console.error('Error saving student', err);
+      // Auto hide toast after 3s
+      setTimeout(() => setToastMessage(null), 3500);
+    } catch (err: any) {
+      console.error('Error saving student to Firestore:', err);
+      const errText = err?.message || 'حدث خطأ أثناء حفظ بيانات الطالب. يرجى المحاولة مرة أخرى.';
+      setToastMessage({ type: 'error', text: errText });
+      alert(errText);
     } finally {
       setIsSubmitting(false);
     }
@@ -1126,49 +1155,82 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
         </div>
       )}
 
+      {/* Toast Notification Banner */}
+      {toastMessage && (
+        <div
+          className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl shadow-2xl border text-xs font-bold flex items-center gap-2 text-white animate-in fade-in slide-in-from-top-4 duration-300 ${
+            toastMessage.type === 'success'
+              ? 'bg-emerald-950/90 border-emerald-500/60 text-emerald-200'
+              : 'bg-rose-950/90 border-rose-500/60 text-rose-200'
+          }`}
+        >
+          <span>{toastMessage.text}</span>
+          <button
+            type="button"
+            onClick={() => setToastMessage(null)}
+            className="p-1 hover:opacity-80 transition cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Add / Edit Student Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-slate-900 border border-purple-500/30 rounded-3xl p-5 shadow-2xl text-right max-h-[92vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-purple-900/40 pb-3 mb-3">
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-slate-900 border border-purple-500/30 rounded-3xl p-5 shadow-2xl text-right max-h-[90vh] flex flex-col relative overflow-hidden">
+            <div className="flex items-center justify-between border-b border-purple-900/40 pb-3 mb-3 flex-shrink-0">
               <h3 className="text-base font-bold text-white">
                 {editingStudent ? 'تعديل بيانات الطالب' : 'إضافة طالب جديد'}
               </h3>
               <button
+                type="button"
                 onClick={() => setShowAddModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white"
+                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveStudent} className="space-y-3 overflow-y-auto pr-1">
+            <form onSubmit={handleSaveStudent} className="flex-1 overflow-y-auto pr-1 space-y-3.5 pb-2">
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-medium text-slate-300">اسم الطالب *</label>
+                  <label className="block text-xs font-medium text-slate-300">
+                    اسم الطالب *
+                  </label>
                   <span className="text-[10px] text-purple-300">إدخال بالصوت 🎤</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <input
                     type="text"
                     value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
+                    onChange={(e) => {
+                      setFormName(e.target.value);
+                      if (formErrors.name) setFormErrors((prev) => ({ ...prev, name: undefined }));
+                    }}
                     placeholder="مثال: يوسف خالد"
-                    required
-                    className="flex-1 rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
+                    className={`flex-1 rounded-xl bg-slate-800 border px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 ${
+                      formErrors.name ? 'border-rose-500' : 'border-slate-700'
+                    }`}
                   />
                   <VoiceInputButton
                     compact
                     onTranscript={(transcript) => {
-                      // Extract student name and remove prefixes like "الطالب" or "طالبة"
                       const cleanName = transcript.replace(/^(الطالب|طالب|الطالبة|طالبة)\s+/i, '').trim();
                       setFormName(cleanName || transcript.trim());
+                      if (formErrors.name) setFormErrors((prev) => ({ ...prev, name: undefined }));
                     }}
                   />
                 </div>
+                {formErrors.name && (
+                  <p className="text-[10px] text-rose-400 font-bold mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    <span>{formErrors.name}</span>
+                  </p>
+                )}
               </div>
 
-              {/* WHATSAPP IS NOW OPTIONAL AS REQUESTED */}
+              {/* WHATSAPP IS OPTIONAL */}
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">
                   رقم الواتساب (للطالب أو ولي الأمر) <span className="text-slate-400 font-normal">(اختياري)</span>
@@ -1188,11 +1250,21 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                 <input
                   type="text"
                   value={formSubject}
-                  onChange={(e) => setFormSubject(e.target.value)}
+                  onChange={(e) => {
+                    setFormSubject(e.target.value);
+                    if (formErrors.subject) setFormErrors((prev) => ({ ...prev, subject: undefined }));
+                  }}
                   placeholder="مثال: رياضيات / فيزياء / لغة إنجليزية"
-                  required
-                  className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
+                  className={`w-full rounded-xl bg-slate-800 border px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 ${
+                    formErrors.subject ? 'border-rose-500' : 'border-slate-700'
+                  }`}
                 />
+                {formErrors.subject && (
+                  <p className="text-[10px] text-rose-400 font-bold mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    <span>{formErrors.subject}</span>
+                  </p>
+                )}
               </div>
 
               {/* Class Type Classification */}
@@ -1207,6 +1279,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                     onClick={() => {
                       setFormClassType('online');
                       setFormColor('cyan');
+                      if (formErrors.classType) setFormErrors((prev) => ({ ...prev, classType: undefined }));
                     }}
                     className={`p-2.5 rounded-2xl text-xs font-bold border transition cursor-pointer flex flex-col items-center justify-center gap-1 text-center ${
                       formClassType === 'online'
@@ -1226,6 +1299,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                     onClick={() => {
                       setFormClassType('in_person');
                       setFormColor('emerald');
+                      if (formErrors.classType) setFormErrors((prev) => ({ ...prev, classType: undefined }));
                     }}
                     className={`p-2.5 rounded-2xl text-xs font-bold border transition cursor-pointer flex flex-col items-center justify-center gap-1 text-center ${
                       formClassType === 'in_person' || formClassType === 'private' || formClassType === 'center'
@@ -1245,6 +1319,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                     onClick={() => {
                       setFormClassType('trial');
                       setFormColor('amber');
+                      if (formErrors.classType) setFormErrors((prev) => ({ ...prev, classType: undefined }));
                     }}
                     className={`p-2.5 rounded-2xl text-xs font-bold border transition cursor-pointer flex flex-col items-center justify-center gap-1 text-center ${
                       formClassType === 'trial'
@@ -1259,27 +1334,43 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                     <span className="text-[9px] opacity-75 font-normal">تقييم وتعارف ✨</span>
                   </button>
                 </div>
+                {formErrors.classType && (
+                  <p className="text-[10px] text-rose-400 font-bold mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    <span>{formErrors.classType}</span>
+                  </p>
+                )}
               </div>
 
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center justify-between">
                   <span>سعر الساعة (Hourly Rate) *</span>
-                  <span className="text-[10px] text-amber-300 font-normal">تُحسب قيمة كل حصة تلقائياً بالمعادلة: (المدة ÷ 60) × سعر الساعة</span>
+                  <span className="text-[10px] text-amber-300 font-normal">تُحسب قيمة كل حصة تلقائياً</span>
                 </label>
                 <div className="relative">
                   <input
                     type="number"
                     value={formHourlyRate}
-                    onChange={(e) => setFormHourlyRate(Number(e.target.value))}
+                    onChange={(e) => {
+                      setFormHourlyRate(Number(e.target.value));
+                      if (formErrors.hourlyRate) setFormErrors((prev) => ({ ...prev, hourlyRate: undefined }));
+                    }}
                     placeholder="100"
                     min={0}
-                    required
-                    className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
+                    className={`w-full rounded-xl bg-slate-800 border px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 ${
+                      formErrors.hourlyRate ? 'border-rose-500' : 'border-slate-700'
+                    }`}
                   />
                   <span className="absolute left-3 top-2 text-xs text-slate-400 pointer-events-none">
                     {currency} / ساعة
                   </span>
                 </div>
+                {formErrors.hourlyRate && (
+                  <p className="text-[10px] text-rose-400 font-bold mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    <span>{formErrors.hourlyRate}</span>
+                  </p>
+                )}
               </div>
 
               {/* Prepaid Class Balance (Optional) */}
@@ -1320,7 +1411,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                 </div>
               </div>
 
-              {/* Collapsible 1: إزاي الطالب ده بيتعلم أحسن؟ (Accordion - مغلق افتراضياً) */}
+              {/* Collapsible 1: إزاي الطالب ده بيتعلم أحسن؟ */}
               <div className="rounded-2xl border border-purple-500/25 bg-slate-900/60 overflow-hidden transition-all shadow-sm">
                 <button
                   type="button"
@@ -1357,7 +1448,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                     <textarea
                       value={formLearningStyle}
                       onChange={(e) => setFormLearningStyle(e.target.value)}
-                      placeholder="مثال: نمط بصري يفضل الرسوم التوضيحية، يحتاج تشجيع مستمر، يستوعب المسائل بالتطبيق العملي..."
+                      placeholder="مثال: نمط بصري يفضل الرسوم التوضيحية، يحتاج تشجيع مستمر..."
                       rows={2}
                       className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
                     />
@@ -1365,7 +1456,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                 )}
               </div>
 
-              {/* Collapsible 2: الملاحظات الإضافية (Accordion - مغلق افتراضياً) */}
+              {/* Collapsible 2: الملاحظات الإضافية */}
               <div className="rounded-2xl border border-slate-800 bg-slate-900/60 overflow-hidden transition-all shadow-sm">
                 <button
                   type="button"
@@ -1410,7 +1501,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                 )}
               </div>
 
-              {/* SECTION: Weekly Class Schedules (Optional) - مواعيد الحصص الأسبوعية (اختياري) */}
+              {/* SECTION: Weekly Class Schedules (Optional) */}
               {!editingStudent && (
                 <div className="pt-3 border-t border-purple-900/40 space-y-2.5">
                   <div className="flex items-center justify-between">
@@ -1501,7 +1592,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                               </select>
                             </div>
 
-                            {/* Start Time (12-hour 30-min intervals) */}
+                            {/* Start Time */}
                             <div>
                               <label className="block text-[10px] text-slate-400 mb-1">وقت البداية</label>
                               <select
@@ -1540,13 +1631,15 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                 </div>
               )}
 
-              <div className="pt-2">
+              {/* Sticky Submit Button Container */}
+              <div className="sticky bottom-0 bg-slate-900 pt-3 mt-2 border-t border-slate-800 z-20 flex-shrink-0">
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full rounded-xl bg-purple-600 hover:bg-purple-500 py-2.5 text-xs font-bold text-white transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-lg shadow-purple-950/50"
+                  className="w-full rounded-xl bg-purple-600 hover:bg-purple-500 py-3 text-xs font-bold text-white transition active:scale-95 disabled:opacity-50 cursor-pointer shadow-lg shadow-purple-950/50 flex items-center justify-center gap-2"
                 >
-                  {isSubmitting ? 'جارٍ الحفظ...' : editingStudent ? 'حفظ التعديلات' : 'إضافة الطالب'}
+                  <Plus className="w-4 h-4" />
+                  <span>{isSubmitting ? 'جارٍ الحفظ...' : editingStudent ? 'حفظ التعديلات' : 'إضافة الطالب'}</span>
                 </button>
               </div>
             </form>
