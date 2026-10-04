@@ -8,7 +8,7 @@ const DEFAULT_SETTINGS: ReminderSettings = {
   notifyTeacher: true,
   notifyParent: true,
   soundEnabled: true,
-  autoOpenWhatsApp: false,
+  autoOpenWhatsApp: true,
   endOfDaySummaryEnabled: true,
   endOfDaySummaryTime: '21:00',
 };

@@ -274,6 +274,15 @@ export default function App() {
             subject: first.subject,
           });
 
+          // Automatically open WhatsApp API link with populated class details if enabled
+          if (settings.autoOpenWhatsApp && first.whatsappUrl) {
+            try {
+              window.open(first.whatsappUrl, '_blank');
+            } catch (e) {
+              console.warn('Auto open WhatsApp link was blocked:', e);
+            }
+          }
+
           if (settings.soundEnabled) {
             playNotificationChime();
           }

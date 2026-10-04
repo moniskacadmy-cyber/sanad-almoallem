@@ -219,6 +219,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       });
 
       if (res.matchedReminders && res.matchedReminders.length > 0) {
+        if (reminderSettings.autoOpenWhatsApp && res.matchedReminders[0].whatsappUrl) {
+          try {
+            window.open(res.matchedReminders[0].whatsappUrl, '_blank');
+          } catch (e) {
+            console.warn('Could not auto open WhatsApp:', e);
+          }
+        }
         if (reminderSettings.soundEnabled) {
           playNotificationChime();
         }
@@ -227,7 +234,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           `لديك ${res.matchedReminders.length} تذكير لحصص تبدأ بعد ${reminderSettings.minutesBefore} دقيقة.`
         );
         setReminderCheckNotice(
-          `تم الفحص بنجاح! تم العثور على (${res.matchedReminders.length}) حصة قادمة بعد ${reminderSettings.minutesBefore} دقيقة وتجهيز رسائل الواتساب.`
+          `تم الفحص بنجاح! تم العثور على (${res.matchedReminders.length}) حصة قادمة${
+            reminderSettings.autoOpenWhatsApp
+              ? ' وفتح رابط الواتساب التلقائي محمل بتفاصيل الحصة 📲'
+              : ' وتجهيز رسائل الواتساب.'
+          }`
         );
       } else {
         setReminderCheckNotice(
@@ -270,6 +281,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         locationOrLink: testLocation.trim(),
       });
       setTestSuccessData(res);
+      if (reminderSettings.autoOpenWhatsApp && res.parentReminder?.whatsappUrl) {
+        try {
+          window.open(res.parentReminder.whatsappUrl, '_blank');
+        } catch (e) {
+          console.warn('Could not auto open test WhatsApp link:', e);
+        }
+      }
       if (reminderSettings.soundEnabled) {
         playNotificationChime();
       }
@@ -1014,6 +1032,42 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 }`}>
                   {reminderSettings.notifyTeacher && <Check className="w-3 h-3 stroke-[3]" />}
                 </div>
+              </div>
+            </div>
+
+            {/* Automatic WhatsApp API Dispatch Toggle Card */}
+            <div
+              onClick={() => handleUpdateReminderSetting('autoOpenWhatsApp', !reminderSettings.autoOpenWhatsApp)}
+              className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition ${
+                reminderSettings.autoOpenWhatsApp
+                  ? 'bg-emerald-950/60 border-emerald-500/50 text-white shadow-md'
+                  : 'bg-slate-950/40 border-slate-800 text-slate-400'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition ${
+                  reminderSettings.autoOpenWhatsApp
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : 'bg-slate-900 text-slate-500 border border-slate-800'
+                }`}>
+                  <MessageCircle className="w-4 h-4" />
+                </div>
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-bold text-white">إرسال رسائل واتساب تلقائية (WhatsApp API)</span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold">
+                      فتح تلقائي ⚡
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-300 leading-relaxed">
+                    فتح رابط الواتساب المحمل بتفاصيل الحصة تلقائياً فور صدور التنبيه بدلاً من الانتظار للضغط على زر الإرسال
+                  </p>
+                </div>
+              </div>
+              <div className={`w-11 h-6 flex items-center rounded-full p-1 transition shrink-0 mr-2 ${
+                reminderSettings.autoOpenWhatsApp ? 'bg-emerald-500 justify-end' : 'bg-slate-800 justify-start'
+              }`}>
+                <span className="bg-white w-4 h-4 rounded-full shadow-md transform transition" />
               </div>
             </div>
 
