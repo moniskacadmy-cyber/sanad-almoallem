@@ -16,8 +16,10 @@ import {
   Trash2,
   ExternalLink,
   MessageCircle,
+  X,
 } from 'lucide-react';
 import { getSlotColorStyle, getClassTypeMeta } from './ScheduleTab';
+import { useBackHandler } from '../services/backHandler';
 
 interface CalendarViewProps {
   schedules: ScheduleSlot[];
@@ -60,6 +62,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [selectedDayInMonth, setSelectedDayInMonth] = useState<number>(today.getDate());
   const [typeFilter, setTypeFilter] = useState<'all' | 'online' | 'in_person' | 'trial'>('all');
+  const [dayDetailsModalDate, setDayDetailsModalDate] = useState<{ dayNum: number; dateObj: Date; dayOfWeek: number } | null>(null);
+
+  // Register day details modal with smart back button handler
+  useBackHandler(!!dayDetailsModalDate, () => setDayDetailsModalDate(null), 'calendar_day_details_modal');
 
   // Month navigation
   const handlePrevMonth = () => {
@@ -304,7 +310,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             return (
               <div
                 key={`day-${dayNum}`}
-                onClick={() => setSelectedDayInMonth(dayNum)}
+                onClick={() => {
+                  setSelectedDayInMonth(dayNum);
+                  setDayDetailsModalDate({
+                    dayNum,
+                    dateObj,
+                    dayOfWeek: dow,
+                  });
+                }}
                 className={`min-h-[76px] sm:min-h-[92px] rounded-2xl border p-1.5 relative flex flex-col justify-between transition cursor-pointer select-none ${
                   isToday
                     ? 'bg-purple-950/40 border-purple-500 ring-2 ring-purple-400/80 shadow-lg shadow-purple-950/50'
@@ -601,6 +614,239 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           </div>
         )}
       </div>
+
+      {/* Day Details Modal (Opens when clicking any day in calendar) */}
+      {dayDetailsModalDate && (() => {
+        const modalDaySlots = filteredSchedules
+          .filter((s) => s.dayOfWeek === dayDetailsModalDate.dayOfWeek)
+          .sort((a, b) => a.time.localeCompare(b.time));
+        const dayArabicName = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'][dayDetailsModalDate.dayOfWeek];
+
+        return (
+          <div
+            className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 text-right"
+            dir="rtl"
+          >
+            <div className="w-full max-w-lg bg-gradient-to-b from-slate-900 to-slate-950 border border-purple-500/35 rounded-3xl p-5 shadow-2xl relative space-y-4 max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-200">
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-purple-900/40 pb-3 flex-shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-purple-600/20 text-amber-300 flex items-center justify-center border border-purple-500/30">
+                    <CalendarIcon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white">
+                      حصص ومواعيد {dayArabicName} {dayDetailsModalDate.dayNum} {ARABIC_MONTHS[currentMonth]} {currentYear}
+                    </h3>
+                    <p className="text-xs text-purple-300/80">
+                      {modalDaySlots.length > 0
+                        ? `لديك ${modalDaySlots.length} حصص مجدولة في هذا اليوم`
+                        : 'لا توجد حصص مسجلة في هذا التاريخ بعد'}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setDayDetailsModalDate(null)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                  title="إغلاق"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Action Bar: Add new class for this specific day */}
+              <div className="flex items-center justify-between bg-purple-950/40 border border-purple-500/30 rounded-2xl p-3 flex-shrink-0 gap-2">
+                <div className="text-xs">
+                  <span className="font-bold text-white block">إضافة حصة لهذا اليوم</span>
+                  <span className="text-[11px] text-purple-300/70">تحديد موعد {dayArabicName} مباشرة في الجدول</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const dow = dayDetailsModalDate.dayOfWeek;
+                    setDayDetailsModalDate(null);
+                    onAddSchedule(dow, '16:00');
+                  }}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold transition shadow-lg shadow-purple-950/50 cursor-pointer active:scale-95 flex-shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>+ إضافة حصة لهذا التاريخ</span>
+                </button>
+              </div>
+
+              {/* Slots List */}
+              <div className="space-y-2.5 overflow-y-auto pr-1 flex-1">
+                {modalDaySlots.length === 0 ? (
+                  <div className="py-10 text-center text-xs text-slate-400 bg-slate-950/40 rounded-2xl border border-slate-800/80 flex flex-col items-center justify-center gap-2.5">
+                    <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500">
+                      <Clock className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <p className="font-bold text-white text-sm">لا توجد حصص مسجلة في هذا اليوم</p>
+                      <p className="text-[11px] text-slate-400 mt-1">اضغط على زر الإضافة أعلاه لجدولة حصة جديدة في هذا اليوم.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const dow = dayDetailsModalDate.dayOfWeek;
+                        setDayDetailsModalDate(null);
+                        onAddSchedule(dow, '16:00');
+                      }}
+                      className="mt-1 px-3.5 py-1.5 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 text-xs font-bold transition cursor-pointer"
+                    >
+                      + إضافة حصة جديدة الآن
+                    </button>
+                  </div>
+                ) : (
+                  modalDaySlots.map((slot) => {
+                    const colorInfo = getSlotColorStyle(slot);
+                    const meta = getClassTypeMeta(slot.classType);
+                    const isCompleted = slot.completedTodayDate === todayStr;
+                    const student = students.find((st) => st.id === slot.studentId);
+                    const studentPhone = student?.whatsapp || '';
+
+                    return (
+                      <div
+                        key={slot.id}
+                        style={{ borderColor: colorInfo.border }}
+                        className="rounded-2xl bg-slate-950/90 p-3.5 border transition hover:border-purple-500/50 space-y-3 shadow-md"
+                      >
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-2.5">
+                            <div
+                              style={{ backgroundColor: colorInfo.hex }}
+                              className="w-3.5 h-3.5 rounded-full flex-shrink-0"
+                            />
+                            <div>
+                              <h4
+                                onClick={() => {
+                                  setDayDetailsModalDate(null);
+                                  onViewDetails(slot);
+                                }}
+                                className="text-sm font-bold text-white hover:text-purple-300 transition cursor-pointer"
+                              >
+                                {slot.studentName}
+                              </h4>
+                              <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5 font-mono">
+                                <span className="flex items-center gap-1 text-purple-300 font-bold">
+                                  <Clock className="w-3.5 h-3.5" />
+                                  <span>{slot.time}</span>
+                                  <span className="text-[10px] text-slate-400">({slot.duration || 60} دقيقة)</span>
+                                </span>
+                                {slot.locationOrLink && (
+                                  <span className="text-slate-400 text-[11px] truncate max-w-[180px]">
+                                    • {slot.locationOrLink}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-[10px] px-2 py-0.5 rounded-lg border font-bold ${meta.badgeClass}`}>
+                              {meta.label}
+                            </span>
+                            {isCompleted && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-lg bg-emerald-950 text-emerald-300 font-bold border border-emerald-500/40">
+                                تمت ✅
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Actions inside card */}
+                        <div className="flex items-center justify-between border-t border-slate-800/80 pt-2.5 flex-wrap gap-2 text-xs">
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                setDayDetailsModalDate(null);
+                                onOpenQuickEval(slot, e);
+                              }}
+                              className={`px-2.5 py-1 rounded-xl border font-bold transition flex items-center gap-1 cursor-pointer text-xs ${
+                                slot.rating
+                                  ? 'bg-amber-950/80 border-amber-500/50 text-amber-300 hover:bg-amber-900'
+                                  : 'bg-slate-900 border-slate-700 text-amber-400 hover:bg-slate-800'
+                              }`}
+                            >
+                              <Star className={`w-3.5 h-3.5 ${slot.rating ? 'fill-amber-400 text-amber-400' : 'text-amber-400'}`} />
+                              <span>{slot.rating ? `${slot.rating}/5 ⭐` : 'تقييم'}</span>
+                            </button>
+
+                            {studentPhone && (
+                              <a
+                                href={`https://wa.me/${studentPhone.replace(/\D/g, '')}?text=${encodeURIComponent(
+                                  `السلام عليكم 🌷\nتذكير بموعد حصة الطالب/ـة (${slot.studentName}) يوم ${dayArabicName} الساعة ${slot.time} بمشيئة الله.`
+                                )}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-2.5 py-1 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-900 transition flex items-center gap-1 font-bold text-xs"
+                              >
+                                <MessageCircle className="w-3.5 h-3.5" />
+                                <span>واتساب</span>
+                              </a>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDayDetailsModalDate(null);
+                                onEditSchedule(slot);
+                              }}
+                              className="p-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white transition cursor-pointer"
+                              title="تعديل الحصة"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onDeleteSchedule(slot.id);
+                              }}
+                              className="p-1.5 rounded-xl bg-slate-900 border border-slate-800 text-rose-400 hover:text-rose-300 transition cursor-pointer"
+                              title="حذف الحصة"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="border-t border-purple-900/40 pt-3 flex items-center justify-between gap-2 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setDayDetailsModalDate(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition cursor-pointer"
+                >
+                  إغلاق النافذة
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const dow = dayDetailsModalDate.dayOfWeek;
+                    setDayDetailsModalDate(null);
+                    onAddSchedule(dow, '16:00');
+                  }}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition cursor-pointer shadow-md active:scale-95"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>+ إضافة حصة لهذا اليوم</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
