@@ -211,9 +211,11 @@ service cloud.firestore {
         allow read, write: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
       }
 
-      // Subcollection: Sent Reminders Deduplication
+      // Subcollection: Sent Reminders Deduplication.
+      // Written ONLY by the server (Admin SDK bypasses rules) and never read by the client,
+      // so clients get no access (prevents spoofing/suppressing reminders and unbounded writes).
       match /sentReminders/{reminderId} {
-        allow read, write: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+        allow read, write: if false;
       }
 
       // Subcollection: Students

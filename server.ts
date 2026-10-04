@@ -7,7 +7,9 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
 import { getMessaging as getAdminMessaging } from 'firebase-admin/messaging';
 import { GoogleGenAI } from '@google/genai';
+import fs from 'fs';
 import { createRemindersRouter } from './src/server/remindersCron.js';
+import { createSubscriptionGuard, parseExpiryDateServer, type TeacherSubscriptionData } from './src/server/subscriptionAccess.js';
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -56,13 +58,37 @@ function safeParseServiceAccount(raw: string | undefined): any {
   }
 }
 
+// Public (non-secret) Firebase web config shipped with the project. Used only as a
+// fallback so that server and client resolve the SAME project and Firestore database.
+interface AppletConfig {
+  projectId?: string;
+  firestoreDatabaseId?: string;
+}
+
+function readAppletConfig(): AppletConfig {
+  const candidates = [
+    path.resolve(process.cwd(), 'firebase-applet-config.json'),
+    path.resolve(__dirname, 'firebase-applet-config.json'),
+  ];
+  for (const file of candidates) {
+    try {
+      return JSON.parse(fs.readFileSync(file, 'utf-8')) as AppletConfig;
+    } catch {
+      // try next candidate
+    }
+  }
+  return {};
+}
+
+const appletConfig = readAppletConfig();
+
 // Initialize Firebase Admin SDK
 if (getApps().length === 0) {
   const serviceAccountRaw = process.env.FIREBASE_SERVICE_ACCOUNT;
   const projectId =
     process.env.FIREBASE_PROJECT_ID ||
     process.env.VITE_FIREBASE_PROJECT_ID ||
-    'gen-lang-client-0886550561';
+    appletConfig.projectId;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
@@ -83,6 +109,11 @@ if (getApps().length === 0) {
       projectId,
     });
   } else {
+    if (!projectId) {
+      throw new Error(
+        'Firebase project is not configured: set FIREBASE_PROJECT_ID (or VITE_FIREBASE_PROJECT_ID).'
+      );
+    }
     initializeApp({
       projectId,
     });
@@ -129,25 +160,67 @@ async function verifyFirebaseToken(
     (req as any).user = decodedToken;
     next();
   } catch (error) {
-    console.error('Firebase ID token verification failed:', error);
+    console.error('Firebase ID token verification failed:', (error as { code?: string })?.code || 'unknown');
     return res.status(401).json({ error: 'رمز الدخول غير صالح أو انتهت صلاحيته.' });
   }
 }
 
-// In-memory rate limiting map: userId -> timestamps[]
+// Helper to check Upstash Redis or In-memory Rate Limiting
+async function isRateLimitedRedis(userId: string, windowSeconds: number, maxRequests: number): Promise<boolean> {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return false;
+
+  try {
+    const key = `ratelimit:${userId}`;
+    const cleanUrl = url.trim().replace(/\/$/, "");
+    const response = await fetch(`${cleanUrl}/pipeline`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify([
+        ["INCR", key],
+        ["EXPIRE", key, windowSeconds],
+      ]),
+    });
+    if (!response.ok) {
+      console.warn('Upstash Redis rate limiter request failed, falling back to memory');
+      return false;
+    }
+    const data = await response.json();
+    const count = data[0]?.result;
+    if (typeof count === 'number' && count > maxRequests) {
+      return true;
+    }
+  } catch (err) {
+    console.warn('Upstash Redis Rate Limiter error:', err);
+  }
+  return false;
+}
+
+// In-memory rate limiting map: userId -> timestamps[] (used as instance fallback)
 const rateLimitMap = new Map<string, number[]>();
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
 const MAX_REQUESTS_PER_WINDOW = 30; // 30 requests per minute per user
 
-function userRateLimiter(
+async function userRateLimiter(
   req: express.Request,
   res: express.Response,
   next: express.NextFunction
 ) {
   const userId = (req as any).user?.uid || req.ip || 'anonymous';
+  
+  // Try Redis-based rate limiting first (best for serverless / Vercel multiple instances)
+  const isLimited = await isRateLimitedRedis(userId, 60, MAX_REQUESTS_PER_WINDOW);
+  if (isLimited) {
+    return res.status(429).json({ error: 'تم تجاوز الحد المسموح به من الطلبات، يرجى المحاولة بعد دقيقة.' });
+  }
+
+  // Local memory fallback
   const now = Date.now();
   const timestamps = rateLimitMap.get(userId) || [];
-
   const recent = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
   if (recent.length >= MAX_REQUESTS_PER_WINDOW) {
     return res.status(429).json({ error: 'تم تجاوز الحد المسموح به من الطلبات، يرجى المحاولة بعد قليل.' });
@@ -158,12 +231,62 @@ function userRateLimiter(
   next();
 }
 
+// Helper to get Admin Firestore DB.
+// MUST resolve the same database as the client (src/firebase.ts): env override,
+// then the database id from firebase-applet-config.json. '(default)' / empty -> default DB.
+const LEGACY_AI_STUDIO_DATABASE_ID = 'ai-studio-f9d7667a-6157-4def-8ccd-a9acd863d453';
+
+function resolveDatabaseId(): string | undefined {
+  const fromEnv = process.env.VITE_FIREBASE_DATABASE_ID?.trim();
+  const effective =
+    fromEnv !== undefined && fromEnv !== ''
+      ? fromEnv
+      : appletConfig.firestoreDatabaseId || LEGACY_AI_STUDIO_DATABASE_ID;
+  return effective === '(default)' || !effective ? undefined : effective;
+}
+
+function getAdminDb() {
+  const dbId = resolveDatabaseId();
+  const appAdmin = getApps()[0];
+  return dbId ? getAdminFirestore(appAdmin, dbId) : getAdminFirestore(appAdmin);
+}
+
+// Fail-closed subscription guard for every paid feature. The uid comes ONLY from the
+// verified ID token (req.user set by verifyFirebaseToken), never from the request body.
+// Admin policy follows security_spec.md / firestore.rules: admins/{uid} document exists.
+const requireActiveSubscription = createSubscriptionGuard({
+  async readTeacher(uid) {
+    const snap = await getAdminDb().collection('teachers').doc(uid).get();
+    return snap.exists ? (snap.data() as TeacherSubscriptionData) : null;
+  },
+  async isAdmin(uid) {
+    const snap = await getAdminDb().collection('admins').doc(uid).get();
+    return snap.exists;
+  },
+  logError(message, err) {
+    const e = err as { code?: string | number; name?: string };
+    console.error(message, e?.code ?? e?.name ?? 'unknown');
+  },
+});
+
 // AI Assistant Endpoint for "مكتبتي" (Ask Library Sources)
-app.post('/api/ai/ask', verifyFirebaseToken, userRateLimiter, async (req, res) => {
+app.post('/api/ai/ask', verifyFirebaseToken, userRateLimiter, requireActiveSubscription, async (req, res) => {
   try {
     const { question, teacherName, subject, sources } = req.body;
     if (!question || typeof question !== 'string') {
       return res.status(400).json({ error: 'السؤال مطلوب.' });
+    }
+
+    if (question.length > 4000) {
+      return res.status(400).json({ error: 'السؤال طويل جداً. الحد الأقصى المسموح به هو 4000 حرف.' });
+    }
+
+    if (teacherName && (typeof teacherName !== 'string' || teacherName.length > 150)) {
+      return res.status(400).json({ error: 'اسم المعلم غير صالح أو يتجاوز 150 حرفاً.' });
+    }
+
+    if (subject && (typeof subject !== 'string' || subject.length > 150)) {
+      return res.status(400).json({ error: 'المادة الدراسية غير صالحة أو تتجاوز 150 حرفاً.' });
     }
 
     if (!process.env.GEMINI_API_KEY) {
@@ -180,7 +303,40 @@ app.post('/api/ai/ask', verifyFirebaseToken, userRateLimiter, async (req, res) =
 
     let promptContext = question.trim();
 
-    if (sources && Array.isArray(sources) && sources.length > 0) {
+    if (sources) {
+      if (!Array.isArray(sources)) {
+        return res.status(400).json({ error: 'صيغة المصادر المرفقة غير صالحة.' });
+      }
+      if (sources.length > 20) {
+        return res.status(400).json({ error: 'تم تجاوز الحد الأقصى للمصادر المرفقة (الحد الأقصى 20 مصدراً).' });
+      }
+
+      let totalSourceChars = 0;
+      for (const s of sources) {
+        if (!s || typeof s !== 'object') {
+          return res.status(400).json({ error: 'بيانات أحد المصادر غير صالحة.' });
+        }
+        if (s.title && (typeof s.title !== 'string' || s.title.length > 200)) {
+          return res.status(400).json({ error: 'عنوان أحد المصادر يتجاوز 200 حرف.' });
+        }
+        if (s.type && (typeof s.type !== 'string' || s.type.length > 50)) {
+          return res.status(400).json({ error: 'نوع أحد المصادر يتجاوز 50 حرفاً.' });
+        }
+        if (s.content) {
+          if (typeof s.content !== 'string') {
+            return res.status(400).json({ error: 'محتوى أحد المصادر غير صالح.' });
+          }
+          if (s.content.length > 30000) {
+            return res.status(400).json({ error: 'محتوى أحد المصادر طويل جداً (يتجاوز 30000 حرف).' });
+          }
+          totalSourceChars += s.content.length;
+        }
+      }
+
+      if (totalSourceChars > 100000) {
+        return res.status(400).json({ error: 'إجمالي حجم نصوص المصادر كبير جداً ويشكل عبئاً على النظام (يتجاوز 100,000 حرف).' });
+      }
+
       const formattedSources = sources
         .map(
           (s: any, idx: number) =>
@@ -217,74 +373,9 @@ ${question}
   }
 });
 
-function parseExpiryDateServer(val: any): Date | null {
-  if (!val) return null;
-  if (typeof val.toDate === 'function') {
-    return val.toDate();
-  }
-  if (typeof val._seconds === 'number') {
-    return new Date(val._seconds * 1000);
-  }
-  if (typeof val.seconds === 'number') {
-    return new Date(val.seconds * 1000);
-  }
-  const d = new Date(val);
-  return isNaN(d.getTime()) ? null : d;
-}
-
-// Helper to verify teacher active subscription via Admin Firestore
-async function checkTeacherSubscription(uid: string): Promise<boolean> {
-  if (!uid) return false;
-  try {
-    const dbAdmin = getAdminFirestore();
-    const teacherDoc = await dbAdmin.collection('teachers').doc(uid).get();
-    if (!teacherDoc.exists) return true; // Default allow if teacher document is still creating
-    const data = teacherDoc.data();
-    if (!data) return true;
-
-    // Admin role override
-    if (data.role === 'admin') return true;
-
-    // Explicitly deactivated check
-    if (data.isActive === false) return false;
-
-    // Check expiration date
-    const effectiveExpiry = data.subscriptionEndDate || data.subscriptionExpiresAt || data.trialEndDate;
-    if (effectiveExpiry) {
-      const expiryDate = parseExpiryDateServer(effectiveExpiry);
-      if (expiryDate) {
-        return expiryDate.getTime() > Date.now();
-      }
-    }
-
-    // Fallback to subscription status if no explicit expiration date is set
-    if (data.subscriptionStatus === 'active' || data.subscriptionStatus === 'trial') {
-      return true;
-    }
-
-    return false;
-  } catch (err) {
-    console.error('Error verifying teacher subscription in server:', err);
-    // Fallback to allow signed in teacher if server verification fails transiently
-    return true;
-  }
-}
-
 // AI Audio Transcription Endpoint
-app.post('/api/ai/transcribe', verifyFirebaseToken, userRateLimiter, async (req, res) => {
+app.post('/api/ai/transcribe', verifyFirebaseToken, userRateLimiter, requireActiveSubscription, async (req, res) => {
   try {
-    const uid = (req as any).user?.uid;
-    if (!uid) {
-      return res.status(401).json({ error: 'غير مصرح به: يلزم تسجيل الدخول.' });
-    }
-
-    const isSubActive = await checkTeacherSubscription(uid);
-    if (!isSubActive) {
-      return res.status(403).json({
-        error: 'اشتراكك غير ساري أو انتهت صلاحيته. يرجى الترقية لتفعيل ميزة الإدخال الصوتي.',
-      });
-    }
-
     const { audioBase64, mimeType } = req.body;
     if (!audioBase64 || typeof audioBase64 !== 'string') {
       return res.status(400).json({ error: 'البيانات الصوتية مطلوبة.' });
@@ -329,20 +420,8 @@ app.post('/api/ai/transcribe', verifyFirebaseToken, userRateLimiter, async (req,
 });
 
 // AI Assistant Chat Endpoint
-app.post('/api/ai/assistant', verifyFirebaseToken, userRateLimiter, async (req, res) => {
+app.post('/api/ai/assistant', verifyFirebaseToken, userRateLimiter, requireActiveSubscription, async (req, res) => {
   try {
-    const uid = (req as any).user?.uid;
-    if (!uid) {
-      return res.status(401).json({ error: 'غير مصرح به: يلزم تسجيل الدخول.' });
-    }
-
-    const isSubActive = await checkTeacherSubscription(uid);
-    if (!isSubActive) {
-      return res.status(403).json({
-        error: 'اشتراكك غير ساري أو انتهت صلاحيته. يرجى الترقية لتفعيل المساعد الذكي.',
-      });
-    }
-
     const { message, messagesHistory, summary } = req.body;
     if (!message || typeof message !== 'string') {
       return res.status(400).json({ error: 'الرسالة مطلوبة.' });
@@ -405,17 +484,6 @@ app.post('/api/ai/assistant', verifyFirebaseToken, userRateLimiter, async (req, 
     return res.status(500).json({ error: 'حدث خطأ أثناء معالجة طلبك بواسطة المساعد الذكي.' });
   }
 });
-
-// Helper to get Admin Firestore DB
-function getAdminDb() {
-  const dbId =
-    process.env.VITE_FIREBASE_DATABASE_ID && process.env.VITE_FIREBASE_DATABASE_ID !== '(default)'
-      ? process.env.VITE_FIREBASE_DATABASE_ID.trim()
-      : undefined;
-
-  const appAdmin = getApps()[0];
-  return dbId ? getAdminFirestore(appAdmin, dbId) : getAdminFirestore(appAdmin);
-}
 
 // Helper to calculate timezone-aware date & time parts using Intl.DateTimeFormat
 function getTimezoneNowParts(tz = 'Africa/Cairo') {
@@ -531,11 +599,12 @@ app.get('/api/reminders/cron', async (req, res) => {
       const teacherData = teacherDoc.data();
       if (!teacherData) continue;
 
-      // Ignore teacher if subscription is actually expired (compare subscriptionExpiresAt against current time)
+      // Ignore teacher if subscription is actually expired (using unified helper)
+      const effectiveExpiry = teacherData.subscriptionEndDate || teacherData.subscriptionExpiresAt || teacherData.trialEndDate;
       let isExpired = false;
-      if (teacherData.subscriptionExpiresAt) {
-        const expTime = new Date(teacherData.subscriptionExpiresAt).getTime();
-        if (isNaN(expTime) || expTime <= Date.now()) {
+      if (effectiveExpiry) {
+        const expiryDate = parseExpiryDateServer(effectiveExpiry);
+        if (!expiryDate || expiryDate.getTime() <= Date.now()) {
           isExpired = true;
         }
       } else if (teacherData.subscriptionStatus === 'expired') {
@@ -584,10 +653,23 @@ app.get('/api/reminders/cron', async (req, res) => {
           .collection('sentReminders')
           .doc(reminderId);
 
-        const sentDoc = await sentRef.get();
-        if (sentDoc.exists) {
+        let claimed = false;
+        try {
+          // Atomic document creation acts as a distributed lock
+          await sentRef.create({
+            status: 'claiming',
+            scheduleId: schedDoc.id,
+            teacherId,
+            day: todayStr,
+            claimedAt: new Date().toISOString(),
+          });
+          claimed = true;
+        } catch (lockError) {
+          // If already exists, skip to prevent duplicate notifications (Race Condition Prevention)
           continue;
         }
+
+        if (!claimed) continue;
 
         const title = '⏰ تذكير موعد الحصة القادمة';
         const body = `أستاذ/ـة ${teacherData.name || 'المعلم'}، لديك حصة قادمة مع الطالب (${slot.studentName || 'طالب'}) في تمام الساعة ${slot.time}.`;
@@ -619,6 +701,7 @@ app.get('/api/reminders/cron', async (req, res) => {
           });
 
           await sentRef.set({
+            status: 'sent',
             scheduleId: schedDoc.id,
             teacherId,
             day: todayStr,
@@ -677,8 +760,16 @@ app.get('/api/reminders/cron', async (req, res) => {
               }
             }
           });
-        } catch (fcmErr) {
+        } catch (fcmErr: any) {
           console.error(`FCM send error for teacher ${teacherId}:`, fcmErr);
+          await sentRef.set({
+            status: 'failed',
+            error: fcmErr instanceof Error ? fcmErr.message : String(fcmErr),
+            scheduleId: schedDoc.id,
+            teacherId,
+            day: todayStr,
+            failedAt: new Date().toISOString(),
+          }).catch(() => {});
         }
       }
     }

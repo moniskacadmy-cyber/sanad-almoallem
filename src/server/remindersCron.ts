@@ -251,6 +251,10 @@ export function checkUpcomingSlots(params: {
   };
 }
 
+// Upper bounds for the stateless /check endpoint (a teacher's real data is far smaller).
+const MAX_CHECK_SCHEDULES = 1000;
+const MAX_CHECK_STUDENTS = 2000;
+
 // Create Express API Router (Purely client-driven, no background intervals or in-memory arrays)
 export function createRemindersRouter(): Router {
   const router = Router();
@@ -268,19 +272,28 @@ export function createRemindersRouter(): Router {
   // 2. Schedule Check Endpoint (stateless evaluation for active teacher on client trigger)
   router.post('/check', (req: Request, res: Response) => {
     try {
+      // Identity comes ONLY from the verified ID token; any teacherId in the body is ignored.
+      const authUserUid = (req as any).user?.uid as string | undefined;
+      if (!authUserUid) {
+        return res.status(401).json({ error: 'غير مصرح به: يلزم تسجيل الدخول.' });
+      }
+      const teacherId = authUserUid;
+
       const {
         schedules = [],
         students = [],
-        teacherId = 'teacher',
         teacherName = 'المعلم',
         teacherWhatsapp = '',
         clientTime,
         minutesBefore = 15,
-      } = req.body;
+      } = req.body ?? {};
 
-      const authUserUid = (req as any).user?.uid;
-      if (authUserUid && teacherId && teacherId !== authUserUid) {
-        return res.status(403).json({ error: 'غير مصرح به: لا يمكنك فحص بيانات معلم آخر.' });
+      // Bound the work a single request can make the server do.
+      if (!Array.isArray(schedules) || !Array.isArray(students)) {
+        return res.status(400).json({ error: 'صيغة البيانات غير صحيحة.' });
+      }
+      if (schedules.length > MAX_CHECK_SCHEDULES || students.length > MAX_CHECK_STUDENTS) {
+        return res.status(400).json({ error: 'حجم البيانات المرسلة أكبر من المسموح.' });
       }
 
       const evalTime = clientTime ? new Date(clientTime) : new Date();
