@@ -39,7 +39,7 @@ jobs:
           FIRESTORE_EMULATOR_HOST: 127.0.0.1:8080
           FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
           FIREBASE_PROJECT_ID: demo-sanad
-        run: node --import tsx --test tests/firestoreRules.emulator.test.ts
+        run: node --import tsx --test tests/firestoreRules.emulator.integration.ts
 
       - name: Print emulator logs on failure
         if: failure()
