@@ -21,6 +21,7 @@ import { HomeTab } from './components/HomeTab';
 import { AdminSecretGate } from './components/AdminSecretGate';
 import { NearExpiryOverlay } from './components/NearExpiryOverlay';
 import { OfflineIndicator } from './OfflineIndicator';
+import { AIAssistantChat } from './components/AIAssistantChat';
 
 // Code-split heavy screen tabs with React.lazy to accelerate initial load time
 const StudentsTab = React.lazy(() => import('./components/StudentsTab').then((m) => ({ default: m.StudentsTab })));
@@ -635,6 +636,16 @@ export default function App() {
             );
           })}
         </nav>
+
+        {/* Floating AI Assistant Chat Window */}
+        {currentUser && profile && (
+          <AIAssistantChat
+            profile={profile}
+            students={students}
+            schedules={schedules}
+            onOpenUpgradeModal={() => setShowUpgradeModal(true)}
+          />
+        )}
 
         {/* Voluntary Upgrade Modal */}
         {showUpgradeModal && (

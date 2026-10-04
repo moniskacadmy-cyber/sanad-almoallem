@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { TeacherProfile, Student, ScheduleSlot, ClassType, RecurrenceType } from '../types';
-import { addSchedule, updateSchedule, deleteSchedule, toggleScheduleCompletedToday } from '../firebase';
+import { addSchedule, updateSchedule, deleteSchedule, toggleScheduleCompletedToday, saveScheduleEvaluation } from '../firebase';
+import { VoiceInputButton } from './VoiceInputButton';
 import {
   Calendar,
   Clock,
@@ -26,6 +27,7 @@ import {
   Play,
   AlertTriangle,
   AlertCircle,
+  Star,
 } from 'lucide-react';
 
 interface ScheduleTabProps {
@@ -201,6 +203,42 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<ScheduleSlot | null>(null);
   const [viewingScheduleDetails, setViewingScheduleDetails] = useState<ScheduleSlot | null>(null);
+
+  // Quick Evaluation Modal State
+  const [showQuickEvalModal, setShowQuickEvalModal] = useState(false);
+  const [evalTargetSlot, setEvalTargetSlot] = useState<ScheduleSlot | null>(null);
+  const [evalRating, setEvalRating] = useState<number>(5);
+  const [evalNotes, setEvalNotes] = useState<string>('');
+  const [isSavingEval, setIsSavingEval] = useState(false);
+  const [evalNotice, setEvalNotice] = useState<string | null>(null);
+
+  const handleOpenQuickEval = (slot: ScheduleSlot, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setEvalTargetSlot(slot);
+    setEvalRating(slot.rating || 5);
+    setEvalNotes(slot.notes || '');
+    setEvalNotice(null);
+    setShowQuickEvalModal(true);
+  };
+
+  const handleSaveQuickEval = async () => {
+    if (!evalTargetSlot) return;
+    setIsSavingEval(true);
+    setEvalNotice(null);
+    try {
+      await saveScheduleEvaluation(profile.id, evalTargetSlot.id, evalRating, evalNotes);
+      setEvalNotice('تم حفظ التقييم السريع للحصة في Firestore بنجاح! ⭐');
+      setTimeout(() => {
+        setShowQuickEvalModal(false);
+        setEvalNotice(null);
+      }, 1000);
+    } catch (err) {
+      console.error('Error saving quick evaluation:', err);
+      setEvalNotice('حدث خطأ أثناء حفظ التقييم.');
+    } finally {
+      setIsSavingEval(false);
+    }
+  };
 
   // Form fields
   const [formStudentId, setFormStudentId] = useState('');
@@ -1403,10 +1441,30 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
                                   </>
                                 )}
                               </p>
+
+                              {slot.notes && (
+                                <p className="text-[11px] text-amber-200/90 mt-1.5 bg-amber-950/40 border border-amber-500/30 px-2.5 py-1 rounded-xl truncate max-w-[320px]">
+                                  💬 {slot.notes}
+                                </p>
+                              )}
                             </div>
                           </div>
 
                           <div className="flex items-center gap-1.5">
+                            {/* Quick Evaluation Button */}
+                            <button
+                              type="button"
+                              onClick={(e) => handleOpenQuickEval(slot, e)}
+                              className={`p-1.5 rounded-xl border text-[11px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                                slot.rating
+                                  ? 'bg-amber-950/80 border-amber-500/50 text-amber-300 hover:bg-amber-900/90'
+                                  : 'bg-slate-900/80 border-slate-700 text-amber-400 hover:bg-slate-800'
+                              }`}
+                              title="تقييم سريع للحصة"
+                            >
+                              <Star className={`w-3.5 h-3.5 ${slot.rating ? 'fill-amber-400 text-amber-400' : 'text-amber-400'}`} />
+                              <span>{slot.rating ? `${slot.rating}/5 ⭐` : 'تقييم سريع'}</span>
+                            </button>
                             {isTodaySlot && (
                               <button
                                 onClick={async (e) => {
@@ -1633,6 +1691,21 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
                     </div>
 
                     <div className="flex items-center gap-1">
+                      {/* Quick Evaluation Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => handleOpenQuickEval(slot, e)}
+                        className={`p-1.5 rounded-lg border transition cursor-pointer flex items-center gap-1 ${
+                          slot.rating
+                            ? 'bg-amber-950/80 border-amber-500/50 text-amber-300'
+                            : 'bg-slate-800/60 border-slate-700 text-amber-400 hover:bg-slate-800'
+                        }`}
+                        title="تقييم سريع للحصة"
+                      >
+                        <Star className={`w-3.5 h-3.5 ${slot.rating ? 'fill-amber-400 text-amber-400' : 'text-amber-400'}`} />
+                        {slot.rating && <span className="text-[10px] font-bold">{slot.rating}/5</span>}
+                      </button>
+
                       {/* Toggle Attendance / Completed */}
                       {isTodaySlot && (
                         <button
@@ -2090,6 +2163,111 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Evaluation Modal */}
+      {showQuickEvalModal && evalTargetSlot && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+          <div className="relative w-full max-w-md rounded-3xl bg-slate-900 border border-purple-500/30 p-5 space-y-4 shadow-2xl text-right" dir="rtl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30">
+                  <Star className="w-5 h-5 fill-amber-400 text-amber-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">التقييم السريع للحصة 🌟</h3>
+                  <p className="text-xs text-purple-300">{evalTargetSlot.studentName} • الساعة {evalTargetSlot.time}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowQuickEvalModal(false)}
+                className="p-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Interactive Stars Selector */}
+            <div className="space-y-2 text-center bg-slate-950/50 p-3 rounded-2xl border border-slate-800">
+              <label className="block text-xs font-bold text-slate-300">
+                درجة تقييم أداء الطالب واستيعابه للحصة:
+              </label>
+              <div className="flex items-center justify-center gap-2 py-1.5">
+                {[1, 2, 3, 4, 5].map((starVal) => (
+                  <button
+                    key={starVal}
+                    type="button"
+                    onClick={() => setEvalRating(starVal)}
+                    className="p-1 transition hover:scale-125 active:scale-95 cursor-pointer"
+                    title={`تقييم ${starVal} من 5`}
+                  >
+                    <Star
+                      className={`w-7 h-7 ${
+                        starVal <= evalRating
+                          ? 'fill-amber-400 text-amber-400 filter drop-shadow-[0_0_8px_rgba(251,191,36,0.5)]'
+                          : 'text-slate-600 hover:text-slate-400'
+                      }`}
+                    />
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs font-bold text-amber-300">
+                {evalRating === 5 && 'ممتاز - استيعاب وأداء كلي 🌟🌟🌟🌟🌟'}
+                {evalRating === 4 && 'جيد جداً - استيعاب مرتفع 🌟🌟🌟🌟'}
+                {evalRating === 3 && 'جيد - يفي بالمتطلبات 🌟🌟🌟'}
+                {evalRating === 2 && 'مقبول - يحتاج مراجعة 🌟🌟'}
+                {evalRating === 1 && 'ضعيف - يحتاج متابعة خاصة 🌟'}
+              </p>
+            </div>
+
+            {/* Evaluation Notes Area with Voice Input */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-300">
+                  ملاحظات وتقييم أداء الطالب (اختياري):
+                </label>
+                <VoiceInputButton
+                  onTranscript={(text) => setEvalNotes((prev) => (prev ? `${prev} ${text}` : text))}
+                  compact
+                />
+              </div>
+              <textarea
+                rows={3}
+                value={evalNotes}
+                onChange={(e) => setEvalNotes(e.target.value)}
+                placeholder="اكتب أو امْلِ بصوتك ملاحظاتك عن أداء الطالب، استيعابه، أو النقاط الإيجابية..."
+                className="w-full rounded-2xl bg-slate-950 border border-slate-700 p-3 text-xs text-white focus:outline-none focus:border-amber-400 leading-relaxed transition"
+              />
+            </div>
+
+            {/* Success Notice */}
+            {evalNotice && (
+              <div className="p-2.5 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-xs text-center font-bold animate-pulse">
+                {evalNotice}
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                disabled={isSavingEval}
+                onClick={handleSaveQuickEval}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:brightness-110 text-slate-950 font-black text-xs transition cursor-pointer shadow-lg disabled:opacity-50"
+              >
+                {isSavingEval ? 'جارٍ الحفظ...' : 'حفظ التقييم في Firestore 💾'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowQuickEvalModal(false)}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold transition cursor-pointer"
+              >
+                إلغاء
+              </button>
+            </div>
           </div>
         </div>
       )}

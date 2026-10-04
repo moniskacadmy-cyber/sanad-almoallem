@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { TeacherProfile, LibraryItem, LibraryItemType } from '../types';
+import { VoiceInputButton } from './VoiceInputButton';
 import {
   auth,
   addLibraryItem,
@@ -412,6 +413,15 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
 
             {/* Question Textarea */}
             <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-purple-300">اكتب سؤالك أو استخدم الإدخال الصوتي:</span>
+                <VoiceInputButton
+                  onTranscript={(transcript) =>
+                    setQuestion((prev) => (prev ? `${prev} ${transcript}` : transcript))
+                  }
+                  compact
+                />
+              </div>
               <textarea
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}

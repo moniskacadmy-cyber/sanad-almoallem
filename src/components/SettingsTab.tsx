@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { TeacherProfile, Student, ScheduleSlot, LibraryItem, BackupData, ReminderLog, ReminderSettings, DEFAULT_WHATSAPP_TEMPLATES } from '../types';
-import { updateTeacherProfile, auth, fetchAllStudentLessons, importFullTeacherBackup } from '../firebase';
+import { updateTeacherProfile, auth, fetchAllStudentLessons, importFullTeacherBackup, requestAndSaveFCMToken } from '../firebase';
 import { signOut } from 'firebase/auth';
 import { PWAInstallButton } from '../PWAInstallButton';
 import confetti from 'canvas-confetti';
@@ -93,7 +93,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [importError, setImportError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Automated Class Reminders State (15-min Cron Job)
+  // Automated Class Reminders State (15-min Cron Job & Web Push FCM)
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(() => getStoredReminderSettings());
   const [browserPermission, setBrowserPermission] = useState<string>(() => {
     return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'denied';
@@ -103,6 +103,32 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [showLogsModal, setShowLogsModal] = useState(false);
   const [cronLogs, setCronLogs] = useState<ReminderLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
+
+  // FCM Phone Notifications State
+  const [isEnablingFcm, setIsEnablingFcm] = useState(false);
+  const [fcmNotice, setFcmNotice] = useState<string | null>(null);
+  const [fcmError, setFcmError] = useState<string | null>(null);
+
+  const handleEnablePhoneNotifications = async () => {
+    setIsEnablingFcm(true);
+    setFcmNotice(null);
+    setFcmError(null);
+    try {
+      const res = await requestAndSaveFCMToken();
+      if (res.success) {
+        setFcmNotice('تم تفعيل إشعارات الهاتف بنجاح وحفظ جهازك لاستقبال تذكيرات الحصص حتى عند إغلاق التطبيق! 🔔📱');
+        setBrowserPermission('granted');
+        playNotificationChime();
+        confetti({ particleCount: 30, spread: 60, origin: { y: 0.8 } });
+      } else {
+        setFcmError(res.error || 'فشل تفعيل إشعارات الهاتف.');
+      }
+    } catch (err: any) {
+      setFcmError(err.message || 'حدث خطأ أثناء طلب الإذن وتفعيل الإشعارات.');
+    } finally {
+      setIsEnablingFcm(false);
+    }
+  };
 
   // Test Reminder Modal State
   const [showTestModal, setShowTestModal] = useState(false);
@@ -857,15 +883,68 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </span>
         </div>
 
-        {/* Clear Notice about Browser Running Reminders */}
-        <div className="p-3 rounded-2xl bg-amber-950/40 border border-amber-500/40 text-amber-200 text-xs flex items-start gap-2.5">
-          <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+        {/* Clear Notice about Web Push Working When App is Closed */}
+        <div className="p-3 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-200 text-xs flex items-start gap-2.5">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
           <div className="space-y-0.5">
-            <span className="font-bold block">ملاحظة هامة حول عمل التذكيرات:</span>
-            <p className="text-[11px] text-amber-200/80 leading-relaxed">
-              تعمل التذكيرات التلقائية والإشعارات اللحظية أثناء فتح التطبيق أو تشغيل المتصفح في الخلفية دون الحاجة لأي خادم cron مدفوع.
+            <span className="font-bold block text-white">عمل التذكيرات مع إغلاق التطبيق 📱:</span>
+            <p className="text-[11px] text-emerald-200/90 leading-relaxed">
+              تستمر التذكيرات التلقائية في العمل وتصلك مباشرة على هاتفك حتى عند إغلاق التطبيق تماماً بمجرد الضغط على "تفعيل إشعارات الهاتف" بالأسفل.
             </p>
           </div>
+        </div>
+
+        {/* Enable Phone Push Notifications (FCM) Card & Button */}
+        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-950/70 via-slate-950 to-indigo-950/70 border border-purple-500/40 space-y-2.5">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <Smartphone className="w-4 h-4 text-purple-400 shrink-0" />
+              <div>
+                <h4 className="text-xs font-bold text-white">إشعارات الهاتف والتطبيق مغلق (Web Push)</h4>
+                <p className="text-[10px] text-purple-200/80">تفعيل وصول التنبيهات لشاشة الهاتف حتى عند عدم استخدام التطبيق</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={isEnablingFcm}
+              onClick={handleEnablePhoneNotifications}
+              className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 active:scale-95 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md disabled:opacity-50 shrink-0 cursor-pointer"
+            >
+              {isEnablingFcm ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Bell className="w-3.5 h-3.5 text-amber-300" />
+              )}
+              <span>{isEnablingFcm ? 'جارٍ التفعيل...' : 'تفعيل إشعارات الهاتف 🔔'}</span>
+            </button>
+          </div>
+
+          {/* FCM Success Notice */}
+          {fcmNotice && (
+            <div className="p-2.5 rounded-xl bg-emerald-950/90 border border-emerald-500/50 text-emerald-200 text-xs flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>{fcmNotice}</span>
+            </div>
+          )}
+
+          {/* FCM Error Notice */}
+          {fcmError && (
+            <div className="p-2.5 rounded-xl bg-rose-950/90 border border-rose-500/50 text-rose-200 text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>{fcmError}</span>
+            </div>
+          )}
+
+          {/* iPhone / iOS Notice */}
+          {typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent) && (
+            <div className="p-2.5 rounded-xl bg-amber-950/50 border border-amber-500/40 text-amber-200 text-[11px] leading-relaxed flex items-start gap-2">
+              <Smartphone className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block">مستخدمو هواتف آيفون (iOS):</span>
+                <span>لتلقي إشعارات الهاتف والتطبيق مغلق، يرجى تثبيت التطبيق على الشاشة الرئيسية أولاً عبر زر المشاركة في Safari (⬆️ المشاركة) ثم اختيار "إضافة إلى الشاشة الرئيسية".</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Status Notice */}

@@ -26,6 +26,8 @@ import {
   Timestamp,
   getDocFromServer,
   onSnapshot,
+  enableMultiTabIndexedDbPersistence,
+  enableIndexedDbPersistence,
 } from 'firebase/firestore';
 import rawFirebaseConfig from '../firebase-applet-config.json';
 import {
@@ -49,12 +51,37 @@ const firebaseConfig = {
   storageBucket: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_STORAGE_BUCKET) || rawFirebaseConfig.storageBucket,
   messagingSenderId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_MESSAGING_SENDER_ID) || rawFirebaseConfig.messagingSenderId,
   appId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_APP_ID) || rawFirebaseConfig.appId,
-  firestoreDatabaseId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_DATABASE_ID) || (rawFirebaseConfig as any).firestoreDatabaseId || 'ai-studio-f9d7667a-6157-4def-8ccd-a9acd863d453',
 };
+
+const envDatabaseId =
+  typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_DATABASE_ID
+    ? import.meta.env.VITE_FIREBASE_DATABASE_ID.trim()
+    : undefined;
+
+const effectiveDatabaseId =
+  envDatabaseId !== undefined && envDatabaseId !== ''
+    ? envDatabaseId
+    : (rawFirebaseConfig as any).firestoreDatabaseId || 'ai-studio-f9d7667a-6157-4def-8ccd-a9acd863d453';
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const db =
+  effectiveDatabaseId === '(default)' || !effectiveDatabaseId
+    ? getFirestore(app)
+    : getFirestore(app, effectiveDatabaseId);
+
+// Enable Firestore Local IndexedDB Offline Persistence & Automatic Cloud Synchronization
+if (typeof window !== 'undefined') {
+  enableMultiTabIndexedDbPersistence(db).catch((err) => {
+    if (err.code === 'failed-precondition') {
+      enableIndexedDbPersistence(db).catch((e) => {
+        console.warn('Firestore offline persistence fallback warning:', e);
+      });
+    } else if (err.code === 'unimplemented') {
+      console.warn('Firestore offline persistence is not supported in this browser.');
+    }
+  });
+}
 
 // Test Firestore Connection as required by skill
 async function testConnection() {
@@ -948,6 +975,24 @@ export async function updateSchedule(
   }
 }
 
+export async function saveScheduleEvaluation(
+  teacherId: string,
+  scheduleId: string,
+  rating: number,
+  notes?: string
+) {
+  const path = `teachers/${teacherId}/schedules/${scheduleId}`;
+  try {
+    await updateDoc(doc(db, 'teachers', teacherId, 'schedules', scheduleId), {
+      rating,
+      notes: notes ? notes.trim() : '',
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
 export async function deleteSchedule(teacherId: string, scheduleId: string) {
   const path = `teachers/${teacherId}/schedules/${scheduleId}`;
   try {
@@ -1373,5 +1418,102 @@ export async function togglePinQuickNote(teacherId: string, noteId: string, curr
 export async function toggleCompleteQuickNote(teacherId: string, noteId: string, currentCompleted: boolean) {
   return updateQuickNote(teacherId, noteId, { isCompleted: !currentCompleted });
 }
+
+import { getMessaging, getToken, isSupported } from 'firebase/messaging';
+
+// Function to request permission and save FCM token for web push notifications
+export async function requestAndSaveFCMToken(): Promise<{
+  success: boolean;
+  token?: string;
+  error?: string;
+}> {
+  try {
+    const isMessagingSupported = await isSupported();
+    if (!isMessagingSupported) {
+      return {
+        success: false,
+        error: 'المتصفح الحالي لا يدعم إشعارات الويب المباشرة (Web Push Notifications).',
+      };
+    }
+
+    const permission = await Notification.requestPermission();
+    if (permission === 'denied') {
+      return {
+        success: false,
+        error: 'تم رفض إذن الإشعارات من المتصفح. يرجى السماح بالإشعارات من إعدادات المتصفح وإعادة المحاولة.',
+      };
+    }
+    if (permission !== 'granted') {
+      return {
+        success: false,
+        error: 'لم يتم منح إذن الإشعارات.',
+      };
+    }
+
+    const messaging = getMessaging(app);
+    let swReg: ServiceWorkerRegistration | undefined = undefined;
+
+    if ('serviceWorker' in navigator) {
+      try {
+        swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+      } catch (swErr) {
+        console.warn('Could not register firebase-messaging-sw.js directly:', swErr);
+      }
+    }
+
+    const vapidKey =
+      (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_VAPID_KEY) || undefined;
+
+    const token = await getToken(messaging, {
+      vapidKey,
+      serviceWorkerRegistration: swReg,
+    });
+
+    if (!token) {
+      return {
+        success: false,
+        error: 'تعذر الحصول على رمز الإشعارات (FCM Token). يرجى التأكد من إضافة مفتاح VAPID.',
+      };
+    }
+
+    const user = auth.currentUser;
+    if (user) {
+      // 1. Save in users/{uid}/fcmTokens/{tokenId}
+      const userTokenRef = doc(db, 'users', user.uid, 'fcmTokens', token);
+      await setDoc(
+        userTokenRef,
+        {
+          token,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          userAgent: navigator.userAgent,
+        },
+        { merge: true }
+      );
+
+      // 2. Save in teachers/{uid}/fcmTokens/{tokenId}
+      const teacherTokenRef = doc(db, 'teachers', user.uid, 'fcmTokens', token);
+      await setDoc(
+        teacherTokenRef,
+        {
+          token,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          userAgent: navigator.userAgent,
+        },
+        { merge: true }
+      );
+    }
+
+    return { success: true, token };
+  } catch (err: any) {
+    console.error('Error enabling phone notifications / FCM:', err);
+    return {
+      success: false,
+      error: err.message || 'حدث خطأ أثناء تفعيل إشعارات الهاتف.',
+    };
+  }
+}
+
 
 

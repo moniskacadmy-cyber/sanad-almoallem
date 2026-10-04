@@ -49,6 +49,8 @@
         "monthlyFee": { "type": "number" },
         "paymentStatus": { "type": "string", "enum": ["paid", "unpaid"] },
         "lastPaymentMonth": { "type": "string", "maxLength": 20 },
+        "totalPrepaidLessons": { "type": "number" },
+        "remainingPaidLessons": { "type": "number" },
         "learningStyle": { "type": "string", "maxLength": 1000 },
         "notes": { "type": "string", "maxLength": 1000 },
         "color": { "type": "string", "maxLength": 50 },
@@ -91,6 +93,9 @@
         "classType": { "type": "string", "enum": ["online", "center", "private"] },
         "color": { "type": "string", "maxLength": 50 },
         "locationOrLink": { "type": "string", "maxLength": 500 },
+        "completedTodayDate": { "type": "string", "maxLength": 30 },
+        "rating": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 2000 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
@@ -179,6 +184,30 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "teacherId", "text", "createdAt"]
+    },
+    "FCMToken": {
+      "title": "FCMToken",
+      "description": "Firebase Cloud Messaging Web Push token for device notifications.",
+      "type": "object",
+      "properties": {
+        "token": { "type": "string", "maxLength": 500 },
+        "userAgent": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["token", "createdAt", "updatedAt"]
+    },
+    "SentReminder": {
+      "title": "SentReminder",
+      "description": "Deduplication log for sent FCM reminders per class and day.",
+      "type": "object",
+      "properties": {
+        "scheduleId": { "type": "string", "maxLength": 128 },
+        "teacherId": { "type": "string", "maxLength": 128 },
+        "day": { "type": "string", "maxLength": 30 },
+        "sentAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["scheduleId", "teacherId", "day", "sentAt"]
     }
   },
   "firestore": {
@@ -190,9 +219,21 @@
       "schema": { "$ref": "#/entities/Subscription" },
       "description": "Stores teacher subscriptions by email."
     },
+    "/users/{userId}/fcmTokens/{tokenId}": {
+      "schema": { "$ref": "#/entities/FCMToken" },
+      "description": "Stores FCM tokens under user profile."
+    },
     "/teachers/{teacherId}": {
       "schema": { "$ref": "#/entities/Teacher" },
       "description": "Stores teacher user profile and subscription status."
+    },
+    "/teachers/{teacherId}/fcmTokens/{tokenId}": {
+      "schema": { "$ref": "#/entities/FCMToken" },
+      "description": "Stores FCM device tokens for Web Push notifications."
+    },
+    "/teachers/{teacherId}/sentReminders/{reminderId}": {
+      "schema": { "$ref": "#/entities/SentReminder" },
+      "description": "Deduplication log to prevent duplicate notifications."
     },
     "/teachers/{teacherId}/students/{studentId}": {
       "schema": { "$ref": "#/entities/Student" },

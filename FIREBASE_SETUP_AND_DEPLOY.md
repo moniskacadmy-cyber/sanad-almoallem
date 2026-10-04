@@ -64,6 +64,8 @@
 ### الخطوة 3: إضافة المتغيرات البيئية (Environment Variables)
 في إعدادات المشروع على Vercel، أضف المتغيرات التالية:
 - `GEMINI_API_KEY`: مفتاح Google Gemini API.
+- `GEMINI_MODEL`: (اختياري) نموذج Gemini، الافتراضي `gemini-3.8-flash`.
+- `CRON_SECRET`: رمز سرّي عشوائي لتأمين مسار التذكيرات التلقائية `/api/reminders/cron`.
 - `FIREBASE_SERVICE_ACCOUNT`: محتوى ملف JSON لمفتاح الخدمة.
 - `VITE_FIREBASE_API_KEY`: مفتاح Firebase للعميل.
 - `VITE_FIREBASE_AUTH_DOMAIN`: نطاق المصادقة.
@@ -71,15 +73,32 @@
 - `VITE_FIREBASE_STORAGE_BUCKET`: نطاق التخزين.
 - `VITE_FIREBASE_MESSAGING_SENDER_ID`: معرف الإرسال.
 - `VITE_FIREBASE_APP_ID`: معرف التطبيق.
-
-### الخطوة 4: النشر
-اضغط **Deploy**. سيقوم Vercel ببناء التطبيق ونشر:
-- واجهة الويب التفاعلية (SPA) مع دعم PWA والتقسيم الذكي للأكواد.
-- دوال الـ Serverless عبر `/api/index.ts` للمساعد الذكي والتحقق الآمن من التذكيرات.
-- نظام التنبيهات الفورية والتذكير بالحصة يعمل مباشرة أثناء فتح المعلم للتطبيق دون تكاليف cron إضافية.
+- `VITE_FIREBASE_VAPID_KEY`: مفتاح VAPID المولد من Firebase Console.
+- `VITE_FIREBASE_DATABASE_ID`: (اختياري) اتركه فارغاً لاستخدام إعدادات AI Studio، أو ضع `(default)` إذا كنت تستخدم قاعدة بيانات Firestore الافتراضية في مشروع Firebase الخاص بك.
 
 ---
 
-## 4. التشغيل المحلي (Local Running)
+## 4. إعداد تذكيرات الحصص المباشرة للهواتف أثناء إغلاق التطبيق (Web Push & Cron Job)
+
+### 1) توليد مفتاح VAPID من Firebase Console:
+1. ادخل إلى [Firebase Console](https://console.firebase.google.com).
+2. اختر مشروعك ثم اضغط **Project settings ⚙️** > **Cloud Messaging**.
+3. انزل إلى **Web configuration** > **Web Push certificates**.
+4. اضغط **Generate key pair**.
+5. انسخ الكود وضعه في المتغير البيئي `VITE_FIREBASE_VAPID_KEY`.
+
+### 2) ربط خدمة Cron Job المجانية (cron-job.org):
+1. افتح موقع [cron-job.org](https://cron-job.org) وأنشيء حساباً مجانياً.
+2. أنشئ Cron Job جديد بالبيانات التالية:
+   - **URL**: `https://your-app.vercel.app/api/reminders/cron`
+   - **Execution Schedule**: كل دقيقة (`Every 1 minute`).
+   - **Headers**:
+     - Key: `Authorization`
+     - Value: `Bearer <CRON_SECRET>` (حيث `<CRON_SECRET>` هي القيمة المعرفة في متغيرات بيئة Vercel).
+3. احفظ الـ Job وسيعمل تلقائياً بفحص جدول الحصص القادمة وإرسال الإشعارات لهواتف المعلمين.
+
+---
+
+## 5. التشغيل المحلي (Local Running)
 - `npm run dev`: لتشغيل التطبيق محلياً عبر خادم Express وVite على المنفذ 3000.
 - أو `vercel dev`: لتشغيل دوال Serverless محلياً عبر محاكي Vercel.

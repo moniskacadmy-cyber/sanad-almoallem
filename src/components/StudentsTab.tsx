@@ -123,6 +123,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const [formSubject, setFormSubject] = useState(profile.subject || 'رياضيات');
   const [formClassType, setFormClassType] = useState<ClassType>('private');
   const [formHourlyRate, setFormHourlyRate] = useState<number>(100);
+  const [formRemainingPaidLessons, setFormRemainingPaidLessons] = useState<string>('');
+  const [formTotalPrepaidLessons, setFormTotalPrepaidLessons] = useState<string>('');
   const [formLearningStyle, setFormLearningStyle] = useState('');
   const [formNotes, setFormNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -423,6 +425,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     setFormSubject(profile.subject || 'رياضيات');
     setFormClassType('in_person');
     setFormHourlyRate(100);
+    setFormRemainingPaidLessons('');
+    setFormTotalPrepaidLessons('');
     setFormLearningStyle('');
     setFormNotes('');
     setIsAddStudentLearningStyleOpen(false);
@@ -439,6 +443,16 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     setFormSubject(student.subject);
     setFormClassType(student.classType || 'in_person');
     setFormHourlyRate(student.hourlyRate || (student.monthlyFee ? Math.round(student.monthlyFee / 4) : 100));
+    setFormRemainingPaidLessons(
+      student.remainingPaidLessons !== undefined && student.remainingPaidLessons !== null
+        ? String(student.remainingPaidLessons)
+        : ''
+    );
+    setFormTotalPrepaidLessons(
+      student.totalPrepaidLessons !== undefined && student.totalPrepaidLessons !== null
+        ? String(student.totalPrepaidLessons)
+        : ''
+    );
     setFormLearningStyle(student.learningStyle || '');
     setFormNotes(student.notes || '');
     setIsAddStudentLearningStyleOpen(false);
@@ -467,6 +481,15 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
     try {
       const rate = Number(formHourlyRate) || 100;
+      const remPaid =
+        formRemainingPaidLessons.trim() !== '' ? Number(formRemainingPaidLessons) : undefined;
+      const totPrepaid =
+        formTotalPrepaidLessons.trim() !== ''
+          ? Number(formTotalPrepaidLessons)
+          : remPaid !== undefined
+          ? remPaid
+          : undefined;
+
       if (editingStudent) {
         await updateStudent(profile.id, editingStudent.id, {
           name: formName.trim(),
@@ -475,6 +498,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
           classType: formClassType,
           hourlyRate: rate,
           monthlyFee: rate * 4,
+          remainingPaidLessons: remPaid,
+          totalPrepaidLessons: totPrepaid,
           learningStyle: formLearningStyle.trim(),
           notes: formNotes.trim(),
           color: formColor,
@@ -488,6 +513,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
           hourlyRate: rate,
           monthlyFee: rate * 4,
           paymentStatus: 'unpaid',
+          remainingPaidLessons: remPaid,
+          totalPrepaidLessons: totPrepaid,
           learningStyle: formLearningStyle.trim(),
           notes: formNotes.trim(),
           color: formColor,
@@ -531,6 +558,24 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     }
   };
 
+  const handleUpdatePrepaidLessons = async (deltaOrSet: number, isDelta: boolean) => {
+    if (!selectedProfileStudent) return;
+    const current = selectedProfileStudent.remainingPaidLessons ?? 0;
+    const nextVal = isDelta ? Math.max(0, current + deltaOrSet) : Math.max(0, deltaOrSet);
+    const nextTotal = Math.max(nextVal, selectedProfileStudent.totalPrepaidLessons || nextVal);
+    try {
+      await updateStudent(profile.id, selectedProfileStudent.id, {
+        remainingPaidLessons: nextVal,
+        totalPrepaidLessons: nextTotal,
+      });
+      setSelectedProfileStudent((prev) =>
+        prev ? { ...prev, remainingPaidLessons: nextVal, totalPrepaidLessons: nextTotal } : null
+      );
+    } catch (err) {
+      console.error('Failed to update prepaid lessons:', err);
+    }
+  };
+
   const handleAddLessonSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProfileStudent || !newLessonTopic.trim()) return;
@@ -552,6 +597,21 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
         rating: newLessonRating,
         notes: '',
       });
+
+      // Automatically decrement remaining prepaid lessons if active
+      if (
+        selectedProfileStudent.remainingPaidLessons !== undefined &&
+        selectedProfileStudent.remainingPaidLessons > 0
+      ) {
+        const nextRemaining = Math.max(0, selectedProfileStudent.remainingPaidLessons - 1);
+        await updateStudent(profile.id, selectedProfileStudent.id, {
+          remainingPaidLessons: nextRemaining,
+        });
+        setSelectedProfileStudent((prev) =>
+          prev ? { ...prev, remainingPaidLessons: nextRemaining } : null
+        );
+      }
+
       setNewLessonTopic('');
       setNewLessonHomework('');
       setShowAddLessonInsideProfile(false);
@@ -930,11 +990,40 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                     onClick={() => handleOpenStudentProfile(s)}
                     className="cursor-pointer flex-1"
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="text-sm font-bold text-white hover:text-purple-300 transition">
                         {s.name}
                       </h3>
                       {getClassTypeBadge(s.classType)}
+
+                      {/* Paid Classes Running Low Alert Badge */}
+                      {s.remainingPaidLessons !== undefined && s.remainingPaidLessons !== null && (
+                        s.remainingPaidLessons <= 0 ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-950/90 border border-rose-500/60 text-rose-300 shadow"
+                            title="نفد رصيد الحصص المدفوعة - يرجى مطالبة ولي الأمر بالتجديد"
+                          >
+                            <AlertCircle className="w-3 h-3 text-rose-400" />
+                            <span>نفد الرصيد ⚠️</span>
+                          </span>
+                        ) : s.remainingPaidLessons <= 2 ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-950/90 border border-amber-500/60 text-amber-300 shadow animate-pulse"
+                            title={`اقترب رصيد الحصص من النفاد: متبقي ${s.remainingPaidLessons} حصص`}
+                          >
+                            <Clock className="w-3 h-3 text-amber-400" />
+                            <span>باقي {s.remainingPaidLessons === 1 ? 'حصة واحدة' : `${s.remainingPaidLessons} حصص`} ⏳</span>
+                          </span>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-950/70 border border-purple-500/30 text-purple-300"
+                            title={`رصيد الحصص المتبقية: ${s.remainingPaidLessons} حصص`}
+                          >
+                            <CreditCard className="w-3 h-3 text-purple-400" />
+                            <span>رصيد: {s.remainingPaidLessons} حصص</span>
+                          </span>
+                        )
+                      )}
                     </div>
                     <p className="text-xs text-slate-400 mt-1">
                       مادة: <span className="text-purple-300 font-medium">{s.subject}</span> •{' '}
@@ -1167,6 +1256,44 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                   <span className="absolute left-3 top-2 text-xs text-slate-400 pointer-events-none">
                     {currency} / ساعة
                   </span>
+                </div>
+              </div>
+
+              {/* Prepaid Class Balance (Optional) */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center justify-between">
+                  <span>رصيد باقة الحصص المدفوعة</span>
+                  <span className="text-[10px] text-amber-300 font-normal">
+                    اختياري - يظهر شارة تنبيه عند قرب النفاد
+                  </span>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <input
+                      type="number"
+                      value={formRemainingPaidLessons}
+                      onChange={(e) => setFormRemainingPaidLessons(e.target.value)}
+                      placeholder="مثال: 8"
+                      min={0}
+                      className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
+                    />
+                    <span className="text-[9px] text-slate-400 mt-0.5 block">
+                      الحصص المتبقية بالرصيد
+                    </span>
+                  </div>
+                  <div>
+                    <input
+                      type="number"
+                      value={formTotalPrepaidLessons}
+                      onChange={(e) => setFormTotalPrepaidLessons(e.target.value)}
+                      placeholder="مثال: 8"
+                      min={0}
+                      className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
+                    />
+                    <span className="text-[9px] text-slate-400 mt-0.5 block">
+                      سعة الباقة الإجمالية
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -1500,6 +1627,118 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                 <Sparkles className="w-3.5 h-3.5 text-amber-300 flex-shrink-0" />
                 <span className="truncate w-full">{showAddLessonInsideProfile ? 'إغلاق' : 'تسجيل حصة'}</span>
               </button>
+            </div>
+
+            {/* SECTION: رصيد الحصص المدفوعة (باقة الحصص) مع توضيح عدد الحصص المتبقية */}
+            <div className="rounded-2xl bg-gradient-to-r from-purple-950/60 via-slate-950/80 to-indigo-950/60 border border-purple-500/30 p-3.5 space-y-3 shadow-md">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center border border-purple-500/30 shadow-inner">
+                    <CreditCard className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-white block">رصيد الحصص المدفوعة (باقة الحصص)</span>
+                    <span className="text-[10px] text-purple-300/80">
+                      {selectedProfileStudent.totalPrepaidLessons
+                        ? `إجمالي سعة الباقة: ${selectedProfileStudent.totalPrepaidLessons} حصة`
+                        : 'نظام باقات الحصص مسبقة الدفع'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Remaining Lessons Counter Badge */}
+                <div>
+                  {selectedProfileStudent.remainingPaidLessons !== undefined &&
+                  selectedProfileStudent.remainingPaidLessons !== null ? (
+                    selectedProfileStudent.remainingPaidLessons <= 0 ? (
+                      <span className="px-3 py-1 rounded-full text-xs font-black bg-rose-950 border border-rose-500/60 text-rose-300 shadow">
+                        نفد الرصيد (0 حصة) ⚠️
+                      </span>
+                    ) : selectedProfileStudent.remainingPaidLessons <= 2 ? (
+                      <span className="px-3 py-1 rounded-full text-xs font-black bg-amber-950 border border-amber-500/60 text-amber-300 shadow animate-pulse">
+                        متبقي {selectedProfileStudent.remainingPaidLessons} حصص ⏳
+                      </span>
+                    ) : (
+                      <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-950 border border-emerald-500/40 text-emerald-300 shadow">
+                        متبقي {selectedProfileStudent.remainingPaidLessons} حصة 💳
+                      </span>
+                    )
+                  ) : (
+                    <span className="text-[11px] text-slate-400 bg-slate-900 px-2.5 py-0.5 rounded-full border border-slate-800">
+                      غير محدد (حساب عادي)
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Low Balance Warning Alert with WhatsApp Link */}
+              {selectedProfileStudent.remainingPaidLessons !== undefined &&
+                selectedProfileStudent.remainingPaidLessons !== null &&
+                selectedProfileStudent.remainingPaidLessons <= 2 && (
+                  <div className="p-2.5 rounded-xl bg-amber-950/40 border border-amber-500/30 text-xs text-amber-200 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                      <span className="text-[11px] leading-tight">
+                        {selectedProfileStudent.remainingPaidLessons <= 0
+                          ? 'تنبيه: نفد رصيد حصص الطالب بالكامل، يرجى مطالبة ولي الأمر بتجديد الباقة.'
+                          : `تنبيه: اقترب رصيد حصص الطالب من النفاد (متبقي ${selectedProfileStudent.remainingPaidLessons} حصص فقط)!`}
+                      </span>
+                    </div>
+                    {selectedProfileStudent.whatsapp && (
+                      <a
+                        href={`https://wa.me/${selectedProfileStudent.whatsapp.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                          `السلام عليكم ورحمة الله وبركاته، نود تذكيركم بأن رصيد حصص الطالب/ـة ${selectedProfileStudent.name} أوشك على النفاد (متبقي ${selectedProfileStudent.remainingPaidLessons || 0} حصص). يرجى التكرم بتجديد باقة الحصص لمواصلة الدروس بانتظام. خالص تحياتي، أ. ${profile.name}`
+                        )}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] flex items-center gap-1 flex-shrink-0 transition shadow"
+                      >
+                        <MessageCircle className="w-3 h-3" />
+                        <span>تذكير واتساب</span>
+                      </a>
+                    )}
+                  </div>
+                )}
+
+              {/* Quick Action Buttons to Adjust / Recharge Balance */}
+              <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-purple-900/30 text-xs">
+                <span className="text-[10px] font-bold text-slate-400">تعديل وشحن الرصيد:</span>
+                <div className="flex items-center gap-1 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => handleUpdatePrepaidLessons(4, true)}
+                    className="px-2.5 py-1 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 text-[10px] font-bold transition cursor-pointer"
+                    title="شحن باقة 4 حصص"
+                  >
+                    +4 حصص
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleUpdatePrepaidLessons(8, true)}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-200 text-[10px] font-bold transition cursor-pointer"
+                    title="شحن باقة 8 حصص"
+                  >
+                    +8 حصص
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleUpdatePrepaidLessons(1, true)}
+                    className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold transition cursor-pointer"
+                    title="إضافة حصة واحدة"
+                  >
+                    +1
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!selectedProfileStudent.remainingPaidLessons}
+                    onClick={() => handleUpdatePrepaidLessons(-1, true)}
+                    className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold transition cursor-pointer disabled:opacity-40"
+                    title="خصم حصة واحدة"
+                  >
+                    -1
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* SECTION 1: SECTION "حسابات ومستحقات الطالب (نظام سعر الساعة)" */}

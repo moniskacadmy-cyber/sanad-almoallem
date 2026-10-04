@@ -56,6 +56,8 @@ export interface Student {
   lastSettledAt?: any; // تاريخ آخر تصفية
   paymentStatus?: PaymentStatus;
   lastPaymentMonth?: string;
+  totalPrepaidLessons?: number; // إجمالي الحصص في باقة الحصص المدفوعة مسبقاً
+  remainingPaidLessons?: number; // رصيد الحصص المدفوعة المتبقية
   learningStyle?: string;
   notes?: string;
   color?: string;
@@ -94,6 +96,8 @@ export interface ScheduleSlot {
   color?: string;
   locationOrLink?: string;
   completedTodayDate?: string; // YYYY-MM-DD إذا تم تعليم الحصة كمنجزة اليوم
+  rating?: number; // تقييم الحصة بالساعات/النجوم (1-5)
+  notes?: string; // ملاحظات وتقييم أداء الطالب في الحصة
   createdAt: any;
   updatedAt: any;
 }

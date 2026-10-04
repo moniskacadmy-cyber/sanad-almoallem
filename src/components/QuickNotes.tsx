@@ -8,6 +8,7 @@ import {
   togglePinQuickNote,
   toggleCompleteQuickNote,
 } from '../firebase';
+import { VoiceInputButton } from './VoiceInputButton';
 import {
   StickyNote,
   Plus,
@@ -284,7 +285,15 @@ export const QuickNotes: React.FC<QuickNotesProps> = ({ profile }) => {
               className="w-full rounded-xl bg-slate-950/80 border border-slate-700/80 px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 leading-relaxed resize-none"
             />
             <div className="flex justify-between items-center text-[10px] text-slate-500 mt-1">
-              <span>اضغط Ctrl+Enter للحفظ السريع</span>
+              <div className="flex items-center gap-2">
+                <VoiceInputButton
+                  onTranscript={(transcript) =>
+                    setNewText((prev) => (prev ? `${prev} ${transcript}` : transcript))
+                  }
+                  compact
+                />
+                <span>اضغط Ctrl+Enter للحفظ السريع</span>
+              </div>
               <span>{newText.length}/2000 حرف</span>
             </div>
           </div>

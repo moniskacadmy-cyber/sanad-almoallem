@@ -101,6 +101,8 @@ service cloud.firestore {
         (!('hourlyRate' in data) || data.hourlyRate is number) &&
         (!('monthlyFee' in data) || data.monthlyFee is number) &&
         (!('fixedMonthlyFee' in data) || data.fixedMonthlyFee is number) &&
+        (!('totalPrepaidLessons' in data) || data.totalPrepaidLessons is number) &&
+        (!('remainingPaidLessons' in data) || data.remainingPaidLessons is number) &&
         (!('isDeleted' in data) || data.isDeleted is bool) &&
         (!('deletedAt' in data) || data.deletedAt != null) &&
         data.paymentStatus in ['paid', 'unpaid'] &&
@@ -130,7 +132,10 @@ service cloud.firestore {
         data.classType in ['online', 'in_person', 'onsite', 'trial', 'center', 'private'] &&
         (!('sessionType' in data) || data.sessionType in ['online', 'in_person', 'onsite', 'trial', 'center', 'private']) &&
         (!('locationOrLink' in data) || (data.locationOrLink is string && data.locationOrLink.size() <= 500)) &&
-        (!('color' in data) || (data.color is string && data.color.size() <= 50));
+        (!('color' in data) || (data.color is string && data.color.size() <= 50)) &&
+        (!('rating' in data) || (data.rating is number && data.rating >= 1 && data.rating <= 5)) &&
+        (!('notes' in data) || (data.notes is string && data.notes.size() <= 2000)) &&
+        (!('completedTodayDate' in data) || data.completedTodayDate == null || (data.completedTodayDate is string && data.completedTodayDate.size() <= 30));
     }
 
     // Library Item validation
@@ -187,6 +192,11 @@ service cloud.firestore {
       allow get: if isSignedIn() && (isAdmin() || (request.auth.token.email != null && (request.auth.token.email == subId || request.auth.token.email == resource.data.email)));
     }
 
+    // FCM tokens under users/{userId}
+    match /users/{userId}/fcmTokens/{tokenId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+
     // Teachers collection
     match /teachers/{teacherId} {
       allow get: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
@@ -195,6 +205,16 @@ service cloud.firestore {
       allow update: if (isValidId(teacherId) && isTeacherOwner(teacherId) && isValidTeacherProfileUpdate()) ||
                        (isAdmin() && isValidAdminTeacherUpdate());
       allow delete: if isValidId(teacherId) && isAdmin();
+
+      // Subcollection: FCM Tokens
+      match /fcmTokens/{tokenId} {
+        allow read, write: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+      }
+
+      // Subcollection: Sent Reminders Deduplication
+      match /sentReminders/{reminderId} {
+        allow read, write: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+      }
 
       // Subcollection: Students
       match /students/{studentId} {

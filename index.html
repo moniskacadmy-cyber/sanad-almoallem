@@ -25,6 +25,50 @@
 
       // Comply with environment constraint: "HMR: Disabled. Ignore WebSocket errors."
       (function() {
+        if (typeof window !== 'undefined' && window.WebSocket) {
+          const OrigWebSocket = window.WebSocket;
+          function isViteHmr(url, protocols) {
+            if (protocols === 'vite-hmr' || protocols === 'vite-ping') return true;
+            if (Array.isArray(protocols) && (protocols.includes('vite-hmr') || protocols.includes('vite-ping'))) return true;
+            if (typeof url === 'string' && (url.includes('token=') || url.includes('/@vite/client') || url.includes('vite-hmr'))) return true;
+            return false;
+          }
+
+          try {
+            window.WebSocket = new Proxy(OrigWebSocket, {
+              construct(target, args, newTarget) {
+                const [url, protocols] = args;
+                if (isViteHmr(url, protocols)) {
+                  const mockWs = new EventTarget();
+                  mockWs.url = url;
+                  mockWs.protocols = protocols;
+                  mockWs.readyState = 1; // WebSocket.OPEN
+                  mockWs.bufferedAmount = 0;
+                  mockWs.extensions = '';
+                  mockWs.protocol = typeof protocols === 'string' ? protocols : 'vite-hmr';
+                  mockWs.binaryType = 'blob';
+                  mockWs.send = function() {};
+                  mockWs.close = function() {
+                    mockWs.readyState = 3; // WebSocket.CLOSED
+                    const ev = new Event('close');
+                    mockWs.dispatchEvent(ev);
+                    if (typeof mockWs.onclose === 'function') mockWs.onclose(ev);
+                  };
+                  setTimeout(() => {
+                    if (mockWs.readyState === 1) {
+                      const ev = new Event('open');
+                      mockWs.dispatchEvent(ev);
+                      if (typeof mockWs.onopen === 'function') mockWs.onopen(ev);
+                    }
+                  }, 5);
+                  return mockWs;
+                }
+                return Reflect.construct(target, args, newTarget);
+              }
+            });
+          } catch (_) {}
+        }
+
         function shouldSuppress(msg) {
           if (!msg) return false;
           const str = String(msg);
@@ -34,24 +78,34 @@
                  str.includes('SendBeforeConnectError') ||
                  str.includes('preamble') ||
                  str.includes('server connection lost') ||
-                 str.includes('connecting...');
+                 str.includes('connecting...') ||
+                 str.includes('Illegal invocation');
         }
 
         ['log', 'info', 'warn', 'error', 'debug'].forEach(function(method) {
           const orig = console[method];
-          console[method] = function(...args) {
-            try {
-              for (let i = 0; i < args.length; i++) {
-                const arg = args[i];
-                const str = typeof arg === 'object' && arg !== null
-                  ? (arg.message || arg.stack || JSON.stringify(arg))
-                  : String(arg);
-                if (shouldSuppress(str)) return;
-              }
-            } catch (_) {}
-            return orig.apply(console, args);
-          };
+          if (typeof orig === 'function') {
+            console[method] = function(...args) {
+              try {
+                for (let i = 0; i < args.length; i++) {
+                  const arg = args[i];
+                  const str = typeof arg === 'object' && arg !== null
+                    ? (arg.message || arg.stack || JSON.stringify(arg))
+                    : String(arg);
+                  if (shouldSuppress(str)) return;
+                }
+              } catch (_) {}
+              return Function.prototype.apply.call(orig, console, args);
+            };
+          }
         });
+
+        window.onerror = function(msg, url, line, col, error) {
+          const str = String(msg || (error && (error.message || error.stack)) || '');
+          if (shouldSuppress(str)) {
+            return true;
+          }
+        };
 
         window.addEventListener('error', function(e) {
           const msg = (e && (e.message || (e.error && (e.error.message || e.error.stack)))) || '';

@@ -1,6 +1,22 @@
-import React, { useState } from 'react';
-import { TeacherProfile, Student, ScheduleSlot } from '../types';
-import { addLessonLog, toggleScheduleCompletedToday } from '../firebase';
+import React, { useState, useEffect } from 'react';
+import { TeacherProfile, Student, ScheduleSlot, LessonLog } from '../types';
+import { VoiceInputButton } from './VoiceInputButton';
+import {
+  addLessonLog,
+  toggleScheduleCompletedToday,
+  updateStudent,
+  fetchAllStudentLessons,
+} from '../firebase';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  CartesianGrid,
+} from 'recharts';
 import {
   Calendar,
   Users,
@@ -89,7 +105,71 @@ export const HomeTab: React.FC<HomeTabProps> = ({
     return true;
   });
 
-  // Helper to format 24h time to 12h Arabic
+  // Weekly Planned vs Completed Lessons Chart Calculation (recharts)
+  const [weeklyLessonLogs, setWeeklyLessonLogs] = useState<LessonLog[]>([]);
+
+  useEffect(() => {
+    if (!profile?.id || students.length === 0) return;
+    let isMounted = true;
+    fetchAllStudentLessons(profile.id, students)
+      .then((res) => {
+        if (!isMounted) return;
+        const all: LessonLog[] = [];
+        Object.values(res).forEach((list) => all.push(...list));
+        setWeeklyLessonLogs(all);
+      })
+      .catch((err) => console.warn('Could not load lessons for weekly chart:', err));
+    return () => {
+      isMounted = false;
+    };
+  }, [profile?.id, students]);
+
+  // Current week days (Saturday to Friday)
+  const currentWeekDays = [
+    { name: 'السبت', dayOfWeek: 6, offsetFromSat: 0 },
+    { name: 'الأحد', dayOfWeek: 0, offsetFromSat: 1 },
+    { name: 'الإثنين', dayOfWeek: 1, offsetFromSat: 2 },
+    { name: 'الثلاثاء', dayOfWeek: 2, offsetFromSat: 3 },
+    { name: 'الأربعاء', dayOfWeek: 3, offsetFromSat: 4 },
+    { name: 'الخميس', dayOfWeek: 4, offsetFromSat: 5 },
+    { name: 'الجمعة', dayOfWeek: 5, offsetFromSat: 6 },
+  ];
+
+  // Find Saturday of the current week
+  const diffToSaturday = (currentDayOfWeek + 1) % 7;
+  const currentWeekSat = new Date(now);
+  currentWeekSat.setDate(now.getDate() - diffToSaturday);
+  currentWeekSat.setHours(0, 0, 0, 0);
+
+  const weeklyChartData = currentWeekDays.map((d) => {
+    const dayDate = new Date(currentWeekSat);
+    dayDate.setDate(currentWeekSat.getDate() + d.offsetFromSat);
+    const dayDateStr = new Intl.DateTimeFormat('en-CA').format(dayDate);
+
+    // Planned: total slots scheduled for this day of week
+    const planned = schedules.filter((s) => s.dayOfWeek === d.dayOfWeek).length;
+
+    // Completed: lessons logged on this date OR slots marked completed today
+    const lessonsOnThisDay = weeklyLessonLogs.filter((l) => l.date === dayDateStr).length;
+    const slotsCompletedToday =
+      dayDateStr === todayStr
+        ? schedules.filter((s) => s.dayOfWeek === d.dayOfWeek && s.completedTodayDate === todayStr).length
+        : 0;
+
+    const completed = Math.max(lessonsOnThisDay, slotsCompletedToday);
+
+    return {
+      day: d.name,
+      planned,
+      completed,
+      date: dayDateStr,
+    };
+  });
+
+  const totalPlannedWeek = weeklyChartData.reduce((acc, d) => acc + d.planned, 0);
+  const totalCompletedWeek = weeklyChartData.reduce((acc, d) => acc + d.completed, 0);
+  const weeklyCompletionPct =
+    totalPlannedWeek > 0 ? Math.round((totalCompletedWeek / totalPlannedWeek) * 100) : 0;
   const formatTime12h = (timeStr: string) => {
     if (!timeStr || !timeStr.includes(':')) return timeStr;
     const [h, m] = timeStr.split(':').map(Number);
@@ -190,6 +270,13 @@ export const HomeTab: React.FC<HomeTabProps> = ({
 
       if (todaySlot) {
         await toggleScheduleCompletedToday(profile.id, todaySlot.id, true);
+      }
+
+      // If student has prepaid balance, decrement it automatically
+      if (student.remainingPaidLessons !== undefined && student.remainingPaidLessons > 0) {
+        await updateStudent(profile.id, student.id, {
+          remainingPaidLessons: Math.max(0, student.remainingPaidLessons - 1),
+        });
       }
 
       if (sendWhatsApp && student.whatsapp) {
@@ -514,6 +601,74 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         </div>
       </div>
 
+      {/* 6. رسم بياني: إنجاز الحصص الأسبوعي مقارنة بالمخطط لها (recharts) */}
+      <div className="rounded-3xl bg-slate-900/90 border border-purple-500/20 p-4 sm:p-5 shadow-xl space-y-3">
+        <div className="flex items-center justify-between border-b border-purple-900/30 pb-2.5">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center border border-purple-500/30 shadow-inner">
+              <TrendingUp className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-white">إنجاز الحصص هذا الأسبوع</h3>
+              <p className="text-[11px] text-purple-300/70">
+                مقارنة الحصص المنجزة بالمخطط لها أسبوعياً
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-950/70 border border-purple-500/30 text-xs font-bold text-purple-200">
+            <span>{totalCompletedWeek} / {totalPlannedWeek} حصة</span>
+            <span className="text-[10px] text-emerald-400">({weeklyCompletionPct}%)</span>
+          </div>
+        </div>
+
+        {/* Recharts Bar Chart */}
+        <div className="h-56 w-full pt-1" dir="ltr">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={weeklyChartData}
+              margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.35} />
+              <XAxis dataKey="day" stroke="#94a3b8" tick={{ fontSize: 11 }} />
+              <YAxis stroke="#94a3b8" tick={{ fontSize: 11 }} allowDecimals={false} />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: '#0f172a',
+                  borderColor: '#6366f1',
+                  borderRadius: '12px',
+                  fontSize: '11px',
+                  textAlign: 'right',
+                  color: '#fff',
+                }}
+                labelStyle={{ color: '#f8fafc', fontWeight: 'bold' }}
+              />
+              <Legend
+                wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }}
+                formatter={(value) => (
+                  <span style={{ color: '#cbd5e1' }}>
+                    {value === 'planned' ? 'المخطط لها' : 'المنجزة'}
+                  </span>
+                )}
+              />
+              <Bar
+                dataKey="planned"
+                name="المخطط لها"
+                fill="#818cf8"
+                radius={[4, 4, 0, 0]}
+                maxBarSize={28}
+              />
+              <Bar
+                dataKey="completed"
+                name="المنجزة"
+                fill="#10b981"
+                radius={[4, 4, 0, 0]}
+                maxBarSize={28}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
       {/* Start Class Modal */}
       {showStartClassModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -592,9 +747,17 @@ export const HomeTab: React.FC<HomeTabProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  ما تم شرحه *
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-slate-300">
+                    ما تم شرحه *
+                  </label>
+                  <VoiceInputButton
+                    onTranscript={(transcript) =>
+                      setClassTopic((prev) => (prev ? `${prev} ${transcript}` : transcript))
+                    }
+                    compact
+                  />
+                </div>
                 <textarea
                   value={classTopic}
                   onChange={(e) => setClassTopic(e.target.value)}
