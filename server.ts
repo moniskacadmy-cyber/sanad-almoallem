@@ -253,14 +253,15 @@ async function aiRateLimiter(
   const limits = AI_LIMITS[routeName];
   const minute = await incrementRedisCounter(`ai:${routeName}:minute:${userId}`, 60, limits.perMinute);
   const day = await incrementRedisCounter(`ai:${routeName}:day:${userId}`, 86400, limits.daily);
+  const totalDay = await incrementRedisCounter(`ai:total-day:${userId}`, 86400, Number(process.env.AI_DAILY_REQUESTS || 100));
 
-  if (minute.unavailable || day.unavailable) {
+  if (minute.unavailable || day.unavailable || totalDay.unavailable) {
     if (process.env.VERCEL) {
       return res.status(503).json({ error: 'حماية الذكاء الاصطناعي غير متاحة مؤقتاً. حاول بعد قليل.' });
     }
   }
 
-  if (minute.limited || day.limited) {
+  if (minute.limited || day.limited || totalDay.limited) {
     return res.status(429).json({ error: 'تم تجاوز حد استخدام الذكاء الاصطناعي. حاول لاحقاً.' });
   }
 
