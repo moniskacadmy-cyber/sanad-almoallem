@@ -857,6 +857,13 @@ app.get('/api/reminders/cron', async (req, res) => {
 // Automated 15-Minute Class Reminders & WhatsApp/Notifications API Route (Protected)
 app.use('/api/reminders', verifyFirebaseToken, userRateLimiter, createRemindersRouter());
 
+// Centralized error boundary: never expose internal stack traces or provider details.
+app.use((error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (res.headersSent) return next(error);
+  console.error('Unhandled API error:', error instanceof Error ? error.message : 'unknown');
+  return res.status(500).json({ error: 'حدث خطأ داخلي غير متوقع.' });
+});
+
 // Local Server Runner (Vercel Serverless executes app directly via /api/index.ts)
 if (!process.env.VERCEL) {
   async function startServer() {
