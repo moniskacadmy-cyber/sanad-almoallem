@@ -166,7 +166,9 @@ async function generateGeminiContentWithRetry(request: Parameters<typeof ai.mode
       lastError = error;
       const status = Number(error?.status ?? error?.code ?? error?.error?.code);
       const message = String(error?.message ?? '').toLowerCase();
-      const transient = status === 429 || status === 500 || status === 502 || status === 503 || status === 504 || message.includes('unavailable') || message.includes('high demand');
+      // 429 can mean a hard project quota exhaustion (not a transient overload).
+      // Retrying it would only waste quota/time, so only retry 5xx/provider-unavailable errors.
+      const transient = status === 500 || status === 502 || status === 503 || status === 504 || message.includes('unavailable') || message.includes('high demand');
       if (!transient || attempt === maxAttempts) throw error;
       await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** (attempt - 1)));
     }
@@ -468,10 +470,10 @@ ${question}
     return res.json({ answer });
   } catch (error) {
     console.error('Gemini API Error:', error);
-    return res.status(Number((error as any)?.status) === 503 ? 503 : 500).json({
-      error: Number((error as any)?.status) === 503
-        ? 'خدمة الذكاء الاصطناعي مشغولة حالياً. حاول مرة أخرى بعد قليل.'
-        : 'حدث خطأ أثناء معالجة السؤال بواسطة الذكاء الاصطناعي.',
+    const status = Number((error as any)?.status);
+    if (status === 429) return res.status(429).json({ error: 'تم استنفاد حصة Gemini API الحالية للمشروع. يرجى تفعيل الفوترة أو الانتظار حتى تتجدد الحصة.' });
+    return res.status(status === 503 ? 503 : 500).json({
+      error: status === 503 ? 'خدمة الذكاء الاصطناعي مشغولة حالياً. حاول مرة أخرى بعد قليل.' : 'حدث خطأ أثناء معالجة السؤال بواسطة الذكاء الاصطناعي.',
     });
   }
 });
@@ -522,7 +524,9 @@ app.post('/api/ai/transcribe', verifyFirebaseToken, (req, res, next) => aiRateLi
     return res.json({ text });
   } catch (error) {
     console.error('Gemini Audio Transcribe Error:', error);
-    return res.status(Number((error as any)?.status) === 503 ? 503 : 500).json({ error: Number((error as any)?.status) === 503 ? 'خدمة الذكاء الاصطناعي مشغولة حالياً. حاول مرة أخرى بعد قليل.' : 'حدث خطأ أثناء تفريغ المقطع الصوتي.' });
+    const status = Number((error as any)?.status);
+    if (status === 429) return res.status(429).json({ error: 'تم استنفاد حصة Gemini API الحالية للمشروع. يرجى تفعيل الفوترة أو الانتظار حتى تتجدد الحصة.' });
+    return res.status(status === 503 ? 503 : 500).json({ error: status === 503 ? 'خدمة الذكاء الاصطناعي مشغولة حالياً. حاول مرة أخرى بعد قليل.' : 'حدث خطأ أثناء تفريغ المقطع الصوتي.' });
   }
 });
 
@@ -616,7 +620,9 @@ app.post('/api/ai/assistant', verifyFirebaseToken, (req, res, next) => aiRateLim
     return res.json({ answer });
   } catch (error) {
     console.error('Gemini Assistant API Error:', error);
-    return res.status(Number((error as any)?.status) === 503 ? 503 : 500).json({ error: Number((error as any)?.status) === 503 ? 'خدمة الذكاء الاصطناعي مشغولة حالياً. حاول مرة أخرى بعد قليل.' : 'حدث خطأ أثناء معالجة طلبك بواسطة المساعد الذكي.' });
+    const status = Number((error as any)?.status);
+    if (status === 429) return res.status(429).json({ error: 'تم استنفاد حصة Gemini API الحالية للمشروع. يرجى تفعيل الفوترة أو الانتظار حتى تتجدد الحصة.' });
+    return res.status(status === 503 ? 503 : 500).json({ error: status === 503 ? 'خدمة الذكاء الاصطناعي مشغولة حالياً. حاول مرة أخرى بعد قليل.' : 'حدث خطأ أثناء معالجة طلبك بواسطة المساعد الذكي.' });
   }
 });
 
