@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TeacherProfile, Student, ScheduleSlot, LessonLog } from '../types';
 import { VoiceInputButton } from './VoiceInputButton';
+import { useBackHandler } from '../services/backHandler';
 import {
   addLessonLog,
   toggleScheduleCompletedToday,
@@ -77,6 +78,10 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   const [pendingReportStudent, setPendingReportStudent] = useState<Student | null>(null);
   const [editableClassReportText, setEditableClassReportText] = useState('');
   const [copiedClassReport, setCopiedClassReport] = useState(false);
+
+  // Register modals on back handler stack
+  useBackHandler(showStartClassModal, () => setShowStartClassModal(false), 'home_start_class_modal');
+  useBackHandler(showClassReportEditModal, () => setShowClassReportEditModal(false), 'home_class_report_edit_modal');
 
   // Date & Time helpers
   const now = new Date();

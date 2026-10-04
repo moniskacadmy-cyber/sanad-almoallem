@@ -40,7 +40,7 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
     if (SpeechRecognition) {
       try {
         const recognition = new SpeechRecognition();
-        recognition.lang = 'ar-EG';
+        recognition.lang = 'ar-SA';
         recognition.interimResults = false;
         recognition.maxAlternatives = 1;
 

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { TeacherProfile, LibraryItem, LibraryItemType } from '../types';
 import { VoiceInputButton } from './VoiceInputButton';
+import { useBackHandler } from '../services/backHandler';
 import {
   auth,
   addLibraryItem,
@@ -81,6 +82,13 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
   const [isSavingPrepModal, setIsSavingPrepModal] = useState(false);
   const [copiedPrepModal, setCopiedPrepModal] = useState(false);
   const [prepModalSuccessMsg, setPrepModalSuccessMsg] = useState(false);
+
+  // Register modals on back handler stack
+  useBackHandler(showAddSourceModal, () => setShowAddSourceModal(false), 'library_add_source_modal');
+  useBackHandler(!!previewingSource, () => setPreviewingSource(null), 'library_preview_source');
+  useBackHandler(showAddTemplateModal, () => setShowAddTemplateModal(false), 'library_add_template_modal');
+  useBackHandler(!!viewingItem, () => setViewingItem(null), 'library_viewing_item');
+  useBackHandler(showCreateLessonPrepModal, () => setShowCreateLessonPrepModal(false), 'library_create_lesson_prep_modal');
 
   // Filter items into sources vs templates
   const sources = libraryItems.filter(

@@ -3,6 +3,7 @@ import { TeacherProfile, Student, ScheduleSlot, ClassType, RecurrenceType } from
 import { addSchedule, updateSchedule, deleteSchedule, toggleScheduleCompletedToday, saveScheduleEvaluation } from '../firebase';
 import { VoiceInputButton } from './VoiceInputButton';
 import { CalendarView } from './CalendarView';
+import { useBackHandler } from '../services/backHandler';
 import {
   Calendar,
   Clock,
@@ -207,6 +208,11 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
 
   // Quick Evaluation Modal State
   const [showQuickEvalModal, setShowQuickEvalModal] = useState(false);
+
+  // Register modals on back handler stack
+  useBackHandler(showAddModal, () => setShowAddModal(false), 'schedule_add_modal');
+  useBackHandler(showQuickEvalModal, () => setShowQuickEvalModal(false), 'schedule_quick_eval_modal');
+  useBackHandler(!!viewingScheduleDetails, () => setViewingScheduleDetails(null), 'schedule_details_modal');
   const [evalTargetSlot, setEvalTargetSlot] = useState<ScheduleSlot | null>(null);
   const [evalRating, setEvalRating] = useState<number>(5);
   const [evalNotes, setEvalNotes] = useState<string>('');

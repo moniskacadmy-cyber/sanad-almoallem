@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TeacherProfile, Student, LessonLog } from '../types';
 import { fetchAllStudentLessons, settleStudentAccount } from '../firebase';
+import { useBackHandler } from '../services/backHandler';
 import {
   Clock,
   CheckCircle2,
@@ -43,6 +44,10 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
   const [showInvoiceModal, setShowInvoiceModal] = useState<Student | null>(null);
   const [editableInvoiceText, setEditableInvoiceText] = useState('');
   const [copiedInvoice, setCopiedInvoice] = useState(false);
+
+  // Register modals on back handler stack
+  useBackHandler(!!showConfirmSettle, () => setShowConfirmSettle(null), 'financial_confirm_settle');
+  useBackHandler(!!showInvoiceModal, () => setShowInvoiceModal(null), 'financial_invoice_modal');
 
   // Today's date key (e.g. "2026-10-01") and Current Month Key (e.g. "2026-10")
   const now = new Date();

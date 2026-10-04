@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { TeacherProfile, Student, LessonLog, ClassType, PaymentStatus, ScheduleSlot, DEFAULT_WHATSAPP_TEMPLATES, renderTemplate } from '../types';
+import { useBackHandler } from '../services/backHandler';
 import {
   addStudent,
   updateStudent,
@@ -21,6 +22,7 @@ import {
   CLASS_COLORS,
   getColorStyle,
 } from './ScheduleTab';
+import { VoiceInputButton } from './VoiceInputButton';
 import {
   UserPlus,
   Search,
@@ -108,6 +110,14 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const [copiedPrep, setCopiedPrep] = useState(false);
   const [isSavingPrepToLibrary, setIsSavingPrepToLibrary] = useState(false);
   const [prepSavedNotice, setPrepSavedNotice] = useState(false);
+
+  // Register modals on back handler stack
+  useBackHandler(!!selectedProfileStudent, () => setSelectedProfileStudent(null), 'student_profile');
+  useBackHandler(showAddModal, () => setShowAddModal(false), 'student_add_modal');
+  useBackHandler(!!showDeleteConfirm, () => setShowDeleteConfirm(null), 'student_delete_confirm');
+  useBackHandler(showMonthlyReportModal, () => setShowMonthlyReportModal(false), 'student_monthly_report');
+  useBackHandler(showLessonPrepModal, () => setShowLessonPrepModal(false), 'student_lesson_prep');
+  useBackHandler(!!showConfirmSettleStudent, () => setShowConfirmSettleStudent(null), 'student_settle_confirm');
 
   // Collapsible sections state (Closed by default to save space)
   const [isAddStudentLearningStyleOpen, setIsAddStudentLearningStyleOpen] = useState(false);
@@ -1134,15 +1144,28 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
             <form onSubmit={handleSaveStudent} className="space-y-3 overflow-y-auto pr-1">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">اسم الطالب *</label>
-                <input
-                  type="text"
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  placeholder="مثال: يوسف خالد"
-                  required
-                  className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
-                />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-slate-300">اسم الطالب *</label>
+                  <span className="text-[10px] text-purple-300">إدخال بالصوت 🎤</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={formName}
+                    onChange={(e) => setFormName(e.target.value)}
+                    placeholder="مثال: يوسف خالد"
+                    required
+                    className="flex-1 rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
+                  />
+                  <VoiceInputButton
+                    compact
+                    onTranscript={(transcript) => {
+                      // Extract student name and remove prefixes like "الطالب" or "طالبة"
+                      const cleanName = transcript.replace(/^(الطالب|طالب|الطالبة|طالبة)\s+/i, '').trim();
+                      setFormName(cleanName || transcript.trim());
+                    }}
+                  />
+                </div>
               </div>
 
               {/* WHATSAPP IS NOW OPTIONAL AS REQUESTED */}
@@ -2403,22 +2426,34 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                   ))}
                 </div>
 
-                <input
-                  type="text"
-                  value={newLessonTopic}
-                  onChange={(e) => setNewLessonTopic(e.target.value)}
-                  placeholder="ما تم شرحه اليوم بالتفصيل..."
-                  required
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-1.5 text-xs text-white focus:outline-none focus:border-purple-400"
-                />
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={newLessonTopic}
+                    onChange={(e) => setNewLessonTopic(e.target.value)}
+                    placeholder="ما تم شرحه اليوم بالتفصيل..."
+                    required
+                    className="flex-1 rounded-xl bg-slate-900 border border-slate-700 px-3 py-1.5 text-xs text-white focus:outline-none focus:border-purple-400"
+                  />
+                  <VoiceInputButton
+                    compact
+                    onTranscript={(text) => setNewLessonTopic((prev) => (prev ? `${prev} ${text}` : text))}
+                  />
+                </div>
 
-                <input
-                  type="text"
-                  value={newLessonHomework}
-                  onChange={(e) => setNewLessonHomework(e.target.value)}
-                  placeholder="الواجب المطلوب للمرة القادمة..."
-                  className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-1.5 text-xs text-white focus:outline-none focus:border-purple-400"
-                />
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={newLessonHomework}
+                    onChange={(e) => setNewLessonHomework(e.target.value)}
+                    placeholder="الواجب المطلوب للمرة القادمة..."
+                    className="flex-1 rounded-xl bg-slate-900 border border-slate-700 px-3 py-1.5 text-xs text-white focus:outline-none focus:border-purple-400"
+                  />
+                  <VoiceInputButton
+                    compact
+                    onTranscript={(text) => setNewLessonHomework((prev) => (prev ? `${prev} ${text}` : text))}
+                  />
+                </div>
 
                 <button
                   type="submit"

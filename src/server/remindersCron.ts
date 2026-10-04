@@ -116,8 +116,30 @@ export function checkUpcomingSlots(params: {
     minutesWindow = 15,
   } = params;
 
-  const currentDayOfWeek = now.getDay(); // 0 is Sunday, 1 is Monday, etc.
-  const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
+  let currentDayOfWeek = now.getDay(); // 0 is Sunday, 1 is Monday, etc.
+  let currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
+
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Africa/Cairo',
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    });
+    const parts = formatter.formatToParts(now);
+    const getPart = (type: string) => parts.find((p) => p.type === type)?.value || '';
+    const weekdayStr = getPart('weekday');
+    const hour = (parseInt(getPart('hour'), 10) || 0) % 24;
+    const minute = (parseInt(getPart('minute'), 10) || 0) % 60;
+    const weekdayMap: Record<string, number> = {
+      Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+    };
+    if (weekdayStr in weekdayMap) {
+      currentDayOfWeek = weekdayMap[weekdayStr];
+    }
+    currentTotalMinutes = hour * 60 + minute;
+  } catch (_) {}
 
   const matchedReminders: ReminderLogItem[] = [];
 
@@ -134,8 +156,8 @@ export function checkUpcomingSlots(params: {
     const slotTotalMinutes = slotHour * 60 + slotMin;
     const diffMinutes = slotTotalMinutes - currentTotalMinutes;
 
-    // Match if class starts within the target window (e.g. 10 to 20 minutes from now, targeting 15 min)
-    const isIn15MinWindow = diffMinutes >= (minutesWindow - 5) && diffMinutes <= (minutesWindow + 5);
+    // Match if class starts within the target window (minutesBefore - 1 to minutesBefore)
+    const isIn15MinWindow = diffMinutes >= (minutesWindow - 1) && diffMinutes <= minutesWindow;
 
     if (isIn15MinWindow) {
       const student = students.find((s) => s.id === slot.studentId) || {

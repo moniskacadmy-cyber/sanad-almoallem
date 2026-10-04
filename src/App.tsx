@@ -52,6 +52,13 @@ import {
   checkRemindersApi,
   sendEndOfDaySummaryNotification,
 } from './services/reminderService';
+import {
+  pushAppHistoryState,
+  useBackHandler,
+  handleTopmostBack,
+  exitApplication,
+  getIsExitingApp,
+} from './services/backHandler';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -81,10 +88,27 @@ export default function App() {
   const [schedules, setSchedules] = useState<ScheduleSlot[]>([]);
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
 
+  // Automated 15-Minute Class Reminders Alert Banner State
+  const [activeReminderAlert, setActiveReminderAlert] = useState<{
+    studentName: string;
+    classTime: string;
+    whatsappUrl?: string;
+    studentPhone?: string;
+    subject?: string;
+  } | null>(null);
+
+  // Register top-level modals & subviews on back handler stack
+  useBackHandler(showExitConfirmModal, () => setShowExitConfirmModal(false), 'exit_confirm_modal', false);
+  useBackHandler(showUpgradeModal, () => setShowUpgradeModal(false), 'upgrade_modal');
+  useBackHandler(showFinancialDashboard, () => setShowFinancialDashboard(false), 'financial_dashboard');
+  useBackHandler(showAdminView, () => setShowAdminView(false), 'admin_view');
+  useBackHandler(!!activeReminderAlert, () => setActiveReminderAlert(null), 'active_reminder_alert', false);
+
   // Push initial history state on mount & Request browser notification permission
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      window.history.replaceState({ tab: 0 }, '', window.location.pathname);
+      window.history.replaceState({ app: 'sanad-almoallem', tab: 0 }, '', window.location.pathname);
+      pushAppHistoryState({ tab: 0 });
 
       // Ask for native notification permission immediately upon app startup
       if ('Notification' in window && Notification.permission === 'default') {
@@ -104,48 +128,48 @@ export default function App() {
   // Synchronize browser history / popstate & Smart Back Button handling
   useEffect(() => {
     const handlePopState = () => {
+      if (getIsExitingApp()) return;
       setCurrentPath(window.location.pathname);
 
-      // 1. If Exit Confirmation Modal is currently open, dismiss it
-      if (showExitConfirmModal) {
-        setShowExitConfirmModal(false);
-        window.history.pushState({ tab: activeTab }, '', window.location.pathname);
+      // 1. If any modal or popup registered on the back stack is open, close it first
+      if (handleTopmostBack()) {
+        pushAppHistoryState({ tab: activeTab });
         return;
       }
 
       // 2. If Financial Dashboard is open, return to Main Dashboard
       if (showFinancialDashboard) {
         setShowFinancialDashboard(false);
-        window.history.pushState({ tab: activeTab }, '', window.location.pathname);
+        pushAppHistoryState({ tab: 0 });
         return;
       }
 
       // 3. If Admin view is open, return to Main Dashboard
       if (showAdminView) {
         setShowAdminView(false);
-        window.history.pushState({ tab: 0 }, '', '/');
+        pushAppHistoryState({ tab: 0 });
         return;
       }
 
       // 4. If Upgrade modal is open, close it
       if (showUpgradeModal) {
         setShowUpgradeModal(false);
-        window.history.pushState({ tab: activeTab }, '', window.location.pathname);
+        pushAppHistoryState({ tab: activeTab });
         return;
       }
 
-      // 5. If user is in any sub-tab (Students, Schedule, Library, Settings),
+      // 5. If user is in any sub-tab other than 'الرئيسية' (Tab 0) (Students, Schedule, Library, Settings),
       // redirect them back to the Main Dashboard (Tab 0) instead of exiting
       if (activeTab !== 0) {
         setActiveTab(0);
-        window.history.pushState({ tab: 0 }, '', '/');
+        pushAppHistoryState({ tab: 0 });
         return;
       }
 
       // 6. If user is ALREADY at the Main Dashboard (Tab 0) and pressed Back:
-      // Show confirmation dialog: "هل أنت متأكد من رغبتك في الخروج من التطبيق؟"
+      // Show confirmation dialog: "هل تريد الخروج من التطبيق؟"
       setShowExitConfirmModal(true);
-      window.history.pushState({ tab: 0 }, '', '/');
+      pushAppHistoryState({ modal: 'exit_confirm' });
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -153,17 +177,14 @@ export default function App() {
   }, [activeTab, showAdminView, showUpgradeModal, showExitConfirmModal, showFinancialDashboard]);
 
   const handleSelectTab = (idx: number) => {
+    if (idx === activeTab) return;
     setActiveTab(idx);
-    window.history.pushState({ tab: idx }, '', window.location.pathname);
+    pushAppHistoryState({ tab: idx });
   };
 
   const handleConfirmExit = () => {
     setShowExitConfirmModal(false);
-    try {
-      window.history.go(-2);
-    } catch {
-      window.close();
-    }
+    exitApplication();
   };
 
   const handleCancelExit = () => {
@@ -172,7 +193,7 @@ export default function App() {
 
   const navigateTo = (path: string) => {
     if (window.location.pathname !== path) {
-      window.history.pushState({}, '', path);
+      pushAppHistoryState({ path });
     }
     setCurrentPath(path);
   };
@@ -240,14 +261,6 @@ export default function App() {
   }, [currentUser, profile?.id, students]);
 
   // Automated 15-Minute Class Reminders Periodic Check
-  const [activeReminderAlert, setActiveReminderAlert] = useState<{
-    studentName: string;
-    classTime: string;
-    whatsappUrl?: string;
-    studentPhone?: string;
-    subject?: string;
-  } | null>(null);
-
   useEffect(() => {
     if (!profile || !schedules || schedules.length === 0) return;
     const settings = getStoredReminderSettings();
@@ -667,16 +680,19 @@ export default function App() {
 
         {/* Exit Application Confirmation Modal */}
         {showExitConfirmModal && (
-          <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 text-right">
-            <div className="w-full max-w-sm bg-gradient-to-b from-slate-900 to-slate-950 border border-purple-500/40 rounded-3xl p-6 shadow-2xl relative space-y-4">
+          <div
+            className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 text-right"
+            dir="rtl"
+          >
+            <div className="w-full max-w-sm bg-gradient-to-b from-slate-900 to-slate-950 border border-purple-500/40 rounded-3xl p-6 shadow-2xl relative space-y-4 animate-in fade-in zoom-in-95 duration-200">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30 flex-shrink-0">
                   <AlertCircle className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-white">تأكيد الخروج من التطبيق</h3>
+                  <h3 className="text-sm font-bold text-white">هل تريد الخروج من التطبيق؟</h3>
                   <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                    هل أنت متأكد من رغبتك في الخروج من التطبيق؟
+                    هل أنت متأكد أنك تريد الخروج؟
                   </p>
                 </div>
               </div>
@@ -684,17 +700,18 @@ export default function App() {
               <div className="flex items-center gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={handleConfirmExit}
-                  className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition cursor-pointer shadow-lg shadow-rose-950/50 active:scale-98"
+                  autoFocus
+                  onClick={handleCancelExit}
+                  className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition cursor-pointer shadow-lg shadow-purple-950/50 active:scale-98"
                 >
-                  تأكيد
+                  البقاء في التطبيق
                 </button>
                 <button
                   type="button"
-                  onClick={handleCancelExit}
-                  className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition cursor-pointer active:scale-98"
+                  onClick={handleConfirmExit}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-rose-950/80 hover:text-rose-200 text-slate-300 font-bold text-xs border border-slate-700 hover:border-rose-500/50 transition cursor-pointer active:scale-98"
                 >
-                  إلغاء
+                  نعم، خروج
                 </button>
               </div>
             </div>

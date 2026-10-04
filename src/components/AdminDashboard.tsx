@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { TeacherProfile, SubscriptionPlan } from '../types';
+import { useBackHandler } from '../services/backHandler';
 import {
   adminGetAllTeachers,
   adminSaveSubscription,
@@ -54,6 +55,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToApp }) =
   // Inline Custom Expiry Modal / State
   const [customExpiryTeacher, setCustomExpiryTeacher] = useState<TeacherProfile | null>(null);
   const [modalCustomDate, setModalCustomDate] = useState('');
+
+  // Register modals on back handler stack
+  useBackHandler(showAddForm, () => setShowAddForm(false), 'admin_add_form');
+  useBackHandler(!!customExpiryTeacher, () => setCustomExpiryTeacher(null), 'admin_custom_expiry_modal');
 
   const fetchTeachers = async () => {
     setLoading(true);

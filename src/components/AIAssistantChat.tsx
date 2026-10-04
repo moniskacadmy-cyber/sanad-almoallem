@@ -3,6 +3,7 @@ import { Bot, X, Send, Sparkles, AlertCircle, User, RefreshCw, Lock } from 'luci
 import { TeacherProfile, Student, ScheduleSlot } from '../types';
 import { auth, fetchAllStudentLessons } from '../firebase';
 import { VoiceInputButton } from './VoiceInputButton';
+import { useBackHandler } from '../services/backHandler';
 
 interface Message {
   id: string;
@@ -25,6 +26,9 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
   onOpenUpgradeModal,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+
+  // Close AI Assistant on Back button press
+  useBackHandler(isOpen, () => setIsOpen(false), 'ai_assistant_chat');
   const [inputMessage, setInputMessage] = useState('');
   const [messages, setMessages] = useState<Message[]>([
     {

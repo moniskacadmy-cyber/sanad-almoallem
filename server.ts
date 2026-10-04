@@ -217,12 +217,60 @@ ${question}
   }
 });
 
+// Helper to verify teacher active subscription via Admin Firestore
+async function checkTeacherSubscription(uid: string): Promise<boolean> {
+  if (!uid) return false;
+  try {
+    const dbAdmin = getAdminDb();
+    const teacherDoc = await dbAdmin.collection('teachers').doc(uid).get();
+    if (!teacherDoc.exists) return false;
+    const data = teacherDoc.data();
+    if (!data) return false;
+
+    // Check actual expiration date if provided
+    if (data.subscriptionExpiresAt) {
+      const expTime = new Date(data.subscriptionExpiresAt).getTime();
+      if (!isNaN(expTime)) {
+        return expTime > Date.now();
+      }
+    }
+
+    // Fallback to subscription status if no explicit expiration date is set
+    if (data.subscriptionStatus === 'active' || data.subscriptionStatus === 'trial') {
+      return true;
+    }
+
+    return false;
+  } catch (err) {
+    console.error('Error verifying teacher subscription:', err);
+    return false;
+  }
+}
+
 // AI Audio Transcription Endpoint
 app.post('/api/ai/transcribe', verifyFirebaseToken, userRateLimiter, async (req, res) => {
   try {
+    const uid = (req as any).user?.uid;
+    if (!uid) {
+      return res.status(401).json({ error: 'غير مصرح به: يلزم تسجيل الدخول.' });
+    }
+
+    const isSubActive = await checkTeacherSubscription(uid);
+    if (!isSubActive) {
+      return res.status(403).json({
+        error: 'اشتراكك غير ساري أو انتهت صلاحيته. يرجى الترقية لتفعيل ميزة الإدخال الصوتي.',
+      });
+    }
+
     const { audioBase64, mimeType } = req.body;
     if (!audioBase64 || typeof audioBase64 !== 'string') {
       return res.status(400).json({ error: 'البيانات الصوتية مطلوبة.' });
+    }
+
+    // Limit maximum audio payload size strictly to 2MB (2 * 1024 * 1024 bytes)
+    const approxByteSize = Math.floor((audioBase64.length * 3) / 4);
+    if (approxByteSize > 2 * 1024 * 1024) {
+      return res.status(400).json({ error: 'حجم المقطع الصوتي كبير جداً. الحد الأقصى المسموح به 2 ميجابايت.' });
     }
 
     if (!process.env.GEMINI_API_KEY) {
@@ -260,6 +308,18 @@ app.post('/api/ai/transcribe', verifyFirebaseToken, userRateLimiter, async (req,
 // AI Assistant Chat Endpoint
 app.post('/api/ai/assistant', verifyFirebaseToken, userRateLimiter, async (req, res) => {
   try {
+    const uid = (req as any).user?.uid;
+    if (!uid) {
+      return res.status(401).json({ error: 'غير مصرح به: يلزم تسجيل الدخول.' });
+    }
+
+    const isSubActive = await checkTeacherSubscription(uid);
+    if (!isSubActive) {
+      return res.status(403).json({
+        error: 'اشتراكك غير ساري أو انتهت صلاحيته. يرجى الترقية لتفعيل المساعد الذكي.',
+      });
+    }
+
     const { message, messagesHistory, summary } = req.body;
     if (!message || typeof message !== 'string') {
       return res.status(400).json({ error: 'الرسالة مطلوبة.' });
@@ -288,14 +348,23 @@ app.post('/api/ai/assistant', verifyFirebaseToken, userRateLimiter, async (req, 
 ===============================`;
     }
 
-    // Include recent 10 messages history if available
+    // Include recent 10 messages history if available, truncating each text to 2000 chars
     let historyText = '';
     if (Array.isArray(messagesHistory) && messagesHistory.length > 0) {
       const recent = messagesHistory.slice(-10);
-      historyText = 'سجل المحادثة السابقة:\n' + recent.map((m: any) => `${m.role === 'user' ? 'المعلم' : 'المساعد'}: ${m.text}`).join('\n') + '\n===============================\n';
+      historyText =
+        'سجل المحادثة السابقة:\n' +
+        recent
+          .map((m: any) => {
+            const roleStr = m.role === 'user' ? 'المعلم' : 'المساعد';
+            const textStr = typeof m.text === 'string' ? m.text.slice(0, 2000) : '';
+            return `${roleStr}: ${textStr}`;
+          })
+          .join('\n') +
+        '\n===============================\n';
     }
 
-    const fullPrompt = `${formattedContext}\n${historyText}سؤال المعلم الحالي:\n${message.trim()}`;
+    const fullPrompt = `${formattedContext}\n${historyText}سؤال المعلم الحالي:\n${message.slice(0, 2000).trim()}`;
 
     const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
     const response = await ai.models.generateContent({
@@ -325,6 +394,69 @@ function getAdminDb() {
   return dbId ? getAdminFirestore(appAdmin, dbId) : getAdminFirestore(appAdmin);
 }
 
+// Helper to calculate timezone-aware date & time parts using Intl.DateTimeFormat
+function getTimezoneNowParts(tz = 'Africa/Cairo') {
+  const now = new Date();
+  const timeZone = tz || 'Africa/Cairo';
+
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    });
+
+    const parts = formatter.formatToParts(now);
+    const getPart = (type: string) => parts.find((p) => p.type === type)?.value || '';
+
+    const year = getPart('year');
+    const month = getPart('month');
+    const day = getPart('day');
+    const weekdayStr = getPart('weekday');
+    const hour = (parseInt(getPart('hour'), 10) || 0) % 24;
+    const minute = (parseInt(getPart('minute'), 10) || 0) % 60;
+
+    const weekdayMap: Record<string, number> = {
+      Sun: 0,
+      Mon: 1,
+      Tue: 2,
+      Wed: 3,
+      Thu: 4,
+      Fri: 5,
+      Sat: 6,
+    };
+
+    const currentDayOfWeek = weekdayMap[weekdayStr] ?? now.getDay();
+    const todayStr = `${year}-${month}-${day}`;
+    const currentTotalMinutes = hour * 60 + minute;
+
+    return {
+      todayStr,
+      currentDayOfWeek,
+      hour,
+      minute,
+      currentTotalMinutes,
+    };
+  } catch (err) {
+    console.warn(`Fallback for invalid timezone "${tz}":`, err);
+    const todayStr = new Intl.DateTimeFormat('en-CA').format(now);
+    const currentDayOfWeek = now.getDay();
+    const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
+    return {
+      todayStr,
+      currentDayOfWeek,
+      hour: now.getHours(),
+      minute: now.getMinutes(),
+      currentTotalMinutes,
+    };
+  }
+}
+
 // Cron Job Web Push Notification Endpoint (Protected by CRON_SECRET)
 app.get('/api/reminders/cron', async (req, res) => {
   try {
@@ -343,66 +475,74 @@ app.get('/api/reminders/cron', async (req, res) => {
     const dbAdmin = getAdminDb();
     const messagingAdmin = getAdminMessaging(getApps()[0]);
 
-    const teachersSnapshot = await dbAdmin.collection('teachers').get();
+    // Optimize reads: Query fcmTokens collectionGroup to find only teachers who have active tokens
+    const fcmGroupSnap = await dbAdmin.collectionGroup('fcmTokens').get();
+
+    // Map: teacherId -> { tokens: string[], tokenDocPaths: Map<string, string> }
+    const teacherTokensMap = new Map<string, { tokens: string[]; tokenDocPaths: Map<string, string> }>();
+
+    fcmGroupSnap.forEach((docSnap) => {
+      const parentTeacherDoc = docSnap.ref.parent.parent;
+      if (!parentTeacherDoc) return;
+      const teacherId = parentTeacherDoc.id;
+      const tokenData = docSnap.data();
+      const tokenVal = tokenData?.token || docSnap.id;
+      if (!tokenVal) return;
+
+      if (!teacherTokensMap.has(teacherId)) {
+        teacherTokensMap.set(teacherId, { tokens: [], tokenDocPaths: new Map() });
+      }
+      const entry = teacherTokensMap.get(teacherId)!;
+      if (!entry.tokens.includes(tokenVal)) {
+        entry.tokens.push(tokenVal);
+      }
+      entry.tokenDocPaths.set(tokenVal, docSnap.ref.path);
+    });
+
     let teachersChecked = 0;
     let notificationsSent = 0;
 
-    const now = new Date();
-    const todayStr = new Intl.DateTimeFormat('en-CA').format(now);
-    const currentDayOfWeek = now.getDay();
-    const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
-
-    for (const teacherDoc of teachersSnapshot.docs) {
+    for (const [teacherId, entry] of teacherTokensMap.entries()) {
+      const teacherDoc = await dbAdmin.collection('teachers').doc(teacherId).get();
+      if (!teacherDoc.exists) continue;
       const teacherData = teacherDoc.data();
       if (!teacherData) continue;
 
-      const expiresAt = teacherData.subscriptionExpiresAt
-        ? new Date(teacherData.subscriptionExpiresAt).getTime()
-        : 0;
-      const isSubActive =
-        teacherData.subscriptionStatus === 'active' ||
-        teacherData.subscriptionStatus === 'trial' ||
-        expiresAt > Date.now();
+      // Ignore teacher if subscription is actually expired (compare subscriptionExpiresAt against current time)
+      let isExpired = false;
+      if (teacherData.subscriptionExpiresAt) {
+        const expTime = new Date(teacherData.subscriptionExpiresAt).getTime();
+        if (isNaN(expTime) || expTime <= Date.now()) {
+          isExpired = true;
+        }
+      } else if (teacherData.subscriptionStatus === 'expired') {
+        isExpired = true;
+      }
 
-      if (!isSubActive) continue;
+      if (isExpired) continue;
 
       teachersChecked++;
 
+      // Use teacher timezone (defaulting to Africa/Cairo)
+      const tz = teacherData.timezone || 'Africa/Cairo';
+      const { todayStr, currentDayOfWeek, currentTotalMinutes } = getTimezoneNowParts(tz);
+
       const minutesBefore = Number(teacherData.reminderMinutesBefore) || 15;
+      const fcmTokens = entry.tokens;
 
-      const tokenDocsMap = new Map<string, string>();
-
-      const [userTokensSnap, teacherTokensSnap] = await Promise.all([
-        dbAdmin.collection('users').doc(teacherDoc.id).collection('fcmTokens').get().catch(() => null),
-        dbAdmin.collection('teachers').doc(teacherDoc.id).collection('fcmTokens').get().catch(() => null),
-      ]);
-
-      if (userTokensSnap) {
-        userTokensSnap.forEach((docSnap) => {
-          const t = docSnap.data()?.token || docSnap.id;
-          if (t) tokenDocsMap.set(t, `users/${teacherDoc.id}/fcmTokens/${docSnap.id}`);
-        });
-      }
-
-      if (teacherTokensSnap) {
-        teacherTokensSnap.forEach((docSnap) => {
-          const t = docSnap.data()?.token || docSnap.id;
-          if (t) tokenDocsMap.set(t, `teachers/${teacherDoc.id}/fcmTokens/${docSnap.id}`);
-        });
-      }
-
-      const fcmTokens = Array.from(tokenDocsMap.keys());
       if (fcmTokens.length === 0) continue;
 
+      // Optimize reads: Query ONLY today's schedule slots (where dayOfWeek == currentDayOfWeek)
       const schedulesSnap = await dbAdmin
         .collection('teachers')
-        .doc(teacherDoc.id)
+        .doc(teacherId)
         .collection('schedules')
+        .where('dayOfWeek', '==', currentDayOfWeek)
         .get();
 
       for (const schedDoc of schedulesSnap.docs) {
         const slot = schedDoc.data();
-        if (!slot || slot.dayOfWeek !== currentDayOfWeek || !slot.time || !slot.time.includes(':')) {
+        if (!slot || !slot.time || !slot.time.includes(':')) {
           continue;
         }
 
@@ -410,13 +550,14 @@ app.get('/api/reminders/cron', async (req, res) => {
         const slotTotalMinutes = slotHour * 60 + slotMin;
         const diffMinutes = slotTotalMinutes - currentTotalMinutes;
 
-        const isInWindow = diffMinutes >= minutesBefore - 5 && diffMinutes <= minutesBefore + 5;
+        // Condition: diffMinutes is between minutesBefore - 1 and minutesBefore (inclusive)
+        const isInWindow = diffMinutes >= minutesBefore - 1 && diffMinutes <= minutesBefore;
         if (!isInWindow) continue;
 
-        const reminderId = `sent_${teacherDoc.id}_${schedDoc.id}_${todayStr}_${slot.time.replace(':', '')}`;
+        const reminderId = `sent_${teacherId}_${schedDoc.id}_${todayStr}_${slot.time.replace(':', '')}`;
         const sentRef = dbAdmin
           .collection('teachers')
-          .doc(teacherDoc.id)
+          .doc(teacherId)
           .collection('sentReminders')
           .doc(reminderId);
 
@@ -456,13 +597,14 @@ app.get('/api/reminders/cron', async (req, res) => {
 
           await sentRef.set({
             scheduleId: schedDoc.id,
-            teacherId: teacherDoc.id,
+            teacherId,
             day: todayStr,
             sentAt: new Date().toISOString(),
           });
 
           notificationsSent += sendResponse.successCount;
 
+          // Delete bad tokens: Find and delete the exact matching token document
           sendResponse.responses.forEach((resp, idx) => {
             if (!resp.success && resp.error) {
               const errCode = resp.error.code;
@@ -472,14 +614,48 @@ app.get('/api/reminders/cron', async (req, res) => {
               ) {
                 const badToken = fcmTokens[idx];
                 if (badToken) {
-                  dbAdmin.collection('users').doc(teacherDoc.id).collection('fcmTokens').doc(badToken).delete().catch(() => {});
-                  dbAdmin.collection('teachers').doc(teacherDoc.id).collection('fcmTokens').doc(badToken).delete().catch(() => {});
+                  const docPath = entry.tokenDocPaths.get(badToken);
+                  if (docPath) {
+                    dbAdmin.doc(docPath).delete().catch(() => {});
+                  }
+                  // Delete documents matching token field or document ID in both users and teachers collections
+                  dbAdmin
+                    .collection('users')
+                    .doc(teacherId)
+                    .collection('fcmTokens')
+                    .where('token', '==', badToken)
+                    .get()
+                    .then((snap) => snap.forEach((d) => d.ref.delete().catch(() => {})))
+                    .catch(() => {});
+                  dbAdmin
+                    .collection('users')
+                    .doc(teacherId)
+                    .collection('fcmTokens')
+                    .doc(badToken)
+                    .delete()
+                    .catch(() => {});
+
+                  dbAdmin
+                    .collection('teachers')
+                    .doc(teacherId)
+                    .collection('fcmTokens')
+                    .where('token', '==', badToken)
+                    .get()
+                    .then((snap) => snap.forEach((d) => d.ref.delete().catch(() => {})))
+                    .catch(() => {});
+                  dbAdmin
+                    .collection('teachers')
+                    .doc(teacherId)
+                    .collection('fcmTokens')
+                    .doc(badToken)
+                    .delete()
+                    .catch(() => {});
                 }
               }
             }
           });
         } catch (fcmErr) {
-          console.error(`FCM send error for teacher ${teacherDoc.id}:`, fcmErr);
+          console.error(`FCM send error for teacher ${teacherId}:`, fcmErr);
         }
       }
     }

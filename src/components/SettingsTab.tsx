@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { TeacherProfile, Student, ScheduleSlot, LibraryItem, BackupData, ReminderLog, ReminderSettings, DEFAULT_WHATSAPP_TEMPLATES } from '../types';
 import { updateTeacherProfile, auth, fetchAllStudentLessons, importFullTeacherBackup, requestAndSaveFCMToken } from '../firebase';
+import { useBackHandler } from '../services/backHandler';
 import { signOut } from 'firebase/auth';
 import { PWAInstallButton } from '../PWAInstallButton';
 import confetti from 'canvas-confetti';
@@ -139,6 +140,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [testSuccessData, setTestSuccessData] = useState<any | null>(null);
   const [eodNotice, setEodNotice] = useState<string | null>(null);
+
+  // Register modals on back handler stack
+  useBackHandler(showEditProfile, () => setShowEditProfile(false), 'settings_edit_profile_modal');
+  useBackHandler(activeSubScreen === 'whatsapp_templates', () => setActiveSubScreen('main'), 'settings_whatsapp_templates_subscreen');
+  useBackHandler(showImportModal, () => setShowImportModal(false), 'settings_import_modal');
+  useBackHandler(showLogsModal, () => setShowLogsModal(false), 'settings_logs_modal');
+  useBackHandler(showTestModal, () => setShowTestModal(false), 'settings_test_modal');
 
   const handleTestEndOfDaySummary = () => {
     const res = sendEndOfDaySummaryNotification({
