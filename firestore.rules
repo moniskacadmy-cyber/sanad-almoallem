@@ -34,6 +34,7 @@ service cloud.firestore {
     // Enforce active subscription or admin status for write operations
     function isTeacherSubscriptionActive(teacherId) {
       return isAdmin() || (
+        get(/databases/$(database)/documents/teachers/$(teacherId)).data.isActive != false &&
         get(/databases/$(database)/documents/teachers/$(teacherId)).data.subscriptionExpiresAt > request.time
       );
     }
@@ -41,7 +42,17 @@ service cloud.firestore {
     // Validation for new teacher profile registration
     function isValidNewTeacher(teacherId) {
       let data = incoming();
+      let hasPreprovisionedSubscription =
+        request.auth.token.email != null &&
+        exists(/databases/$(database)/documents/subscriptions/$(request.auth.token.email));
+
       return isValidId(teacherId) &&
+        data.keys().hasOnly([
+          'id', 'name', 'email', 'whatsapp', 'subject', 'role',
+          'subscriptionStatus', 'plan', 'isActive', 'subscriptionEndDate',
+          'trialStartDate', 'trialEndDate', 'subscriptionExpiresAt',
+          'createdAt', 'updatedAt'
+        ]) &&
         data.id == teacherId &&
         data.email == request.auth.token.email &&
         data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
@@ -49,16 +60,30 @@ service cloud.firestore {
         data.subject is string && data.subject.size() >= 2 && data.subject.size() <= 100 &&
         data.role in ['teacher', 'admin'] &&
         (data.role == 'teacher' || isAdmin()) &&
-        data.subscriptionStatus in ['trial', 'active', 'expired'] &&
-        data.subscriptionStatus == 'trial' &&
-        data.plan in ['none', 'monthly', 'three_months', 'six_months', 'yearly', 'custom'] &&
         data.createdAt == request.time &&
         data.updatedAt == request.time &&
         data.trialStartDate == request.time &&
-        data.trialEndDate >= request.time + duration.value(6, 'd') &&
-        data.trialEndDate <= request.time + duration.value(8, 'd') &&
-        data.subscriptionExpiresAt >= request.time + duration.value(6, 'd') &&
-        data.subscriptionExpiresAt <= request.time + duration.value(8, 'd');
+        (
+          (
+            data.subscriptionStatus == 'trial' &&
+            data.plan == 'none' &&
+            data.isActive == true &&
+            data.trialEndDate >= request.time + duration.value(6, 'd') &&
+            data.trialEndDate <= request.time + duration.value(8, 'd') &&
+            data.subscriptionExpiresAt == data.trialEndDate &&
+            data.subscriptionEndDate == data.trialEndDate
+          ) ||
+          (
+            hasPreprovisionedSubscription &&
+            data.subscriptionStatus == 'active' &&
+            data.isActive == true &&
+            data.subscriptionEndDate == get(/databases/$(database)/documents/subscriptions/$(request.auth.token.email)).data.subscriptionEndDate &&
+            data.subscriptionExpiresAt == data.subscriptionEndDate &&
+            data.trialEndDate >= request.time + duration.value(6, 'd') &&
+            data.trialEndDate <= request.time + duration.value(8, 'd') &&
+            data.plan == get(/databases/$(database)/documents/subscriptions/$(request.auth.token.email)).data.plan
+          )
+        );
     }
 
     // Teacher self update (can only update profile fields, not subscription or role)
