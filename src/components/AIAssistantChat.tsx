@@ -124,12 +124,10 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
     if (e) e.preventDefault();
     const trimmed = inputMessage.trim();
     if (!trimmed || isLoading) return;
-
     if (trimmed.length > 2000) {
       alert('الرسالة طويلة جداً. الحد الأقصى 2000 حرف لكل رسالة.');
       return;
     }
-
     if (!isSubscriptionActive) {
       alert('المساعد الذكي متاح فقط للأعضاء أصحاب الاشتراكات النشطة.');
       onOpenUpgradeModal();
@@ -142,21 +140,17 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
       text: trimmed,
       timestamp: new Date(),
     };
-
     setMessages((prev) => [...prev, userMsg]);
     setInputMessage('');
     setIsLoading(true);
 
     try {
-      // Recent 10 messages history formatted
-      const recentHistory = messages.slice(-10).map((m) => ({
+      const recentHistory = messages.slice(-6).map((m) => ({
         role: m.role === 'user' ? 'user' : 'model',
-        text: m.text,
+        text: m.text.slice(0, 1000),
       }));
-
       const currentUser = auth.currentUser;
       const token = currentUser ? await currentUser.getIdToken() : '';
-
       const summary = buildClientSummary();
 
       const response = await fetch('/api/ai/assistant', {
@@ -176,16 +170,57 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
         const errData = await response.json().catch(() => ({}));
         throw new Error(errData.error || 'فشل الاتصال بالمساعد الذكي.');
       }
+      if (!response.body) throw new Error('لم يتم استلام بث من المساعد الذكي.');
 
-      const data = await response.json();
-      const assistantMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        text: data.answer || 'لم أتمكن من الحصول على إجابة، يرجى المحاولة مرة أخرى.',
-        timestamp: new Date(),
-      };
+      const assistantId = (Date.now() + 1).toString();
+      setMessages((prev) => [
+        ...prev,
+        { id: assistantId, role: 'assistant', text: '', timestamp: new Date() },
+      ]);
 
-      setMessages((prev) => [...prev, assistantMsg]);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const events = buffer.split('\n\n');
+        buffer = events.pop() || '';
+
+        for (const event of events) {
+          const line = event.split('\n').find((item) => item.startsWith('data: '));
+          if (!line) continue;
+          const payload = line.slice(6);
+          if (payload === '[DONE]') continue;
+
+          const chunk = JSON.parse(payload);
+          if (chunk.error) throw new Error(chunk.error);
+          if (chunk.text) {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === assistantId ? { ...m, text: m.text + chunk.text } : m))
+            );
+          }
+        }
+      }
+
+      if (buffer.trim()) {
+        const line = buffer.split('\n').find((item) => item.startsWith('data: '));
+        if (line) {
+          const payload = line.slice(6);
+          if (payload !== '[DONE]') {
+            const chunk = JSON.parse(payload);
+            if (chunk.error) throw new Error(chunk.error);
+            if (chunk.text) {
+              setMessages((prev) =>
+                prev.map((m) => (m.id === assistantId ? { ...m, text: m.text + chunk.text } : m))
+              );
+            }
+          }
+        }
+      }
     } catch (err: any) {
       console.error('AI Assistant Error:', err);
       const errorMsg: Message = {
