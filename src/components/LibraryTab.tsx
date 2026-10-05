@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import * as pdfjsLib from 'pdfjs-dist';
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).toString();
 import { TeacherProfile, LibraryItem, LibraryItemType } from '../types';
 import { VoiceInputButton } from './VoiceInputButton';
 import { useBackHandler } from '../services/backHandler';
@@ -61,6 +63,7 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
   const [sourceFileName, setSourceFileName] = useState('');
   const [sourceFileSize, setSourceFileSize] = useState('');
   const [sourceFileData, setSourceFileData] = useState<string | undefined>(undefined);
+  const [sourceUploadNotice, setSourceUploadNotice] = useState<string | null>(null);
   const [isSavingSource, setIsSavingSource] = useState(false);
 
   // Preview Modal
@@ -169,38 +172,93 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
     window.open(`https://wa.me/?text=${text}`, '_blank');
   };
 
-  // Handle File Upload for Sources (PDF or Images)
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle File Upload for Sources (extract PDF text and compress images before Firestore).
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setSourceUploadNotice(null);
     const sizeInKB = Math.round(file.size / 1024);
     const sizeStr = sizeInKB > 1024 ? `${(sizeInKB / 1024).toFixed(1)} MB` : `${sizeInKB} KB`;
-
     setSourceFileName(file.name);
     setSourceFileSize(sizeStr);
+    if (!sourceTitle) setSourceTitle(file.name.replace(/\.[^/.]+$/, ''));
 
-    if (!sourceTitle) {
-      setSourceTitle(file.name.replace(/\.[^/.]+$/, ''));
-    }
-
-    if (file.type.includes('pdf')) {
-      setSourceType('pdf');
-      // For PDFs, store file name and note in content
-      if (!sourceContent) {
-        setSourceContent(`ملف كتاب / منهج بصيغة PDF: ${file.name} (${sizeStr})`);
-      }
-    } else if (file.type.startsWith('image/')) {
-      setSourceType('image');
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const base64 = event.target?.result as string;
-        setSourceFileData(base64);
-        if (!sourceContent) {
-          setSourceContent(`صورة لدرس / صفحة من المنهج: ${file.name}`);
+    try {
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        setSourceType('pdf');
+        const data = new Uint8Array(await file.arrayBuffer());
+        const pdf = await pdfjsLib.getDocument({ data }).promise;
+        const chunks: string[] = [];
+        let total = 0;
+        for (let pageNo = 1; pageNo <= pdf.numPages && total < 30000; pageNo += 1) {
+          const page = await pdf.getPage(pageNo);
+          const textContent = await page.getTextContent();
+          const pageText = textContent.items
+            .map((item: any) => ('str' in item ? String(item.str) : ''))
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          if (pageText) {
+            const remaining = 30000 - total;
+            const clipped = pageText.slice(0, remaining);
+            chunks.push(clipped);
+            total += clipped.length;
+          }
         }
-      };
-      reader.readAsDataURL(file);
+        const extracted = chunks.join('\n\n').trim();
+        if (extracted) {
+          setSourceContent(extracted);
+          setSourceUploadNotice(total >= 30000
+            ? 'تم استخراج نص الـPDF وحفظ أول 30,000 حرف فقط.'
+            : `تم استخراج النص من ${pdf.numPages} صفحة بنجاح.`);
+        } else {
+          setSourceContent(`ملف PDF ممسوح ضوئياً أو عبارة عن صور فقط: ${file.name}`);
+          setSourceUploadNotice('هذا الـPDF لا يحتوي نصاً قابلاً للاستخراج (غالباً PDF ممسوح ضوئياً). لا يمكن للمساعد الذكي قراءته كنص.');
+        }
+        return;
+      }
+
+      if (file.type.startsWith('image/')) {
+        setSourceType('image');
+        const bitmap = await createImageBitmap(file);
+        const scale = Math.min(1, 1024 / Math.max(bitmap.width, bitmap.height));
+        const width = Math.max(1, Math.round(bitmap.width * scale));
+        const height = Math.max(1, Math.round(bitmap.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('تعذر تجهيز الصورة للضغط.');
+        ctx.drawImage(bitmap, 0, 0, width, height);
+        bitmap.close();
+
+        const blob = await new Promise<Blob>((resolve, reject) => {
+          canvas.toBlob((value) => value ? resolve(value) : reject(new Error('تعذر ضغط الصورة.')), 'image/jpeg', 0.7);
+        });
+        if (blob.size > 700 * 1024) {
+          setSourceFileData(undefined);
+          setSourceUploadNotice('الصورة ما زالت أكبر من 700KB بعد الضغط. اختر صورة أصغر أو أقل دقة.');
+          return;
+        }
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => reject(new Error('تعذر قراءة الصورة المضغوطة.'));
+          reader.readAsDataURL(blob);
+        });
+        setSourceFileData(dataUrl);
+        setSourceFileSize(`${Math.round(blob.size / 1024)} KB`);
+        setSourceContent(`صورة لدرس / صفحة من المنهج: ${file.name}`);
+        setSourceUploadNotice(`تم ضغط الصورة إلى ${Math.round(blob.size / 1024)}KB وحفظها بصيغة JPEG.`);
+        return;
+      }
+
+      throw new Error('نوع الملف غير مدعوم. اختر PDF أو صورة.');
+    } catch (error: any) {
+      console.error('Error processing library file:', error);
+      setSourceUploadNotice(error?.message || 'تعذر معالجة الملف. حاول اختيار ملف آخر.');
+      setSourceFileData(undefined);
     }
   };
 
@@ -816,6 +874,12 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
                     </p>
                   </div>
                 </div>
+                {sourceUploadNotice && (
+                  <div className="mt-2 p-2.5 rounded-xl bg-amber-950/40 border border-amber-500/30 text-amber-200 text-[11px] leading-relaxed">
+                    <AlertCircle className="w-3.5 h-3.5 inline-block ml-1" />
+                    {sourceUploadNotice}
+                  </div>
+                )}
               </div>
 
               {/* Source Title */}
