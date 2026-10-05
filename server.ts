@@ -7,7 +7,6 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
 import { getMessaging as getAdminMessaging } from 'firebase-admin/messaging';
 import { GoogleGenAI } from '@google/genai';
-import fs from 'fs';
 import { createRemindersRouter, sendWhatsAppReminderTemplate } from './src/server/remindersCron.js';
 import { createSubscriptionGuard, evaluateSubscription, type TeacherSubscriptionData } from './src/server/subscriptionAccess.js';
 dotenv.config();
@@ -73,37 +72,12 @@ function safeParseServiceAccount(raw: string | undefined): any {
   }
 }
 
-// Public (non-secret) Firebase web config shipped with the project. Used only as a
-// fallback so that server and client resolve the SAME project and Firestore database.
-interface AppletConfig {
-  projectId?: string;
-  firestoreDatabaseId?: string;
-}
-
-function readAppletConfig(): AppletConfig {
-  const candidates = [
-    path.resolve(process.cwd(), 'firebase-applet-config.json'),
-    path.resolve(__dirname, 'firebase-applet-config.json'),
-  ];
-  for (const file of candidates) {
-    try {
-      return JSON.parse(fs.readFileSync(file, 'utf-8')) as AppletConfig;
-    } catch {
-      // try next candidate
-    }
-  }
-  return {};
-}
-
-const appletConfig = readAppletConfig();
-
 // Initialize Firebase Admin SDK
 if (getApps().length === 0) {
   const serviceAccountRaw = process.env.FIREBASE_SERVICE_ACCOUNT;
   const projectId =
     process.env.FIREBASE_PROJECT_ID ||
-    process.env.VITE_FIREBASE_PROJECT_ID ||
-    appletConfig.projectId;
+    process.env.VITE_FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
