@@ -99,13 +99,18 @@ if (getApps().length === 0) {
     });
   } else {
     if (!projectId) {
-      throw new Error(
-        'Firebase project is not configured: set FIREBASE_PROJECT_ID (or VITE_FIREBASE_PROJECT_ID).'
-      );
+      if (process.env.NODE_ENV === 'test') {
+        initializeApp({ projectId: 'sanad-almoallem-test' });
+      } else {
+        throw new Error(
+          'Firebase project is not configured: set FIREBASE_PROJECT_ID (or VITE_FIREBASE_PROJECT_ID).'
+        );
+      }
+    } else {
+      initializeApp({
+        projectId,
+      });
     }
-    initializeApp({
-      projectId,
-    });
   }
 }
 
