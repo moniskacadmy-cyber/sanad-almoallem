@@ -3,6 +3,12 @@
   "framework": "vite",
   "buildCommand": "vite build",
   "outputDirectory": "dist",
+  "crons": [
+    {
+      "path": "/api/reminders/cron",
+      "schedule": "0 3 * * *"
+    }
+  ],
   "functions": {
     "api/*.ts": {
       "includeFiles": "firebase-applet-config.json"
