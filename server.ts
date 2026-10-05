@@ -703,7 +703,7 @@ app.get('/api/reminders/cron', async (req, res) => {
           const stale = Number.isFinite(timestamp) && Date.now() - timestamp > 2 * 60 * 1000;
           if (existing.exists && status === 'sent') return false;
           if (existing.exists && status === 'claiming' && !stale) return false;
-          if (existing.exists && status === 'failed' && !stale) return false;
+          if (existing.exists && status === 'failed') return true;
           transaction.set(sentRef, {
             status: 'claiming',
             scheduleId: schedDoc.id,
