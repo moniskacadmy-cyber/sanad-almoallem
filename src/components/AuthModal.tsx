@@ -7,6 +7,7 @@ import {
 import {
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
+  sendEmailVerification,
   User,
 } from 'firebase/auth';
 import {
@@ -33,6 +34,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   const [error, setError] = useState<string | null>(null);
   const [resetSuccess, setResetSuccess] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
+  const [verificationRequired, setVerificationRequired] = useState(false);
 
   // Registration Fields
   const [name, setName] = useState('');
@@ -114,6 +116,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
       }
     } catch (err: any) {
       console.error('Auth error', err);
+      if (err?.message === 'EMAIL_VERIFICATION_REQUIRED') {
+        setVerificationRequired(true);
+        setError(null);
+        return;
+      }
       let msg = err.message || 'حدث خطأ، يرجى المحاولة لاحقاً.';
       if (msg.includes('auth/email-already-in-use')) {
         msg = 'هذا البريد الإلكتروني مسجل بالفعل، يرجى تسجيل الدخول.';
@@ -198,6 +205,69 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
           </div>
         )}
 
+        {/* Email verification gate */}
+        {verificationRequired ? (
+          <div className="space-y-4 text-center">
+            <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-500/30">
+              <Mail className="w-10 h-10 mx-auto text-amber-300 mb-2" />
+              <h3 className="text-base font-bold text-white">فعّل بريدك الإلكتروني أولاً</h3>
+              <p className="text-xs text-slate-300 mt-2 leading-relaxed">
+                أرسلنا رابط تفعيل إلى <span className="font-bold text-amber-300" dir="ltr">{email}</span>.
+                لن يتم إنشاء ملف المعلم أو تفعيل الاشتراك المسبق قبل تأكيد البريد.
+              </p>
+            </div>
+            {error && <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-300 text-xs">{error}</div>}
+            <button
+              type="button"
+              disabled={loading}
+              onClick={async () => {
+                setLoading(true);
+                setError(null);
+                try {
+                  const user = auth.currentUser;
+                  if (!user) throw new Error('انتهت جلسة التسجيل، يرجى تسجيل الدخول من جديد.');
+                  await user.reload();
+                  if (!auth.currentUser?.emailVerified) {
+                    throw new Error('لم يتم تأكيد البريد بعد. افتح رسالة التفعيل ثم أعد المحاولة.');
+                  }
+                  await registerTeacher({
+                    name: name.trim(),
+                    email: email.trim(),
+                    whatsapp: whatsapp.trim(),
+                    subject: effectiveSubject.trim(),
+                    existingUser: auth.currentUser,
+                  });
+                  setVerificationRequired(false);
+                  onSuccess();
+                } catch (err: any) {
+                  setError(err.message || 'تعذر إكمال التسجيل.');
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              className="w-full rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 py-3 text-sm font-bold text-white disabled:opacity-50"
+            >
+              {loading ? 'جارٍ التحقق...' : 'تحققت من البريد — متابعة التسجيل'}
+            </button>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={async () => {
+                try {
+                  if (auth.currentUser && !auth.currentUser.emailVerified) {
+                    await sendEmailVerification(auth.currentUser);
+                    setError('تم إرسال رسالة تفعيل جديدة إلى بريدك.');
+                  }
+                } catch (err: any) {
+                  setError(err.message || 'تعذر إعادة إرسال رسالة التفعيل.');
+                }
+              }}
+              className="w-full rounded-xl border border-slate-700 bg-slate-800/60 py-2.5 text-xs font-bold text-slate-200 disabled:opacity-50"
+            >
+              إعادة إرسال رسالة التفعيل
+            </button>
+          </div>
+        ) : (
         {/* Forgot Password View */}
         {showForgot ? (
           <div>
