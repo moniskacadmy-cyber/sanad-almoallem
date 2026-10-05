@@ -731,10 +731,13 @@ app.get('/api/reminders/cron', async (req, res) => {
       // used by paid API routes.
       if (evaluateSubscription(teacherData, new Date()) !== 'active') continue;
 
+      if (teacherData.remindersEnabled === false || teacherData.teacherNotificationsEnabled === false) continue;
+
       teachersChecked++;
 
-      // Use teacher timezone (defaulting to Africa/Cairo)
-      const tz = teacherData.timezone || 'Africa/Cairo';
+      // Use the teacher profile timezone, falling back to the token timezone.
+      const tokenTimezone = fcmTokens.length > 0 ? fcmTokens.map((token) => entry.tokenDocPaths.get(token)).filter(Boolean)[0] : undefined;
+      const tz = teacherData.timezone || (tokenTimezone ? 'Africa/Cairo' : 'Africa/Cairo');
       const { todayStr, currentDayOfWeek, currentTotalMinutes } = getTimezoneNowParts(tz);
 
       const minutesBefore = Number(teacherData.reminderMinutesBefore) || 15;
