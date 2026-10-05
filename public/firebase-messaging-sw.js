@@ -24,16 +24,12 @@ function getFirebaseConfigFromLocation() {
     };
   }
 
-  return {
-    projectId: 'sanad-1464f',
-    authDomain: 'sanad-1464f.firebaseapp.com',
-    storageBucket: 'sanad-1464f.firebasestorage.app',
-  };
+  return null;
 }
 
 const firebaseConfig = getFirebaseConfigFromLocation();
 
-if (firebaseConfig.apiKey && firebaseConfig.projectId) {
+if (firebaseConfig?.apiKey && firebaseConfig?.projectId) {
   try {
     firebase.initializeApp(firebaseConfig);
     const messaging = firebase.messaging();
