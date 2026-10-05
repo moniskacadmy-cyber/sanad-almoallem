@@ -8,6 +8,7 @@ import {
   signInWithPopup,
   GoogleAuthProvider,
   sendPasswordResetEmail,
+  sendEmailVerification,
   User
 } from 'firebase/auth';
 import {
@@ -24,12 +25,10 @@ import {
   where,
   serverTimestamp,
   Timestamp,
-  getDocFromServer,
   onSnapshot,
   enableMultiTabIndexedDbPersistence,
   enableIndexedDbPersistence,
 } from 'firebase/firestore';
-import rawFirebaseConfig from '../firebase-applet-config.json';
 import {
   TeacherProfile,
   Student,
@@ -43,25 +42,22 @@ import {
   NoteColor,
 } from './types';
 
-// Read Firebase configuration from environment variables with fallback to config file
+// Single Firebase configuration source: VITE_FIREBASE_* environment variables.
 const firebaseConfig = {
-  apiKey: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY) || rawFirebaseConfig.apiKey,
-  authDomain: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN) || rawFirebaseConfig.authDomain,
-  projectId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_PROJECT_ID) || rawFirebaseConfig.projectId,
-  storageBucket: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_STORAGE_BUCKET) || rawFirebaseConfig.storageBucket,
-  messagingSenderId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_MESSAGING_SENDER_ID) || rawFirebaseConfig.messagingSenderId,
-  appId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_APP_ID) || rawFirebaseConfig.appId,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-const envDatabaseId =
-  typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_DATABASE_ID
-    ? import.meta.env.VITE_FIREBASE_DATABASE_ID.trim()
-    : undefined;
+if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId) {
+  throw new Error('Firebase web configuration is missing. Set VITE_FIREBASE_* environment variables.');
+}
 
-const effectiveDatabaseId =
-  envDatabaseId !== undefined && envDatabaseId !== ''
-    ? envDatabaseId
-    : (rawFirebaseConfig as any).firestoreDatabaseId || 'ai-studio-f9d7667a-6157-4def-8ccd-a9acd863d453';
+const envDatabaseId = import.meta.env.VITE_FIREBASE_DATABASE_ID?.trim();
+const effectiveDatabaseId = envDatabaseId || '(default)';
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
@@ -82,18 +78,6 @@ if (typeof window !== 'undefined') {
     }
   });
 }
-
-// Test Firestore Connection as required by skill
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Firebase client appears offline. Please check your configuration.');
-    }
-  }
-}
-testConnection();
 
 // Skill-mandated Error Handler
 export enum OperationType {
@@ -169,6 +153,12 @@ export async function registerTeacher(params: {
     user = credential.user;
   }
   if (!user) throw new Error('تعذر إتمام عملية التسجيل.');
+
+  const isGoogleProvider = user.providerData.some((provider) => provider.providerId === 'google.com');
+  if (!isGoogleProvider && !user.emailVerified) {
+    await sendEmailVerification(user);
+    throw new Error('EMAIL_VERIFICATION_REQUIRED');
+  }
 
   const teacherDocRef = doc(db, 'teachers', user.uid);
   const now = new Date();
@@ -313,6 +303,8 @@ export async function updateTeacherProfile(teacherId: string, updates: {
   subject?: string;
   currency?: string;
   reminderMinutesBefore?: number;
+  remindersEnabled?: boolean;
+  teacherNotificationsEnabled?: boolean;
   timezone?: string;
   whatsappTemplates?: {
     welcome?: string;
@@ -1480,21 +1472,7 @@ export async function requestAndSaveFCMToken(): Promise<{
 
     const user = auth.currentUser;
     if (user) {
-      // 1. Save in users/{uid}/fcmTokens/{tokenId}
-      const userTokenRef = doc(db, 'users', user.uid, 'fcmTokens', token);
-      await setDoc(
-        userTokenRef,
-        {
-          token,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo',
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-          userAgent: navigator.userAgent,
-        },
-        { merge: true }
-      );
-
-      // 2. Save in teachers/{uid}/fcmTokens/{tokenId}
+      // Canonical storage: teachers/{uid}/fcmTokens/{tokenId}.
       const teacherTokenRef = doc(db, 'teachers', user.uid, 'fcmTokens', token);
       await setDoc(
         teacherTokenRef,
