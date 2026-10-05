@@ -73,13 +73,12 @@ function safeParseServiceAccount(raw: string | undefined): any {
   }
 }
 
-// Firebase configuration is environment-only.\nconst appletConfig = {};\n\n// Initialize Firebase Admin SDK
+// Firebase configuration is environment-only.\n\n// Initialize Firebase Admin SDK
 if (getApps().length === 0) {
   const serviceAccountRaw = process.env.FIREBASE_SERVICE_ACCOUNT;
   const projectId =
     process.env.FIREBASE_PROJECT_ID ||
-    process.env.VITE_FIREBASE_PROJECT_ID ||
-    appletConfig.projectId;
+    process.env.VITE_FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
