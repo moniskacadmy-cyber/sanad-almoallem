@@ -29,7 +29,6 @@ import {
   enableMultiTabIndexedDbPersistence,
   enableIndexedDbPersistence,
 } from 'firebase/firestore';
-import rawFirebaseConfig from '../firebase-applet-config.json';
 import {
   TeacherProfile,
   Student,
@@ -43,32 +42,24 @@ import {
   NoteColor,
 } from './types';
 
-// Read Firebase configuration from environment variables with fallback to config file
+// Firebase web configuration is supplied exclusively through VITE_FIREBASE_* variables.
+// Firestore is intentionally pinned to the project's default database.
 const firebaseConfig = {
-  apiKey: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY) || rawFirebaseConfig.apiKey,
-  authDomain: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN) || rawFirebaseConfig.authDomain,
-  projectId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_PROJECT_ID) || rawFirebaseConfig.projectId,
-  storageBucket: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_STORAGE_BUCKET) || rawFirebaseConfig.storageBucket,
-  messagingSenderId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_MESSAGING_SENDER_ID) || rawFirebaseConfig.messagingSenderId,
-  appId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_APP_ID) || rawFirebaseConfig.appId,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-const envDatabaseId =
-  typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_DATABASE_ID
-    ? import.meta.env.VITE_FIREBASE_DATABASE_ID.trim()
-    : undefined;
-
-const effectiveDatabaseId =
-  envDatabaseId !== undefined && envDatabaseId !== ''
-    ? envDatabaseId
-    : (rawFirebaseConfig as any).firestoreDatabaseId || '(default)';
+if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId) {
+  throw new Error('Firebase web configuration is missing. Set the VITE_FIREBASE_* environment variables.');
+}
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db =
-  effectiveDatabaseId === '(default)' || !effectiveDatabaseId
-    ? getFirestore(app)
-    : getFirestore(app, effectiveDatabaseId);
+export const db = getFirestore(app);
 
 // Enable Firestore Local IndexedDB Offline Persistence & Automatic Cloud Synchronization
 if (typeof window !== 'undefined') {
