@@ -52,6 +52,7 @@ import {
   checkRemindersApi,
   sendEndOfDaySummaryNotification,
 } from './services/reminderService';
+import { requestAndSaveFCMToken } from './firebase';
 import {
   pushAppHistoryState,
   useBackHandler,
@@ -205,6 +206,9 @@ export default function App() {
       if (user) {
         const adminStatus = await checkIsAdmin(user);
         setIsAdmin(adminStatus);
+        requestAndSaveFCMToken().then((result) => {
+          if (!result.success) console.warn('FCM notification registration:', result.error);
+        });
       } else {
         setProfile(null);
         setIsAdmin(false);
