@@ -1,4 +1,4 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import {
   getAuth,
   createUserWithEmailAndPassword,
@@ -8,7 +8,8 @@ import {
   signInWithPopup,
   GoogleAuthProvider,
   sendPasswordResetEmail,
-  User
+  User,
+  Auth
 } from 'firebase/auth';
 import {
   getFirestore,
@@ -28,6 +29,7 @@ import {
   onSnapshot,
   enableMultiTabIndexedDbPersistence,
   enableIndexedDbPersistence,
+  Firestore
 } from 'firebase/firestore';
 import {
   TeacherProfile,
@@ -55,24 +57,37 @@ const firebaseConfig = {
 const effectiveDatabaseId =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_DATABASE_ID?.trim()) || '(default)';
 
-const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const db =
-  effectiveDatabaseId === '(default)' || !effectiveDatabaseId
-    ? getFirestore(app)
-    : getFirestore(app, effectiveDatabaseId);
+export let app: FirebaseApp = null as any;
+export let auth: Auth = null as any;
+export let db: Firestore = null as any;
+export let firebaseInitError: Error | null = null;
 
-// Enable Firestore Local IndexedDB Offline Persistence & Automatic Cloud Synchronization
-if (typeof window !== 'undefined') {
-  enableMultiTabIndexedDbPersistence(db).catch((err) => {
-    if (err.code === 'failed-precondition') {
-      enableIndexedDbPersistence(db).catch((e) => {
-        console.warn('Firestore offline persistence fallback warning:', e);
-      });
-    } else if (err.code === 'unimplemented') {
-      console.warn('Firestore offline persistence is not supported in this browser.');
-    }
-  });
+try {
+  if (!firebaseConfig.apiKey) {
+    throw new Error('لم يتم العثور على مفتاح VITE_FIREBASE_API_KEY في ملف البيئة .env');
+  }
+  app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db =
+    effectiveDatabaseId === '(default)' || !effectiveDatabaseId
+      ? getFirestore(app)
+      : getFirestore(app, effectiveDatabaseId);
+
+  // Enable Firestore Local IndexedDB Offline Persistence safely
+  if (typeof window !== 'undefined' && db) {
+    enableMultiTabIndexedDbPersistence(db).catch((err) => {
+      if (err.code === 'failed-precondition') {
+        enableIndexedDbPersistence(db).catch((e) => {
+          console.warn('Firestore offline persistence fallback warning:', e);
+        });
+      } else if (err.code === 'unimplemented') {
+        console.warn('Firestore offline persistence is not supported in this browser.');
+      }
+    });
+  }
+} catch (err: any) {
+  console.error('Firebase initialization error caught safely:', err);
+  firebaseInitError = err instanceof Error ? err : new Error(String(err));
 }
 
 // Skill-mandated Error Handler

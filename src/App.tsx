@@ -8,6 +8,8 @@ import {
   subscribeToSchedules,
   subscribeToLibrary,
   runOrphanCleanup,
+  registerTeacher,
+  firebaseInitError,
 } from './firebase';
 import {
   TeacherProfile,
@@ -63,6 +65,17 @@ import {
 } from './services/backHandler';
 
 export default function App() {
+  if (firebaseInitError) {
+    return (
+      <LoadingFallback
+        message="خلل في إعدادات الاتصال بـ Firebase"
+        subMessage="تعذر تهيئة قاعدة البيانات والمصادقة. يرجى التأكد من صحة المفاتيح (VITE_FIREBASE_API_KEY) في ملف البيئة .env"
+        error={firebaseInitError.message}
+        timeoutMs={0}
+      />
+    );
+  }
+
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<TeacherProfile | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -227,40 +240,74 @@ export default function App() {
   // Listen to Auth State
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
-      if (user) {
-        const adminStatus = await checkIsAdmin(user);
-        setIsAdmin(adminStatus);
-        requestAndSaveFCMToken().then((result) => {
-          if (!result.success) console.warn('FCM notification registration:', result.error);
-        });
-      } else {
-        setProfile(null);
-        setIsAdmin(false);
+      try {
+        setCurrentUser(user);
+        if (user) {
+          try {
+            const adminStatus = await checkIsAdmin(user);
+            setIsAdmin(adminStatus);
+          } catch (e) {
+            console.warn('checkIsAdmin error:', e);
+            setIsAdmin(false);
+          }
+          requestAndSaveFCMToken().then((result) => {
+            if (!result.success) console.warn('FCM notification registration:', result.error);
+          }).catch((e) => console.warn('FCM token error:', e));
+        } else {
+          setProfile(null);
+          setIsAdmin(false);
+        }
+      } catch (err) {
+        console.error('Error in onAuthStateChanged listener:', err);
+      } finally {
+        setLoadingAuth(false);
       }
-      setLoadingAuth(false);
     });
     return () => unsub();
   }, []);
 
-  // Listen to Teacher Profile
+  // Listen to Teacher Profile (with auto-provision fallback)
   useEffect(() => {
     if (!currentUser) {
       setProfile(null);
       return;
     }
 
+    let isMounted = true;
+
     const unsub = subscribeToTeacherProfile(
       currentUser.uid,
-      (p) => {
-        setProfile(p);
+      async (p) => {
+        if (!isMounted) return;
+        if (p) {
+          setProfile(p);
+        } else {
+          // If profile doc does not exist yet for signed-in user, auto-provision
+          try {
+            console.log('Teacher profile document missing for user, auto-creating...');
+            const newP = await registerTeacher({
+              name: currentUser.displayName || currentUser.email?.split('@')[0] || 'المعلم',
+              email: currentUser.email || '',
+              whatsapp: '',
+              subject: 'عام',
+              existingUser: currentUser,
+            });
+            if (isMounted) setProfile(newP);
+          } catch (createErr) {
+            console.warn('Auto profile creation error:', createErr);
+            if (isMounted) setProfile(null);
+          }
+        }
       },
       (err) => {
         console.error('Error in teacher profile subscription', err);
       }
     );
 
-    return () => unsub();
+    return () => {
+      isMounted = false;
+      unsub();
+    };
   }, [currentUser]);
 
   // Listen to Students, Schedules, and Library
