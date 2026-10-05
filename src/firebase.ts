@@ -1498,6 +1498,7 @@ export async function requestAndSaveFCMToken(): Promise<{
         teacherTokenRef,
         {
           token,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo',
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
           userAgent: navigator.userAgent,
