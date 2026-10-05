@@ -398,15 +398,9 @@ export async function aiRateLimiter(
 }
 
 // Helper to get Admin Firestore DB.
-// MUST resolve the same database as the client (src/firebase.ts): env override,
-// then the database id from firebase-applet-config.json. '(default)' / empty -> default DB.
+// The app uses Firebase's default Firestore database: (default).
 export function resolveDatabaseId(): string | undefined {
-  const fromEnv = process.env.VITE_FIREBASE_DATABASE_ID?.trim() || process.env.FIREBASE_DATABASE_ID?.trim();
-  const effective =
-    fromEnv !== undefined && fromEnv !== ''
-      ? fromEnv
-      : appletConfig.firestoreDatabaseId || '(default)';
-  return effective === '(default)' || !effective ? undefined : effective;
+  return undefined;
 }
 
 function getAdminDb() {
