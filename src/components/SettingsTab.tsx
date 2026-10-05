@@ -204,11 +204,16 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     const updated = { ...reminderSettings, [key]: val };
     setReminderSettings(updated);
     storeReminderSettings(updated);
-    if (key === 'minutesBefore') {
+    if (key === 'minutesBefore' || key === 'enabled' || key === 'notifyTeacher') {
       try {
-        await updateTeacherProfile(profile.id, { reminderMinutesBefore: Math.min(120, Math.max(5, Number(val) || 15)), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo' });
+        await updateTeacherProfile(profile.id, {
+          ...(key === 'minutesBefore' ? { reminderMinutesBefore: Math.min(120, Math.max(5, Number(val) || 15)) } : {}),
+          ...(key === 'enabled' ? { remindersEnabled: Boolean(val) } : {}),
+          ...(key === 'notifyTeacher' ? { teacherNotificationsEnabled: Boolean(val) } : {}),
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo',
+        });
       } catch (error) {
-        console.warn('Could not sync reminder timing:', error);
+        console.warn('Could not sync reminder preference:', error);
       }
     }
   };
