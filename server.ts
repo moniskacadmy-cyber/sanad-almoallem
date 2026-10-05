@@ -8,7 +8,7 @@ import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
 import { getMessaging as getAdminMessaging } from 'firebase-admin/messaging';
 import { GoogleGenAI } from '@google/genai';
 import fs from 'fs';
-import { createRemindersRouter } from './src/server/remindersCron.js';
+import { createRemindersRouter, sendWhatsAppReminderTemplate } from './src/server/remindersCron.js';
 import { createSubscriptionGuard, evaluateSubscription, type TeacherSubscriptionData } from './src/server/subscriptionAccess.js';
 dotenv.config();
 
@@ -792,6 +792,23 @@ app.get('/api/reminders/cron', async (req, res) => {
         const title = '⏰ تذكير موعد الحصة القادمة';
         const body = `أستاذ/ـة ${teacherData.name || 'المعلم'}، لديك حصة قادمة مع الطالب (${slot.studentName || 'طالب'}) في تمام الساعة ${slot.time}.`;
 
+        // Optional automatic WhatsApp reminder to the teacher. This uses an approved
+        // WhatsApp Cloud API template because reminders are business-initiated messages.
+        const whatsappResult =
+          process.env.WHATSAPP_SEND_TO_TEACHER === 'false'
+            ? { configured: false, sent: false, error: 'تم تعطيل إرسال واتساب للمعلم.' }
+            : await sendWhatsAppReminderTemplate({
+                to: teacherData.whatsapp || '',
+                studentName: slot.studentName || 'طالب',
+                subject: slot.subject || teacherData.subject || 'المادة',
+                classTime: slot.time,
+                locationOrLink: slot.locationOrLink,
+              });
+
+        if (whatsappResult.error) {
+          console.warn(`WhatsApp reminder for teacher ${teacherId}: ${whatsappResult.error}`);
+        }
+
         try {
           const sendResponse = await messagingAdmin.sendEachForMulticast({
             tokens: fcmTokens,
@@ -824,6 +841,10 @@ app.get('/api/reminders/cron', async (req, res) => {
             teacherId,
             day: todayStr,
             sentAt: new Date().toISOString(),
+            fcmSuccessCount: sendResponse.successCount,
+            whatsappConfigured: whatsappResult.configured,
+            whatsappSent: whatsappResult.sent,
+            whatsappError: whatsappResult.error || null,
           });
 
           notificationsSent += sendResponse.successCount;

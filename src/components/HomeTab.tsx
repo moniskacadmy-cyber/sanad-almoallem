@@ -96,6 +96,68 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   }).format(now);
 
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  // Live countdown to the next scheduled class.
+  const [countdownNow, setCountdownNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = window.setInterval(() => setCountdownNow(new Date()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const getCountdownParts = (target: Date) => {
+    const diff = Math.max(0, target.getTime() - countdownNow.getTime());
+    const totalSeconds = Math.floor(diff / 1000);
+    return {
+      totalSeconds,
+      days: Math.floor(totalSeconds / 86400),
+      hours: Math.floor((totalSeconds % 86400) / 3600),
+      minutes: Math.floor((totalSeconds % 3600) / 60),
+      seconds: totalSeconds % 60,
+    };
+  };
+
+  const nextClassInfo = (() => {
+    const base = new Date(countdownNow);
+    base.setSeconds(0, 0);
+
+    for (let offset = 0; offset <= 7; offset += 1) {
+      const candidateDate = new Date(base);
+      candidateDate.setDate(base.getDate() + offset);
+      const candidateDay = candidateDate.getDay();
+      const candidates = schedules
+        .filter((slot) => slot.dayOfWeek === candidateDay)
+        .filter((slot) => offset > 0 || slot.completedTodayDate !== todayStr)
+        .filter((slot) => /^\d{1,2}:\d{2}$/.test(slot.time))
+        .map((slot) => {
+          const [hour, minute] = slot.time.split(':').map(Number);
+          const target = new Date(candidateDate);
+          target.setHours(hour, minute, 0, 0);
+          return { slot, target };
+        })
+        .filter(({ target }) => target.getTime() > countdownNow.getTime())
+        .sort((a, b) => a.target.getTime() - b.target.getTime());
+
+      if (candidates.length > 0) {
+        const candidate = candidates[0];
+        return {
+          ...candidate,
+          dayLabel:
+            offset === 0
+              ? 'اليوم'
+              : offset === 1
+              ? 'غداً'
+              : new Intl.DateTimeFormat('ar-EG', { weekday: 'long' }).format(candidate.target),
+        };
+      }
+    }
+    return null;
+  })();
+
+  const nextClassCountdown = nextClassInfo ? getCountdownParts(nextClassInfo.target) : null;
+  const countdownText = nextClassCountdown
+    ? nextClassCountdown.days > 0
+      ? `${nextClassCountdown.days} يوم و${String(nextClassCountdown.hours).padStart(2, '0')}:${String(nextClassCountdown.minutes).padStart(2, '0')}:${String(nextClassCountdown.seconds).padStart(2, '0')}`
+      : `${String(nextClassCountdown.hours).padStart(2, '0')}:${String(nextClassCountdown.minutes).padStart(2, '0')}:${String(nextClassCountdown.seconds).padStart(2, '0')}`
+    : null;
 
   // Filter and sort today's classes
   const todayClasses = schedules
@@ -356,7 +418,34 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           </button>
         </div>
 
-        {/* Remaining today's classes content */}
+        {/* Live next-class countdown */}
+      <div className="rounded-3xl bg-slate-950/80 border border-amber-500/30 p-4 shadow-xl">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] text-amber-300 font-black">الحصة القادمة ⏰</p>
+            {nextClassInfo ? (
+              <>
+                <h4 className="text-base font-black text-white mt-1 truncate">
+                  {nextClassInfo.slot.studentName}
+                </h4>
+                <p className="text-[10px] text-slate-300 mt-1">
+                  {nextClassInfo.dayLabel} • الساعة {formatTime12h(nextClassInfo.slot.time)} • {nextClassInfo.slot.duration || 60} دقيقة
+                </p>
+              </>
+            ) : (
+              <h4 className="text-sm font-bold text-slate-200 mt-1">لا توجد حصة قادمة مجدولة</h4>
+            )}
+          </div>
+          <div className="text-center min-w-[120px] rounded-2xl bg-amber-400/10 border border-amber-400/30 px-3 py-2">
+            <p className="text-[9px] text-amber-200 font-bold">متبقي</p>
+            <p className="text-lg font-black tracking-wider text-amber-300 tabular-nums" dir="ltr">
+              {countdownText || '--:--:--'}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Remaining today's classes content */}
         {remainingTodayClasses.length > 0 ? (
           <div className="space-y-2">
             {remainingTodayClasses.map((slot) => {
