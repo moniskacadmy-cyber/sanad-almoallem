@@ -200,10 +200,22 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     setTimeout(() => setTemplateNotice(null), 4000);
   };
 
-  const handleUpdateReminderSetting = (key: keyof ReminderSettings, val: any) => {
+  const handleUpdateReminderSetting = async (key: keyof ReminderSettings, val: any) => {
     const updated = { ...reminderSettings, [key]: val };
     setReminderSettings(updated);
     storeReminderSettings(updated);
+    if (key === 'minutesBefore' || key === 'enabled' || key === 'notifyTeacher') {
+      try {
+        await updateTeacherProfile(profile.id, {
+          ...(key === 'minutesBefore' ? { reminderMinutesBefore: Math.min(120, Math.max(5, Number(val) || 15)) } : {}),
+          ...(key === 'enabled' ? { remindersEnabled: Boolean(val) } : {}),
+          ...(key === 'notifyTeacher' ? { teacherNotificationsEnabled: Boolean(val) } : {}),
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo',
+        });
+      } catch (error) {
+        console.warn('Could not sync reminder preference:', error);
+      }
+    }
   };
 
   const handleRequestNotificationPermission = async () => {
@@ -1084,8 +1096,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <label className="block text-xs font-semibold text-slate-300">
                 توقيت إرسال التذكير قبل موعد الحصة:
               </label>
-              <div className="grid grid-cols-3 gap-2">
-                {[10, 15, 30].map((mins) => (
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                {[5, 10, 15, 20, 30, 60].map((mins) => (
                   <button
                     key={mins}
                     type="button"

@@ -312,6 +312,8 @@ export async function updateTeacherProfile(teacherId: string, updates: {
   whatsapp?: string;
   subject?: string;
   currency?: string;
+  reminderMinutesBefore?: number;
+  timezone?: string;
   whatsappTemplates?: {
     welcome?: string;
     payment?: string;

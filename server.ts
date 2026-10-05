@@ -731,9 +731,11 @@ app.get('/api/reminders/cron', async (req, res) => {
       // used by paid API routes.
       if (evaluateSubscription(teacherData, new Date()) !== 'active') continue;
 
+      if (teacherData.remindersEnabled === false || teacherData.teacherNotificationsEnabled === false) continue;
+
       teachersChecked++;
 
-      // Use teacher timezone (defaulting to Africa/Cairo)
+      // Use the teacher profile timezone, falling back to Cairo for existing accounts.
       const tz = teacherData.timezone || 'Africa/Cairo';
       const { todayStr, currentDayOfWeek, currentTotalMinutes } = getTimezoneNowParts(tz);
 
