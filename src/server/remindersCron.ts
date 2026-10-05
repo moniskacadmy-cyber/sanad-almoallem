@@ -30,6 +30,75 @@ export function formatWhatsAppPhone(phone: string): string {
   return digits;
 }
 
+
+// Send an approved WhatsApp Cloud API template message.
+// This is required for business-initiated reminders when the app is closed.
+export async function sendWhatsAppReminderTemplate(params: {
+  to: string;
+  studentName: string;
+  subject: string;
+  classTime: string;
+  locationOrLink?: string;
+}): Promise<{ configured: boolean; sent: boolean; error?: string }> {
+  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN?.trim();
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID?.trim();
+  const graphVersion = process.env.WHATSAPP_GRAPH_VERSION?.trim();
+  const templateName = process.env.WHATSAPP_REMINDER_TEMPLATE?.trim();
+  const languageCode = process.env.WHATSAPP_REMINDER_TEMPLATE_LANGUAGE?.trim() || 'ar';
+  const to = formatWhatsAppPhone(params.to);
+
+  if (!accessToken || !phoneNumberId || !graphVersion || !templateName) {
+    return { configured: false, sent: false, error: 'WhatsApp Cloud API غير مهيأ بالكامل.' };
+  }
+  if (!to) {
+    return { configured: true, sent: false, error: 'رقم واتساب المعلم غير صالح.' };
+  }
+
+  const url = `https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`;
+  const payload = {
+    messaging_product: 'whatsapp',
+    to,
+    type: 'template',
+    template: {
+      name: templateName,
+      language: { code: languageCode },
+      components: [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: params.studentName || 'الطالب' },
+            { type: 'text', text: params.subject || 'المادة' },
+            { type: 'text', text: params.classTime || '--:--' },
+            { type: 'text', text: params.locationOrLink || 'غير محدد' },
+          ],
+        },
+      ],
+    },
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      const providerMessage = typeof data?.error?.message === 'string' ? data.error.message : 'WhatsApp API rejected the message.';
+      return { configured: true, sent: false, error: providerMessage.slice(0, 500) };
+    }
+    return { configured: true, sent: true };
+  } catch (error) {
+    return {
+      configured: true,
+      sent: false,
+      error: error instanceof Error ? error.message.slice(0, 500) : 'تعذر الاتصال بخدمة واتساب.',
+    };
+  }
+}
 // Helper to format class type in Arabic
 export function getClassTypeArabic(type: string): string {
   switch (type) {
