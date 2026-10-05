@@ -6,6 +6,9 @@
 
 ## 1. إعداد خدمات Firebase (Backend & Auth)
 
+**المشروع المعتمد:** `sanad-1464f`  
+**قاعدة Firestore:** `(default)` فقط. لا يستخدم التطبيق قاعدة بيانات Firestore مخصصة أو إعدادات AI Studio.
+
 ### أ. تفعيل المصادقة (Authentication)
 1. ادخل إلى [Firebase Console](https://console.firebase.google.com).
 2. افتح مشروعك ومن القائمة الجانبية اختر **Build** > **Authentication**.
@@ -74,7 +77,7 @@
 - `VITE_FIREBASE_MESSAGING_SENDER_ID`: معرف الإرسال.
 - `VITE_FIREBASE_APP_ID`: معرف التطبيق.
 - `VITE_FIREBASE_VAPID_KEY`: مفتاح VAPID المولد من Firebase Console.
-- `VITE_FIREBASE_DATABASE_ID`: (اختياري) الافتراضي `(default)` لقاعدة بيانات Firestore في مشروعك الخاص.
+- لا يوجد `VITE_FIREBASE_DATABASE_ID`: التطبيق يستخدم قاعدة Firestore الافتراضية `(default)` في مشروع `sanad-1464f`.
 
 ---
 
