@@ -213,7 +213,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo',
         });
       } catch (error) {
-        console.warn('Could not sync reminder preference:', error);
+        console.error('Could not sync reminder preference:', error);
+        setReminderSettings(reminderSettings);
+        storeReminderSettings(reminderSettings);
+        setReminderCheckNotice('تعذر حفظ إعداد التذكير في الحساب. تم إرجاع الإعداد السابق، يرجى المحاولة مرة أخرى.');
+        setTimeout(() => setReminderCheckNotice(null), 5000);
       }
     }
   };
