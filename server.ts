@@ -7,8 +7,8 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
 import { getMessaging as getAdminMessaging } from 'firebase-admin/messaging';
 import { GoogleGenAI } from '@google/genai';
-import fs from 'fs';
 import { createRemindersRouter, sendWhatsAppReminderTemplate } from './src/server/remindersCron.js';
+import { incrementRedisCounter } from './src/server/rateLimiter.js';
 import { createSubscriptionGuard, evaluateSubscription, type TeacherSubscriptionData } from './src/server/subscriptionAccess.js';
 dotenv.config();
 
@@ -73,31 +73,7 @@ function safeParseServiceAccount(raw: string | undefined): any {
   }
 }
 
-// Public (non-secret) Firebase web config shipped with the project. Used only as a
-// fallback so that server and client resolve the SAME project and Firestore database.
-interface AppletConfig {
-  projectId?: string;
-  firestoreDatabaseId?: string;
-}
-
-function readAppletConfig(): AppletConfig {
-  const candidates = [
-    path.resolve(process.cwd(), 'firebase-applet-config.json'),
-    path.resolve(__dirname, 'firebase-applet-config.json'),
-  ];
-  for (const file of candidates) {
-    try {
-      return JSON.parse(fs.readFileSync(file, 'utf-8')) as AppletConfig;
-    } catch {
-      // try next candidate
-    }
-  }
-  return {};
-}
-
-const appletConfig = readAppletConfig();
-
-// Initialize Firebase Admin SDK
+// Firebase configuration is environment-only.\nconst appletConfig = {};\n\n// Initialize Firebase Admin SDK
 if (getApps().length === 0) {
   const serviceAccountRaw = process.env.FIREBASE_SERVICE_ACCOUNT;
   const projectId =
@@ -157,7 +133,7 @@ const ai = new GoogleGenAI({
 // Gemini can temporarily return 503/UNAVAILABLE during provider demand spikes.
 // Retry a small number of times with backoff, then surface a truthful 503 to the client.
 async function generateGeminiContentWithRetry(request: Parameters<typeof ai.models.generateContent>[0]) {
-  const maxAttempts = 1;
+  const maxAttempts = 2;
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
@@ -170,7 +146,7 @@ async function generateGeminiContentWithRetry(request: Parameters<typeof ai.mode
       // Retrying it would only waste quota/time, so only retry 5xx/provider-unavailable errors.
       const transient = status === 500 || status === 502 || status === 503 || status === 504 || message.includes('unavailable') || message.includes('high demand');
       if (!transient || attempt === maxAttempts) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** (attempt - 1)));
+      await new Promise((resolve) => setTimeout(resolve, 350 * 2 ** (attempt - 1)));
     }
   }
   throw lastError;
@@ -252,71 +228,22 @@ async function verifyFirebaseToken(
 
 type RedisLimitResult = { limited: boolean; unavailable: boolean };
 
-async function incrementRedisCounter(
-  key: string,
-  windowSeconds: number,
-  maxRequests: number
-): Promise<RedisLimitResult> {
-  const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
-  if (!url || !token) return { limited: false, unavailable: true };
-
-  try {
-    const response = await fetch(`${url.replace(/\/$/, '')}/pipeline`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify([
-        ['INCR', key],
-        ['EXPIRE', key, windowSeconds],
-      ]),
-    });
-
-    if (!response.ok) return { limited: false, unavailable: true };
-    const data = await response.json();
-    const count = Number(data?.[0]?.result);
-    if (!Number.isFinite(count)) return { limited: false, unavailable: true };
-    return { limited: count > maxRequests, unavailable: false };
-  } catch (err) {
-    console.warn('Upstash Redis limiter unavailable:', err instanceof Error ? err.message : 'unknown');
-    return { limited: false, unavailable: true };
-  }
-}
-
-// In-memory rate limiting map: userId -> timestamps[] (used as instance fallback)
 const rateLimitMap = new Map<string, number[]>();
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const MAX_REQUESTS_PER_WINDOW = 30;
 
-async function userRateLimiter(
-  req: express.Request,
-  res: express.Response,
-  next: express.NextFunction
-) {
+async function userRateLimiter(req: express.Request, res: express.Response, next: express.NextFunction) {
   const userId = (req as any).user?.uid || req.ip || 'anonymous';
   const result = await incrementRedisCounter(`ratelimit:generic:${userId}`, 60, MAX_REQUESTS_PER_WINDOW);
-
-  if (result.limited) {
-    return res.status(429).json({ error: 'تم تجاوز الحد المسموح به من الطلبات، يرجى المحاولة بعد دقيقة.' });
-  }
-
+  if (result.limited) return res.status(429).json({ error: 'تم تجاوز الحد المسموح به من الطلبات، يرجى المحاولة بعد دقيقة.' });
   if (result.unavailable) {
-    if (process.env.VERCEL) {
-      return res.status(503).json({ error: 'خدمة تحديد معدل الطلبات غير متاحة مؤقتاً. حاول بعد قليل.' });
-    }
-
+    if (process.env.VERCEL) return res.status(503).json({ error: 'خدمة تحديد معدل الطلبات غير متاحة مؤقتاً. حاول بعد قليل.' });
     const now = Date.now();
-    const timestamps = rateLimitMap.get(userId) || [];
-    const recent = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
-    if (recent.length >= MAX_REQUESTS_PER_WINDOW) {
-      return res.status(429).json({ error: 'تم تجاوز الحد المسموح به من الطلبات، يرجى المحاولة بعد قليل.' });
-    }
+    const recent = (rateLimitMap.get(userId) || []).filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+    if (recent.length >= MAX_REQUESTS_PER_WINDOW) return res.status(429).json({ error: 'تم تجاوز الحد المسموح به من الطلبات، يرجى المحاولة بعد قليل.' });
     recent.push(now);
     rateLimitMap.set(userId, recent);
   }
-
   next();
 }
 
@@ -373,18 +300,10 @@ async function aiRateLimiter(
   next();
 }
 
-// Helper to get Admin Firestore DB.
-// MUST resolve the same database as the client (src/firebase.ts): env override,
-// then the database id from firebase-applet-config.json. '(default)' / empty -> default DB.
-const LEGACY_AI_STUDIO_DATABASE_ID = 'ai-studio-f9d7667a-6157-4def-8ccd-a9acd863d453';
-
+// Helper to get Admin Firestore DB. Empty database ID means Firestore (default).
 function resolveDatabaseId(): string | undefined {
   const fromEnv = process.env.VITE_FIREBASE_DATABASE_ID?.trim();
-  const effective =
-    fromEnv !== undefined && fromEnv !== ''
-      ? fromEnv
-      : appletConfig.firestoreDatabaseId || LEGACY_AI_STUDIO_DATABASE_ID;
-  return effective === '(default)' || !effective ? undefined : effective;
+  return fromEnv && fromEnv !== '(default)' ? fromEnv : undefined;
 }
 
 function getAdminDb() {
@@ -525,7 +444,7 @@ ${question}
 });
 
 // AI Audio Transcription Endpoint
-app.post('/api/ai/transcribe', verifyFirebaseToken, (req, res, next) => aiRateLimiter('transcribe', req, res, next), requireActiveSubscription, async (req, res) => {
+app.post('/api/ai/transcribe', express.json({ limit: '4.5mb' }), verifyFirebaseToken, (req, res, next) => aiRateLimiter('transcribe', req, res, next), requireActiveSubscription, async (req, res) => {
   try {
     const { audioBase64, mimeType } = req.body;
     const allowedAudioMimeTypes = new Set(['audio/webm', 'audio/wav', 'audio/mpeg', 'audio/mp4', 'audio/ogg']);
@@ -537,9 +456,9 @@ app.post('/api/ai/transcribe', verifyFirebaseToken, (req, res, next) => aiRateLi
     }
 
     // Limit maximum audio payload size strictly to 2MB (2 * 1024 * 1024 bytes)
-    const approxByteSize = Math.floor((audioBase64.length * 3) / 4);
-    if (approxByteSize > 2 * 1024 * 1024) {
-      return res.status(400).json({ error: 'حجم المقطع الصوتي كبير جداً. الحد الأقصى المسموح به 2 ميجابايت.' });
+    const approxByteSize = Math.floor((audioBase64.replace(/^data:[^,]+,/, '').length * 3) / 4);
+    if (approxByteSize > 1.5 * 1024 * 1024) {
+      return res.status(413).json({ error: 'حجم المقطع الصوتي كبير جداً بعد فك الترميز. الحد الأقصى 1.5 ميجابايت.' });
     }
 
     if (!process.env.GEMINI_API_KEY) {
@@ -674,6 +593,29 @@ function getTimezoneNowParts(tz = 'Africa/Cairo') {
     };
   }
 }
+
+// Operational health endpoint: checks Firebase Admin, Upstash, and AI configuration without returning secrets.
+app.get('/api/health', async (_req, res) => {
+  const result: Record<string, unknown> = { firebase: false, upstash: false, gemini: Boolean(process.env.GEMINI_API_KEY) };
+  try {
+    await getAdminDb().collection('teachers').doc('__health__').get();
+    result.firebase = true;
+  } catch (error) {
+    console.error('Health Firebase check failed:', error instanceof Error ? error.message : 'unknown');
+  }
+  const redisUrl = process.env.UPSTASH_REDIS_REST_URL?.trim();
+  const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
+  if (redisUrl && redisToken) {
+    try {
+      const ping = await fetch(redisUrl.replace(/\/$/, '') + '/ping', { headers: { Authorization: 'Bearer ' + redisToken } });
+      result.upstash = ping.ok;
+    } catch (error) {
+      console.error('Health Upstash check failed:', error instanceof Error ? error.message : 'unknown');
+    }
+  }
+  const healthy = result.firebase === true && result.upstash === true && result.gemini === true;
+  return res.status(healthy ? 200 : 503).json({ ok: healthy, checks: result });
+});
 
 // Cron Job Web Push Notification Endpoint (Protected by CRON_SECRET)
 app.get('/api/reminders/cron', async (req, res) => {
