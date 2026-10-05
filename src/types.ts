@@ -20,6 +20,10 @@ export interface TeacherProfile {
   trialEndDate: any;   // Firestore Timestamp
   subscriptionExpiresAt: any; // Firestore Timestamp
   currency?: string; // العملة المفضلة (مثال: ج.م، ر.س، د.إ)
+  reminderMinutesBefore?: number;
+  remindersEnabled?: boolean;
+  teacherNotificationsEnabled?: boolean;
+  timezone?: string;
   whatsappTemplates?: {
     welcome?: string;
     payment?: string;
