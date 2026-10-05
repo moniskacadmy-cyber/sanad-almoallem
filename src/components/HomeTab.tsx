@@ -7,7 +7,14 @@ import {
   toggleScheduleCompletedToday,
   updateStudent,
   fetchAllStudentLessons,
+  addSchedule,
 } from '../firebase';
+import { AbsenceDetailsModal, AbsenceDetailsResult } from './AbsenceDetailsModal';
+import { DailyAttendanceModal } from './DailyAttendanceModal';
+import {
+  triggerAbsenceNotificationAndChime,
+  getStoredReminderSettings,
+} from '../services/reminderService';
 import {
   ResponsiveContainer,
   BarChart,
@@ -42,6 +49,8 @@ import {
   User,
   Copy,
   CheckCircle2,
+  AlertTriangle,
+  UserCheck,
 } from 'lucide-react';
 
 interface HomeTabProps {
@@ -79,9 +88,19 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   const [editableClassReportText, setEditableClassReportText] = useState('');
   const [copiedClassReport, setCopiedClassReport] = useState(false);
 
+  // Absence Details Smart Modal State
+  const [absenceModalStudent, setAbsenceModalStudent] = useState<Student | null>(null);
+  const [absenceModalType, setAbsenceModalType] = useState<'absent' | 'excused'>('absent');
+  const [absenceModalTopic, setAbsenceModalTopic] = useState<string>('');
+
+  // Daily Attendance Register Modal State
+  const [showDailyAttendanceModal, setShowDailyAttendanceModal] = useState(false);
+
   // Register modals on back handler stack
   useBackHandler(showStartClassModal, () => setShowStartClassModal(false), 'home_start_class_modal');
   useBackHandler(showClassReportEditModal, () => setShowClassReportEditModal(false), 'home_class_report_edit_modal');
+  useBackHandler(!!absenceModalStudent, () => setAbsenceModalStudent(null), 'home_absence_modal');
+  useBackHandler(showDailyAttendanceModal, () => setShowDailyAttendanceModal(false), 'home_daily_attendance_modal');
 
   // Date & Time helpers
   const now = new Date();
@@ -307,11 +326,94 @@ export const HomeTab: React.FC<HomeTabProps> = ({
     );
   };
 
+  // Handle Smart Absence Confirmation
+  const handleConfirmAbsence = async (result: AbsenceDetailsResult) => {
+    if (!absenceModalStudent) return;
+    const student = absenceModalStudent;
+    const todaySlot = schedules.find(
+      (s) => s.studentId === student.id && s.dayOfWeek === currentDayOfWeek
+    );
+    const duration = todaySlot?.duration || 60;
+    const hourlyRate = student.hourlyRate || 100;
+    const cost = result.isFinancialCounted ? Math.round((duration / 60) * hourlyRate) : 0;
+
+    await addLessonLog(profile.id, student.id, {
+      date: todayStr,
+      topic: absenceModalTopic.trim() || (absenceModalType === 'excused' ? 'اعتذار مسبق عن موعد الحصة' : 'غياب عن موعد الحصة'),
+      homework: '',
+      attendance: absenceModalType,
+      duration,
+      hourlyRate,
+      cost,
+      settled: false,
+      rating: 5,
+      notes: result.notes || '',
+      isFinancialCounted: result.isFinancialCounted,
+      is_financial_counted: result.isFinancialCounted,
+      hasMakeupClass: result.hasMakeupClass,
+      has_makeup_class: result.hasMakeupClass,
+      makeupClassDate: result.makeupClassDate || null,
+      makeup_class_date: result.makeupClassDate || null,
+      absenceReasonType: result.absenceReasonType,
+      absence_reason_type: result.absenceReasonType,
+    });
+
+    if (todaySlot) {
+      await toggleScheduleCompletedToday(profile.id, todaySlot.id, true);
+    }
+
+    if (result.addMakeupToSchedule && result.makeupSlotDetails) {
+      await addSchedule(profile.id, {
+        studentId: student.id,
+        studentName: student.name,
+        dayOfWeek: result.makeupSlotDetails.dayOfWeek,
+        time: result.makeupSlotDetails.time,
+        duration: result.makeupSlotDetails.duration,
+        recurrence: 'once',
+        classType: student.classType || 'in_person',
+        color: 'indigo',
+        notes: `حصة تعويضية (${result.absenceReasonType})`,
+        isMakeup: true,
+      });
+    }
+
+    // Only decrement prepaid lessons if it's financially counted
+    if (result.isFinancialCounted && student.remainingPaidLessons !== undefined && student.remainingPaidLessons > 0) {
+      await updateStudent(profile.id, student.id, {
+        remainingPaidLessons: Math.max(0, student.remainingPaidLessons - 1),
+      });
+    }
+
+    // Trigger Automatic Reminder Notification & Audio Chime
+    const remSettings = getStoredReminderSettings();
+    triggerAbsenceNotificationAndChime({
+      studentName: student.name,
+      attendanceType: absenceModalType,
+      dateStr: todayStr,
+      hasWhatsApp: !!student.whatsapp,
+      soundEnabled: remSettings.soundEnabled,
+    });
+
+    setAbsenceModalStudent(null);
+    setShowStartClassModal(false);
+    setClassTopic('');
+    setClassHomework('');
+    setSelectedStudentId('');
+  };
+
   // Handle Class Registration
   const handleStartClassSubmit = async (sendWhatsApp: boolean) => {
     if (!selectedStudentId || !classTopic.trim()) return;
     const student = students.find((s) => s.id === selectedStudentId);
     if (!student) return;
+
+    // If attendance is absent or excused, branch to the Smart Modal
+    if (attendance === 'absent' || attendance === 'excused') {
+      setAbsenceModalStudent(student);
+      setAbsenceModalType(attendance);
+      setAbsenceModalTopic(classTopic.trim());
+      return;
+    }
 
     setSavingClass(true);
     try {
@@ -333,6 +435,10 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         settled: false,
         rating,
         notes: '',
+        isFinancialCounted: true,
+        is_financial_counted: true,
+        hasMakeupClass: false,
+        has_makeup_class: false,
       });
 
       if (todaySlot) {
@@ -347,8 +453,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
       }
 
       if (sendWhatsApp && student.whatsapp) {
-        const attendanceAr =
-          attendance === 'present' ? 'حاضر ✅' : attendance === 'absent' ? 'غائب ❌' : 'معتذر ⚠️';
+        const attendanceAr = 'حاضر ✅';
         const msgText =
           `السلام عليكم، تقرير حصة مادة ${profile.subject} للطالب/ـة: ${student.name}\n` +
           `📅 التاريخ: ${todayArabicName} ${dateFormatted}\n` +
@@ -403,19 +508,31 @@ export const HomeTab: React.FC<HomeTabProps> = ({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              if (students.length > 0 && !selectedStudentId) {
-                setSelectedStudentId(students[0].id);
-              }
-              setShowStartClassModal(true);
-            }}
-            className="flex items-center gap-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 px-3.5 py-2 text-xs font-black shadow-lg shadow-amber-500/20 cursor-pointer transition active:scale-95"
-          >
-            <Play className="w-3.5 h-3.5 fill-slate-950" />
-            <span>تسجيل حصة</span>
-          </button>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setShowDailyAttendanceModal(true)}
+              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-3 py-2 text-xs font-bold shadow-md shadow-emerald-950/40 cursor-pointer transition active:scale-95"
+              title="سجل الحضور والغياب اليومي للطلاب مع التذكيرات التلقائية"
+            >
+              <UserCheck className="w-3.5 h-3.5" />
+              <span>تسجيل الحضور اليومي 📋</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (students.length > 0 && !selectedStudentId) {
+                  setSelectedStudentId(students[0].id);
+                }
+                setShowStartClassModal(true);
+              }}
+              className="flex items-center gap-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 px-3.5 py-2 text-xs font-black shadow-lg shadow-amber-500/20 cursor-pointer transition active:scale-95"
+            >
+              <Play className="w-3.5 h-3.5 fill-slate-950" />
+              <span>تسجيل حصة</span>
+            </button>
+          </div>
         </div>
 
         {/* Live next-class countdown */}
@@ -484,17 +601,51 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedStudentId(slot.studentId);
-                      setShowStartClassModal(true);
-                    }}
-                    className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition cursor-pointer shadow flex-shrink-0 flex items-center gap-1"
-                  >
-                    <Play className="w-3 h-3 fill-white" />
-                    <span>تسجيل</span>
-                  </button>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedStudentId(slot.studentId);
+                        setAttendance('present');
+                        setShowStartClassModal(true);
+                      }}
+                      className="px-2.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold transition cursor-pointer shadow flex items-center gap-1"
+                      title="تسجيل إنجاز الحصة وحضور الطالب"
+                    >
+                      <Play className="w-3 h-3 fill-white" />
+                      <span>تسجيل</span>
+                    </button>
+
+                    {student && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAbsenceModalStudent(student);
+                            setAbsenceModalType('excused');
+                            setAbsenceModalTopic('اعتذار عن موعد الحصة');
+                          }}
+                          className="px-2 py-1.5 rounded-xl bg-amber-950/60 hover:bg-amber-900/70 border border-amber-500/40 text-amber-300 text-[11px] font-bold transition cursor-pointer"
+                          title="تسجيل اعتذار الطالب وإدارته مالياً وتعويضياً"
+                        >
+                          <span>اعتذار ⚠️</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAbsenceModalStudent(student);
+                            setAbsenceModalType('absent');
+                            setAbsenceModalTopic('غياب بدون إشعار مسبق');
+                          }}
+                          className="px-2 py-1.5 rounded-xl bg-rose-950/60 hover:bg-rose-900/70 border border-rose-500/40 text-rose-300 text-[11px] font-bold transition cursor-pointer"
+                          title="تسجيل غياب الطالب وإدارته مالياً وتعويضياً"
+                        >
+                          <span>غياب ❌</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -817,7 +968,16 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setAttendance('absent')}
+                    onClick={() => {
+                      const st = students.find((s) => s.id === selectedStudentId);
+                      if (st) {
+                        setAbsenceModalStudent(st);
+                        setAbsenceModalType('absent');
+                        setAbsenceModalTopic(classTopic);
+                      } else {
+                        setAttendance('absent');
+                      }
+                    }}
                     className={`py-2 rounded-xl text-xs font-bold border ${
                       attendance === 'absent'
                         ? 'bg-rose-600/30 border-rose-500 text-rose-300'
@@ -828,7 +988,16 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setAttendance('excused')}
+                    onClick={() => {
+                      const st = students.find((s) => s.id === selectedStudentId);
+                      if (st) {
+                        setAbsenceModalStudent(st);
+                        setAbsenceModalType('excused');
+                        setAbsenceModalTopic(classTopic);
+                      } else {
+                        setAttendance('excused');
+                      }
+                    }}
                     className={`py-2 rounded-xl text-xs font-bold border ${
                       attendance === 'excused'
                         ? 'bg-amber-600/30 border-amber-500 text-amber-300'
@@ -968,6 +1137,31 @@ export const HomeTab: React.FC<HomeTabProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Smart Absence & Makeup Class Details Modal */}
+      {absenceModalStudent && (
+        <AbsenceDetailsModal
+          isOpen={!!absenceModalStudent}
+          onClose={() => setAbsenceModalStudent(null)}
+          student={absenceModalStudent}
+          dateStr={todayStr}
+          initialAttendance={absenceModalType}
+          profile={profile}
+          topic={absenceModalTopic}
+          onConfirm={handleConfirmAbsence}
+        />
+      )}
+
+      {/* Daily Attendance & Absence Register Modal */}
+      {showDailyAttendanceModal && (
+        <DailyAttendanceModal
+          isOpen={showDailyAttendanceModal}
+          onClose={() => setShowDailyAttendanceModal(false)}
+          profile={profile}
+          students={students}
+          schedules={schedules}
+        />
       )}
     </div>
   );

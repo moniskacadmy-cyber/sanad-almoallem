@@ -90,7 +90,7 @@ service cloud.firestore {
     function isValidTeacherProfileUpdate() {
       let data = incoming();
       let diff = incoming().diff(existing()).affectedKeys();
-      return diff.hasOnly(['name', 'whatsapp', 'subject', 'currency', 'whatsappTemplates', 'updatedAt']) &&
+      return diff.hasOnly(['name', 'whatsapp', 'subject', 'currency', 'whatsappTemplates', 'absencePolicy', 'updatedAt']) &&
         data.updatedAt == request.time &&
         data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
         data.whatsapp is string && data.whatsapp.size() >= 8 && data.whatsapp.size() <= 30 &&
@@ -141,7 +141,16 @@ service cloud.firestore {
       let data = incoming();
       return data.teacherId == teacherId &&
         data.topic is string && data.topic.size() <= 500 &&
-        data.attendance in ['present', 'absent', 'excused'];
+        data.attendance in ['present', 'absent', 'excused'] &&
+        (!('is_financial_counted' in data) || data.is_financial_counted is bool) &&
+        (!('isFinancialCounted' in data) || data.isFinancialCounted is bool) &&
+        (!('has_makeup_class' in data) || data.has_makeup_class is bool) &&
+        (!('hasMakeupClass' in data) || data.hasMakeupClass is bool) &&
+        (!('makeup_class_date' in data) || data.makeup_class_date == null || (data.makeup_class_date is string && data.makeup_class_date.size() <= 100) || data.makeup_class_date is timestamp) &&
+        (!('makeupClassDate' in data) || data.makeupClassDate == null || (data.makeupClassDate is string && data.makeupClassDate.size() <= 100) || data.makeupClassDate is timestamp) &&
+        (!('absence_reason_type' in data) || (data.absence_reason_type is string && data.absence_reason_type.size() <= 100)) &&
+        (!('absenceReasonType' in data) || (data.absenceReasonType is string && data.absenceReasonType.size() <= 100)) &&
+        (!('makeupCompleted' in data) || data.makeupCompleted is bool);
     }
 
     // Schedule validation
@@ -160,6 +169,8 @@ service cloud.firestore {
         (!('color' in data) || (data.color is string && data.color.size() <= 50)) &&
         (!('rating' in data) || (data.rating is number && data.rating >= 1 && data.rating <= 5)) &&
         (!('notes' in data) || (data.notes is string && data.notes.size() <= 2000)) &&
+        (!('isMakeup' in data) || data.isMakeup is bool) &&
+        (!('originalLessonId' in data) || (data.originalLessonId is string && data.originalLessonId.size() <= 128)) &&
         (!('completedTodayDate' in data) || data.completedTodayDate == null || (data.completedTodayDate is string && data.completedTodayDate.size() <= 30));
     }
 

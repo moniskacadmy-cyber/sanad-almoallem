@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TeacherProfile, Student, LessonLog } from '../types';
+import { TeacherProfile, Student, LessonLog, isLessonFinanciallyCounted } from '../types';
 import { fetchAllStudentLessons, settleStudentAccount } from '../firebase';
 import { useBackHandler } from '../services/backHandler';
 import {
@@ -138,23 +138,26 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
     periodLessons.forEach((l) => {
       const dur = l.duration || 60;
       const rate = l.hourlyRate || hourlyRate;
-      const cost = l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate);
+      const isCounted = isLessonFinanciallyCounted(l);
+      const cost = isCounted ? (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate)) : 0;
 
-      periodMinutes += dur;
-      periodAmount += cost;
+      if (isCounted) {
+        periodMinutes += dur;
+        periodAmount += cost;
 
-      if (l.settled) {
-        collectedAmount += cost;
-      } else {
-        pendingMinutes += dur;
-        pendingAmount += cost;
+        if (l.settled) {
+          collectedAmount += cost;
+        } else {
+          pendingMinutes += dur;
+          pendingAmount += cost;
+        }
       }
     });
 
     const periodHours = Number((periodMinutes / 60).toFixed(1));
 
     // 2. Filter lessons specifically for TODAY (ساعات اليوم منفصلة)
-    const todayLessons = studentLessons.filter((l) => l.date === todayKey);
+    const todayLessons = studentLessons.filter((l) => l.date === todayKey && isLessonFinanciallyCounted(l));
     const todayMinutes = todayLessons.reduce((sum, l) => sum + (l.duration || 60), 0);
     const todayHours = Number((todayMinutes / 60).toFixed(1));
     const todayEarnings = todayLessons.reduce((sum, l) => {
@@ -237,9 +240,10 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
   const handleOpenInvoiceModal = (item: (typeof studentFinancials)[0]) => {
     const st = item.student;
     const studentLessons = lessonsMap[st.id] || [];
-    const targetLessons = isAllTime
+    const targetLessons = (isAllTime
       ? studentLessons.filter((l) => !l.settled)
-      : studentLessons.filter((l) => l.date && l.date.startsWith(selectedMonthKey) && !l.settled);
+      : studentLessons.filter((l) => l.date && l.date.startsWith(selectedMonthKey) && !l.settled)
+    ).filter((l) => isLessonFinanciallyCounted(l));
 
     const lessonsListText = targetLessons
       .map(

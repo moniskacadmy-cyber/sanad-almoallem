@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { TeacherProfile, Student, LessonLog, ClassType, PaymentStatus, ScheduleSlot, DEFAULT_WHATSAPP_TEMPLATES, renderTemplate } from '../types';
+import { TeacherProfile, Student, LessonLog, ClassType, PaymentStatus, ScheduleSlot, DEFAULT_WHATSAPP_TEMPLATES, renderTemplate, isLessonFinanciallyCounted } from '../types';
+import { AbsenceDetailsModal, AbsenceDetailsResult } from './AbsenceDetailsModal';
+import { DailyAttendanceModal } from './DailyAttendanceModal';
+import { StudentPdfExportModal } from './StudentPdfExportModal';
+import { ReportType } from '../services/pdfReportService';
+import {
+  triggerAbsenceNotificationAndChime,
+  getStoredReminderSettings,
+} from '../services/reminderService';
 import { useBackHandler } from '../services/backHandler';
 import {
   addStudent,
@@ -58,6 +66,8 @@ import {
   ChevronDown,
   DollarSign,
   TrendingUp,
+  Download,
+  Printer,
 } from 'lucide-react';
 
 interface FormScheduleRow {
@@ -119,6 +129,18 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   useBackHandler(showMonthlyReportModal, () => setShowMonthlyReportModal(false), 'student_monthly_report');
   useBackHandler(showLessonPrepModal, () => setShowLessonPrepModal(false), 'student_lesson_prep');
   useBackHandler(!!showConfirmSettleStudent, () => setShowConfirmSettleStudent(null), 'student_settle_confirm');
+  const [showAbsenceModalInProfile, setShowAbsenceModalInProfile] = useState(false);
+  useBackHandler(showAbsenceModalInProfile, () => setShowAbsenceModalInProfile(false), 'student_absence_modal');
+  const [showDailyAttendanceModal, setShowDailyAttendanceModal] = useState(false);
+  useBackHandler(showDailyAttendanceModal, () => setShowDailyAttendanceModal(false), 'students_daily_attendance_modal');
+  const [showPdfExportModal, setShowPdfExportModal] = useState(false);
+  const [pdfExportReportType, setPdfExportReportType] = useState<ReportType>('financial');
+  useBackHandler(showPdfExportModal, () => setShowPdfExportModal(false), 'student_pdf_export_modal');
+
+  const handleOpenPdfExport = (type: ReportType = 'financial') => {
+    setPdfExportReportType(type);
+    setShowPdfExportModal(true);
+  };
 
   // Collapsible sections state (Closed by default to save space)
   const [isAddStudentLearningStyleOpen, setIsAddStudentLearningStyleOpen] = useState(false);
@@ -615,9 +637,95 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     }
   };
 
+  const handleConfirmProfileAbsence = async (result: AbsenceDetailsResult) => {
+    if (!selectedProfileStudent) return;
+    try {
+      const todayStr = new Intl.DateTimeFormat('en-CA').format(new Date());
+      const duration = 60;
+      const hourlyRate = selectedProfileStudent.hourlyRate || (selectedProfileStudent.monthlyFee ? Math.round(selectedProfileStudent.monthlyFee / 4) : 100);
+      const cost = result.isFinancialCounted ? Math.round((duration / 60) * hourlyRate) : 0;
+
+      await addLessonLog(profile.id, selectedProfileStudent.id, {
+        date: todayStr,
+        topic: newLessonTopic.trim() || (newLessonAttendance === 'excused' ? 'اعتذار مسبق عن موعد الحصة' : 'غياب عن موعد الحصة'),
+        homework: newLessonHomework.trim(),
+        attendance: newLessonAttendance,
+        duration,
+        hourlyRate,
+        cost,
+        settled: false,
+        rating: newLessonRating,
+        notes: result.notes || '',
+        isFinancialCounted: result.isFinancialCounted,
+        is_financial_counted: result.isFinancialCounted,
+        hasMakeupClass: result.hasMakeupClass,
+        has_makeup_class: result.hasMakeupClass,
+        makeupClassDate: result.makeupClassDate || null,
+        makeup_class_date: result.makeupClassDate || null,
+        absenceReasonType: result.absenceReasonType,
+        absence_reason_type: result.absenceReasonType,
+      });
+
+      if (result.addMakeupToSchedule && result.makeupSlotDetails) {
+        await addSchedule(profile.id, {
+          studentId: selectedProfileStudent.id,
+          studentName: selectedProfileStudent.name,
+          dayOfWeek: result.makeupSlotDetails.dayOfWeek,
+          time: result.makeupSlotDetails.time,
+          duration: result.makeupSlotDetails.duration,
+          recurrence: 'once',
+          classType: selectedProfileStudent.classType || 'in_person',
+          color: 'indigo',
+          notes: `حصة تعويضية (${result.absenceReasonType})`,
+          isMakeup: true,
+        });
+      }
+
+      // Automatically decrement remaining prepaid lessons ONLY if financially counted
+      if (
+        result.isFinancialCounted &&
+        selectedProfileStudent.remainingPaidLessons !== undefined &&
+        selectedProfileStudent.remainingPaidLessons > 0
+      ) {
+        const nextRemaining = Math.max(0, selectedProfileStudent.remainingPaidLessons - 1);
+        await updateStudent(profile.id, selectedProfileStudent.id, {
+          remainingPaidLessons: nextRemaining,
+        });
+        setSelectedProfileStudent((prev) =>
+          prev ? { ...prev, remainingPaidLessons: nextRemaining } : null
+        );
+      }
+
+      setNewLessonTopic('');
+      setNewLessonHomework('');
+      setShowAddLessonInsideProfile(false);
+      setShowAbsenceModalInProfile(false);
+
+      // Trigger Automatic Absence Reminder Notification & Chime
+      const remSettings = getStoredReminderSettings();
+      triggerAbsenceNotificationAndChime({
+        studentName: selectedProfileStudent.name,
+        attendanceType: newLessonAttendance === 'present' ? 'excused' : newLessonAttendance,
+        dateStr: todayStr,
+        hasWhatsApp: !!selectedProfileStudent.whatsapp,
+        soundEnabled: remSettings.soundEnabled,
+      });
+
+      await loadAllLessons();
+    } catch (err) {
+      console.error('Error adding absence lesson log in profile:', err);
+    }
+  };
+
   const handleAddLessonSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProfileStudent || !newLessonTopic.trim()) return;
+
+    if (newLessonAttendance === 'absent' || newLessonAttendance === 'excused') {
+      setShowAbsenceModalInProfile(true);
+      return;
+    }
+
     try {
       const todayStr = new Intl.DateTimeFormat('en-CA').format(new Date());
       const duration = 60;
@@ -635,6 +743,10 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
         settled: false,
         rating: newLessonRating,
         notes: '',
+        isFinancialCounted: true,
+        is_financial_counted: true,
+        hasMakeupClass: false,
+        has_makeup_class: false,
       });
 
       // Automatically decrement remaining prepaid lessons if active
@@ -826,7 +938,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const handleSendPaymentReminder = () => {
     if (!selectedProfileStudent) return;
     const hourlyRate = selectedProfileStudent.hourlyRate || (selectedProfileStudent.monthlyFee ? Math.round(selectedProfileStudent.monthlyFee / 4) : 100);
-    const unsettledLessons = studentLessons.filter((l) => !l.settled);
+    const unsettledLessons = studentLessons.filter((l) => !l.settled && isLessonFinanciallyCounted(l));
     const pendingMinutes = unsettledLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
     const pendingHours = (pendingMinutes / 60).toFixed(1);
     const pendingAmount = unsettledLessons.reduce((acc, l) => {
@@ -916,13 +1028,24 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
           <h2 className="text-lg font-bold text-white">سجل الطلاب ({students.length})</h2>
           <p className="text-xs text-slate-400">إدارة الطلاب، الحضور، التقارير والمدفوعات</p>
         </div>
-        <button
-          onClick={handleOpenAddModal}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-950/50 active:scale-95 transition cursor-pointer"
-        >
-          <UserPlus className="w-4 h-4" />
-          <span>إضافة طالب</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowDailyAttendanceModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-950/40 active:scale-95 transition cursor-pointer"
+            title="سجل الحضور والغياب اليومي للطلاب وتفعيل التذكيرات التلقائية"
+          >
+            <UserCheck className="w-4 h-4" />
+            <span>تسجيل الحضور اليومي 📋</span>
+          </button>
+          <button
+            onClick={handleOpenAddModal}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-950/50 active:scale-95 transition cursor-pointer"
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>إضافة طالب</span>
+          </button>
+        </div>
       </div>
 
       {/* Search & Filter Bar */}
@@ -1007,7 +1130,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
           {filteredStudents.map((s) => {
             const sLessons = allLessonsMap[s.id] || [];
             const hourlyRate = s.hourlyRate || (s.monthlyFee ? Math.round(s.monthlyFee / 4) : 100);
-            const unsettledLessons = sLessons.filter((l) => !l.settled);
+            const unsettledLessons = sLessons.filter((l) => !l.settled && isLessonFinanciallyCounted(l));
             const pendingMinutes = unsettledLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
             const pendingHours = (pendingMinutes / 60).toFixed(1);
             const pendingAmount = unsettledLessons.reduce((acc, l) => {
@@ -1706,21 +1829,41 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
               </button>
             </div>
 
-            {/* Quick Actions (Monthly Report, Lesson Prep, Record Lesson, and Welcome) */}
-            <div className="grid grid-cols-4 gap-1.5">
+            {/* Quick Actions (Monthly Report, Lesson Prep, Record Lesson, PDF Exports, and Welcome) */}
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleOpenPdfExport('financial')}
+                className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-110 text-white text-[10px] font-bold transition cursor-pointer shadow-md text-center"
+                title="تصدير كشف حساب ومستحقات مالي PDF"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-200 flex-shrink-0" />
+                <span className="truncate w-full">كشف حساب PDF</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleOpenPdfExport('attendance')}
+                className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:brightness-110 text-white text-[10px] font-bold transition cursor-pointer shadow-md text-center"
+                title="تصدير سجل وتقرير الحضور والغياب والمواظبة PDF"
+              >
+                <UserCheck className="w-3.5 h-3.5 text-purple-200 flex-shrink-0" />
+                <span className="truncate w-full">تقرير الحضور PDF</span>
+              </button>
+
               <button
                 type="button"
                 onClick={handleOpenMonthlyReport}
-                className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-110 text-white text-[10px] font-bold transition cursor-pointer shadow-md text-center"
+                className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold transition cursor-pointer border border-slate-700 text-center"
               >
-                <FileText className="w-3.5 h-3.5 flex-shrink-0" />
-                <span className="truncate w-full">تقرير المتابعة</span>
+                <FileText className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
+                <span className="truncate w-full">تقرير الشهر</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleOpenLessonPrep}
-                className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:brightness-110 text-white text-[10px] font-bold transition cursor-pointer shadow-md text-center"
+                className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold transition cursor-pointer border border-slate-700 text-center"
               >
                 <BookOpen className="w-3.5 h-3.5 text-amber-300 flex-shrink-0" />
                 <span className="truncate w-full">تحضير خطة</span>
@@ -1729,9 +1872,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
               <button
                 type="button"
                 onClick={handleSendWelcomeWhatsApp}
-                className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:brightness-110 text-white text-[10px] font-bold transition cursor-pointer shadow-md text-center"
+                className="flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold transition cursor-pointer border border-slate-700 text-center"
               >
-                <MessageCircle className="w-3.5 h-3.5 text-sky-200 flex-shrink-0" />
+                <MessageCircle className="w-3.5 h-3.5 text-sky-400 flex-shrink-0" />
                 <span className="truncate w-full">ترحيب بالواتس</span>
               </button>
 
@@ -1860,7 +2003,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
             {/* SECTION 1: SECTION "حسابات ومستحقات الطالب (نظام سعر الساعة)" */}
             {(() => {
               const hourlyRate = selectedProfileStudent.hourlyRate || (selectedProfileStudent.monthlyFee ? Math.round(selectedProfileStudent.monthlyFee / 4) : 100);
-              const unsettledLessons = studentLessons.filter((l) => !l.settled);
+              const unsettledLessons = studentLessons.filter((l) => !l.settled && isLessonFinanciallyCounted(l));
               const pendingMinutes = unsettledLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
               const pendingHours = (pendingMinutes / 60).toFixed(1);
               const pendingAmount = unsettledLessons.reduce((acc, l) => {
@@ -1928,23 +2071,33 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                     </div>
                   </div>
 
-                  {/* Actions: Settle Account Button & WhatsApp Statement */}
-                  <div className="grid grid-cols-2 gap-2 pt-1">
+                  {/* Actions: Settle Account Button, PDF Statement & WhatsApp Statement */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
                     <button
                       type="button"
                       onClick={() => setShowConfirmSettleStudent(selectedProfileStudent)}
-                      className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-md active:scale-98"
+                      className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-md active:scale-98"
                     >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>تصفية الحساب (تصفير) 💰</span>
+                      <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>تصفية الحساب 💰</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleOpenPdfExport('financial')}
+                      className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 text-xs font-bold transition cursor-pointer active:scale-98"
+                      title="تصدير كشف حساب تفصيلي PDF"
+                    >
+                      <Download className="w-3.5 h-3.5 text-purple-300 flex-shrink-0" />
+                      <span>كشف حساب PDF 📄</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={handleSendPaymentReminder}
-                      className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-xs font-semibold transition cursor-pointer active:scale-98"
+                      className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-xs font-semibold transition cursor-pointer active:scale-98"
                     >
-                      <MessageCircle className="w-3.5 h-3.5 text-amber-300" />
+                      <MessageCircle className="w-3.5 h-3.5 text-amber-300 flex-shrink-0" />
                       <span>مطالبة مالية (واتساب)</span>
                     </button>
                   </div>
@@ -2559,10 +2712,23 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
             {/* Attendance & Lessons History List */}
             <div className="flex-1 overflow-y-auto space-y-2 pr-0.5 min-h-[140px]">
-              <h4 className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-purple-400" />
-                <span>سجل الحصص السابقة ({studentLessons.length})</span>
-              </h4>
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-purple-400" />
+                  <span>سجل الحصص السابقة والمواظبة ({studentLessons.length})</span>
+                </h4>
+                {studentLessons.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenPdfExport('attendance')}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-purple-950/80 hover:bg-purple-900 border border-purple-500/30 text-purple-300 text-[10px] font-bold transition cursor-pointer"
+                    title="تصدير سجل وتقرير الحضور والغياب بصيغة PDF"
+                  >
+                    <Download className="w-3 h-3 text-purple-400" />
+                    <span>تقرير الحضور (PDF) 📊</span>
+                  </button>
+                )}
+              </div>
 
               {studentLessons.length === 0 ? (
                 <div className="py-6 text-center text-xs text-slate-400 bg-slate-950/40 rounded-xl border border-slate-800">
@@ -2586,8 +2752,33 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                               : 'bg-amber-950 border border-amber-500/30 text-amber-400'
                           }`}
                         >
-                          {l.attendance === 'present' ? 'حاضر' : l.attendance === 'absent' ? 'غائب' : 'معتذر'}
+                          {l.attendance === 'present' ? 'حاضر ✅' : l.attendance === 'absent' ? 'غائب ❌' : 'معتذر ⚠️'}
                         </span>
+
+                        {/* Absence details badges */}
+                        {(l.attendance === 'absent' || l.attendance === 'excused') && (
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <span
+                              className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold border ${
+                                isLessonFinanciallyCounted(l)
+                                  ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300'
+                                  : 'bg-slate-900 border-slate-700 text-slate-400'
+                              }`}
+                            >
+                              {isLessonFinanciallyCounted(l) ? 'مُحتسبة 💰' : 'مُستبعدة 🚫'}
+                            </span>
+
+                            {l.hasMakeupClass || l.has_makeup_class ? (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded-full font-bold bg-indigo-950/80 border border-indigo-500/40 text-indigo-300">
+                                🔄 تعويض{l.makeupClassDate || l.makeup_class_date ? `: ${l.makeupClassDate || l.makeup_class_date}` : ''}
+                              </span>
+                            ) : (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded-full font-bold bg-slate-900 border border-slate-700 text-slate-500">
+                                ⛔ بدون تعويض
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-1">
@@ -2674,14 +2865,25 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
             {/* Action Buttons */}
             <div className="space-y-2 pt-1">
-              <button
-                type="button"
-                onClick={handleSendMonthlyReport}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-lg shadow-emerald-950/50 active:scale-98"
-              >
-                <Send className="w-4 h-4" />
-                <span>إرسال التقرير عبر واتساب الآن 💬</span>
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleSendMonthlyReport}
+                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-md active:scale-98"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>إرسال واتساب 💬</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleOpenPdfExport('comprehensive')}
+                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:brightness-110 text-white text-xs font-bold transition cursor-pointer shadow-md active:scale-98"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>تصدير تقرير PDF 📄</span>
+                </button>
+              </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -2857,6 +3059,44 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
             </div>
           </div>
         </div>
+      )}
+
+      {/* Smart Absence Details Modal inside Student Profile */}
+      {showAbsenceModalInProfile && selectedProfileStudent && (
+        <AbsenceDetailsModal
+          isOpen={showAbsenceModalInProfile}
+          onClose={() => setShowAbsenceModalInProfile(false)}
+          student={selectedProfileStudent}
+          dateStr={new Intl.DateTimeFormat('en-CA').format(new Date())}
+          initialAttendance={newLessonAttendance === 'present' ? 'excused' : newLessonAttendance}
+          profile={profile}
+          topic={newLessonTopic}
+          onConfirm={handleConfirmProfileAbsence}
+        />
+      )}
+
+      {/* Daily Attendance & Absence Register Modal */}
+      {showDailyAttendanceModal && (
+        <DailyAttendanceModal
+          isOpen={showDailyAttendanceModal}
+          onClose={() => setShowDailyAttendanceModal(false)}
+          profile={profile}
+          students={students}
+          schedules={schedules}
+          onAttendanceUpdated={loadAllLessons}
+        />
+      )}
+
+      {/* PDF Export Modal (كشف حساب مالي أو تقرير الحضور والغياب) */}
+      {showPdfExportModal && selectedProfileStudent && (
+        <StudentPdfExportModal
+          isOpen={showPdfExportModal}
+          onClose={() => setShowPdfExportModal(false)}
+          student={selectedProfileStudent}
+          teacher={profile}
+          lessons={studentLessons}
+          defaultReportType={pdfExportReportType}
+        />
       )}
     </div>
   );

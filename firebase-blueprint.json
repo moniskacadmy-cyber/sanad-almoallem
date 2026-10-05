@@ -73,6 +73,10 @@
         "attendance": { "type": "string", "enum": ["present", "absent", "excused"] },
         "rating": { "type": "number" },
         "notes": { "type": "string", "maxLength": 1000 },
+        "isFinancialCounted": { "type": "boolean" },
+        "hasMakeupClass": { "type": "boolean" },
+        "makeupClassDate": { "type": "string", "maxLength": 100 },
+        "absenceReasonType": { "type": "string", "maxLength": 100 },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "studentId", "teacherId", "date", "topic", "attendance", "createdAt"]

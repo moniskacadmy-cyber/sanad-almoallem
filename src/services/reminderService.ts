@@ -1,4 +1,12 @@
-import { ScheduleSlot, Student, TeacherProfile, ReminderLog, ReminderSettings } from '../types';
+import {
+  ScheduleSlot,
+  Student,
+  TeacherProfile,
+  ReminderLog,
+  ReminderSettings,
+  renderTemplate,
+  DEFAULT_WHATSAPP_TEMPLATES,
+} from '../types';
 import { auth } from '../firebase';
 
 const REMINDER_SETTINGS_KEY = 'sanad_reminder_settings';
@@ -305,4 +313,85 @@ export function sendEndOfDaySummaryNotification(params: {
     message: body,
   };
 }
+
+// Student Absence Automatic Reminder Generator & Notification Dispatcher
+export function createAbsenceReminderMessage(params: {
+  student: Student;
+  teacher: TeacherProfile;
+  dateStr: string;
+  attendanceType: 'absent' | 'excused';
+  isFinancialCounted: boolean;
+  hasMakeupClass: boolean;
+  makeupClassDate?: string | null;
+  notes?: string;
+  topic?: string;
+}): string {
+  const isExcused = params.attendanceType === 'excused';
+  const statusLabel = isExcused ? 'اعتذار مسبق عن موعد الحصة ⚠️' : 'غياب عن موعد الحصة ❌';
+
+  let dateFormatted = params.dateStr;
+  try {
+    dateFormatted = new Intl.DateTimeFormat('ar-EG', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    }).format(new Date(params.dateStr));
+  } catch {
+    dateFormatted = params.dateStr;
+  }
+
+  let financialNote = '';
+  if (params.isFinancialCounted) {
+    financialNote = '• الجانب المالي: تم احتساب الحصة ضمن السجل المالي للمتابعة الدراسية.';
+  } else {
+    financialNote = '• الجانب المالي: لم يتم احتساب هذه الحصة مالياً مراعاةً للظرف والاعتذار.';
+  }
+
+  let makeupNote = '';
+  if (params.hasMakeupClass) {
+    if (params.makeupClassDate) {
+      makeupNote = `• الحصة التعويضية: تم تحديد موعد الحصة التعويضية بإذن الله بتاريخ (${params.makeupClassDate}).`;
+    } else {
+      makeupNote = '• الحصة التعويضية: سيتم التنسيق معكم قريباً لتحديد موعد حصة تعويضية مناسبة لضمان عدم تأخر الطالب في المنهج.';
+    }
+  } else {
+    makeupNote = '• الحصة التعويضية: لا توجد حصة تعويضية مقررة لهذه الحصة.';
+  }
+
+  const extraNotes = params.notes?.trim() ? `• ملاحظات إضافية: ${params.notes.trim()}` : '';
+
+  const template =
+    params.teacher.whatsappTemplates?.absenceReminder ||
+    DEFAULT_WHATSAPP_TEMPLATES.absenceReminder;
+
+  return renderTemplate(template, {
+    studentName: params.student.name,
+    subject: params.teacher.subject,
+    teacherName: params.teacher.name,
+    date: dateFormatted,
+    statusLabel,
+    financialNote,
+    makeupNote,
+    extraNotes,
+    topic: params.topic || '',
+  });
+}
+
+export function triggerAbsenceNotificationAndChime(params: {
+  studentName: string;
+  attendanceType: 'absent' | 'excused';
+  dateStr: string;
+  hasWhatsApp?: boolean;
+  soundEnabled?: boolean;
+}) {
+  const isExcused = params.attendanceType === 'excused';
+  const title = isExcused ? '⚠️ تنبيه اعتذار طالب - سند المعلم' : '❌ تنبيه غياب طالب - سند المعلم';
+  const body = `تم تسجيل ${isExcused ? 'اعتذار' : 'غياب'} الطالب/ـة (${params.studentName}) وتفعيل التذكير التلقائي لولي الأمر بنجاح.`;
+  showBrowserNotification(title, body);
+  if (params.soundEnabled !== false) {
+    playNotificationChime();
+  }
+}
+
 

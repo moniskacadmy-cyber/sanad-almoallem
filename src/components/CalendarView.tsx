@@ -368,7 +368,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         className="text-[9px] font-bold py-0.5 px-1.5 rounded-lg border truncate flex items-center justify-between hover:scale-[1.02] transition shadow-xs"
                         title={`${slot.studentName} (${slot.time})`}
                       >
-                        <span className="truncate">{slot.studentName}</span>
+                        <span className="truncate">{slot.isMakeup ? `🔄 ${slot.studentName}` : slot.studentName}</span>
                         <span className="opacity-80 font-mono text-[8px] mr-1">
                           {slot.time}
                         </span>
@@ -507,6 +507,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         <span className={`text-[10px] px-2 py-0.5 rounded-lg border ${meta.badgeClass}`}>
                           {meta.shortLabel}
                         </span>
+                        {slot.isMakeup && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-lg bg-indigo-950 border border-indigo-500/40 text-indigo-300 font-bold flex items-center gap-1">
+                            🔄 حصة تعويضية
+                          </span>
+                        )}
                         {isCompleted && (
                           <span className="text-[10px] px-2 py-0.5 rounded-lg bg-emerald-950 text-emerald-300 font-bold border border-emerald-500/40">
                             تمت الحصة ✅
@@ -745,6 +750,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           </div>
 
                           <div className="flex items-center gap-1.5">
+                            {slot.isMakeup && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-lg bg-indigo-950 border border-indigo-500/40 text-indigo-300 font-bold">
+                                🔄 تعويض
+                              </span>
+                            )}
                             <span className={`text-[10px] px-2 py-0.5 rounded-lg border font-bold ${meta.badgeClass}`}>
                               {meta.label}
                             </span>
