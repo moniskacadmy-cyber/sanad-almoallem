@@ -200,10 +200,17 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     setTimeout(() => setTemplateNotice(null), 4000);
   };
 
-  const handleUpdateReminderSetting = (key: keyof ReminderSettings, val: any) => {
+  const handleUpdateReminderSetting = async (key: keyof ReminderSettings, val: any) => {
     const updated = { ...reminderSettings, [key]: val };
     setReminderSettings(updated);
     storeReminderSettings(updated);
+    if (key === 'minutesBefore') {
+      try {
+        await updateTeacherProfile(profile.id, { reminderMinutesBefore: Math.min(120, Math.max(5, Number(val) || 15)), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo' });
+      } catch (error) {
+        console.warn('Could not sync reminder timing:', error);
+      }
+    }
   };
 
   const handleRequestNotificationPermission = async () => {
