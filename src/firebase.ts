@@ -1449,7 +1449,11 @@ export async function requestAndSaveFCMToken(): Promise<{
 
     if ('serviceWorker' in navigator) {
       try {
-        swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+        const swUrl = new URL('/firebase-messaging-sw.js', window.location.origin);
+        Object.entries(firebaseConfig).forEach(([key, value]) => {
+          if (value) swUrl.searchParams.set(key, String(value));
+        });
+        swReg = await navigator.serviceWorker.register(swUrl.toString(), { scope: '/' });
       } catch (swErr) {
         console.warn('Could not register firebase-messaging-sw.js directly:', swErr);
       }
