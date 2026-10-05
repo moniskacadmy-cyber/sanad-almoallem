@@ -643,9 +643,6 @@ app.get('/api/reminders/cron', async (req, res) => {
     let teachersChecked = 0;
     let notificationsSent = 0;
 
-    let teachersChecked = 0;
-    let notificationsSent = 0;
-
     for (const teacherDoc of teachersSnap.docs) {
       const teacherId = teacherDoc.id;
       const teacherData = teacherDoc.data();
