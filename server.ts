@@ -634,36 +634,20 @@ app.get('/api/reminders/cron', async (req, res) => {
     const dbAdmin = getAdminDb();
     const messagingAdmin = getAdminMessaging(getApps()[0]);
 
-    // Optimize reads: Query fcmTokens collectionGroup to find only teachers who have active tokens
-    const fcmGroupSnap = await dbAdmin.collectionGroup('fcmTokens').get();
-
-    // Map: teacherId -> { tokens: string[], tokenDocPaths: Map<string, string> }
-    const teacherTokensMap = new Map<string, { tokens: string[]; tokenDocPaths: Map<string, string> }>();
-
-    fcmGroupSnap.forEach((docSnap) => {
-      const parentTeacherDoc = docSnap.ref.parent.parent;
-      if (!parentTeacherDoc) return;
-      const teacherId = parentTeacherDoc.id;
-      const tokenData = docSnap.data();
-      const tokenVal = tokenData?.token || docSnap.id;
-      if (!tokenVal) return;
-
-      if (!teacherTokensMap.has(teacherId)) {
-        teacherTokensMap.set(teacherId, { tokens: [], tokenDocPaths: new Map() });
-      }
-      const entry = teacherTokensMap.get(teacherId)!;
-      if (!entry.tokens.includes(tokenVal)) {
-        entry.tokens.push(tokenVal);
-      }
-      entry.tokenDocPaths.set(tokenVal, docSnap.ref.path);
-    });
+    // Query only active subscribed teachers, then read their canonical token subcollection.
+    const teachersSnap = await dbAdmin.collection('teachers')
+      .where('isActive', '==', true)
+      .where('subscriptionStatus', '==', 'active')
+      .get();
 
     let teachersChecked = 0;
     let notificationsSent = 0;
 
-    for (const [teacherId, entry] of teacherTokensMap.entries()) {
-      const teacherDoc = await dbAdmin.collection('teachers').doc(teacherId).get();
-      if (!teacherDoc.exists) continue;
+    let teachersChecked = 0;
+    let notificationsSent = 0;
+
+    for (const teacherDoc of teachersSnap.docs) {
+      const teacherId = teacherDoc.id;
       const teacherData = teacherDoc.data();
       if (!teacherData) continue;
 
@@ -681,8 +665,8 @@ app.get('/api/reminders/cron', async (req, res) => {
       const { todayStr, currentDayOfWeek, currentTotalMinutes } = getTimezoneNowParts(tz);
 
       const minutesBefore = Number(teacherData.reminderMinutesBefore) || 15;
-      const fcmTokens = entry.tokens;
-
+      const tokenSnap = await dbAdmin.collection('teachers').doc(teacherId).collection('fcmTokens').get();
+      const fcmTokens = tokenSnap.docs.map((tokenDoc) => String(tokenDoc.data()?.token || tokenDoc.id)).filter(Boolean);
       if (fcmTokens.length === 0) continue;
 
       // Optimize reads: Query ONLY today's schedule slots (where dayOfWeek == currentDayOfWeek)
@@ -703,8 +687,8 @@ app.get('/api/reminders/cron', async (req, res) => {
         const slotTotalMinutes = slotHour * 60 + slotMin;
         const diffMinutes = slotTotalMinutes - currentTotalMinutes;
 
-        // Condition: diffMinutes is between minutesBefore - 1 and minutesBefore (inclusive)
-        const isInWindow = diffMinutes >= minutesBefore - 1 && diffMinutes <= minutesBefore;
+        // Cron runs every 5 minutes; a broad 0..minutesBefore window prevents missed reminders.
+        const isInWindow = diffMinutes >= 0 && diffMinutes <= minutesBefore;
         if (!isInWindow) continue;
 
         const reminderId = `sent_${teacherId}_${schedDoc.id}_${todayStr}_${slot.time.replace(':', '')}`;
@@ -714,23 +698,26 @@ app.get('/api/reminders/cron', async (req, res) => {
           .collection('sentReminders')
           .doc(reminderId);
 
-        let claimed = false;
-        try {
-          // Atomic document creation acts as a distributed lock
-          await sentRef.create({
+        const claimResult = await dbAdmin.runTransaction(async (transaction) => {
+          const existing = await transaction.get(sentRef);
+          const data = existing.exists ? existing.data() : null;
+          const status = data?.status;
+          const timestamp = Date.parse(String(data?.claimedAt || data?.failedAt || ''));
+          const stale = Number.isFinite(timestamp) && Date.now() - timestamp > 2 * 60 * 1000;
+          if (existing.exists && status === 'sent') return false;
+          if (existing.exists && status === 'claiming' && !stale) return false;
+          if (existing.exists && status === 'failed' && !stale) return false;
+          transaction.set(sentRef, {
             status: 'claiming',
             scheduleId: schedDoc.id,
             teacherId,
             day: todayStr,
             claimedAt: new Date().toISOString(),
           });
-          claimed = true;
-        } catch (lockError) {
-          // If already exists, skip to prevent duplicate notifications (Race Condition Prevention)
-          continue;
-        }
+          return true;
+        }).catch(() => false);
 
-        if (!claimed) continue;
+        if (!claimResult) continue;
 
         const title = '⏰ تذكير موعد الحصة القادمة';
         const body = `أستاذ/ـة ${teacherData.name || 'المعلم'}، لديك حصة قادمة مع الطالب (${slot.studentName || 'طالب'}) في تمام الساعة ${slot.time}.`;
@@ -792,53 +779,14 @@ app.get('/api/reminders/cron', async (req, res) => {
 
           notificationsSent += sendResponse.successCount;
 
-          // Delete bad tokens: Find and delete the exact matching token document
+          // Delete bad tokens from the canonical teacher collection only.
           sendResponse.responses.forEach((resp, idx) => {
             if (!resp.success && resp.error) {
               const errCode = resp.error.code;
-              if (
-                errCode === 'messaging/invalid-registration-token' ||
-                errCode === 'messaging/registration-token-not-registered'
-              ) {
+              if (errCode === 'messaging/invalid-registration-token' || errCode === 'messaging/registration-token-not-registered') {
                 const badToken = fcmTokens[idx];
-                if (badToken) {
-                  const docPath = entry.tokenDocPaths.get(badToken);
-                  if (docPath) {
-                    dbAdmin.doc(docPath).delete().catch(() => {});
-                  }
-                  // Delete documents matching token field or document ID in both users and teachers collections
-                  dbAdmin
-                    .collection('users')
-                    .doc(teacherId)
-                    .collection('fcmTokens')
-                    .where('token', '==', badToken)
-                    .get()
-                    .then((snap) => snap.forEach((d) => d.ref.delete().catch(() => {})))
-                    .catch(() => {});
-                  dbAdmin
-                    .collection('users')
-                    .doc(teacherId)
-                    .collection('fcmTokens')
-                    .doc(badToken)
-                    .delete()
-                    .catch(() => {});
-
-                  dbAdmin
-                    .collection('teachers')
-                    .doc(teacherId)
-                    .collection('fcmTokens')
-                    .where('token', '==', badToken)
-                    .get()
-                    .then((snap) => snap.forEach((d) => d.ref.delete().catch(() => {})))
-                    .catch(() => {});
-                  dbAdmin
-                    .collection('teachers')
-                    .doc(teacherId)
-                    .collection('fcmTokens')
-                    .doc(badToken)
-                    .delete()
-                    .catch(() => {});
-                }
+                const tokenDoc = tokenSnap.docs.find((d) => String(d.data()?.token || d.id) === badToken);
+                if (tokenDoc) tokenDoc.ref.delete().catch(() => {});
               }
             }
           });
