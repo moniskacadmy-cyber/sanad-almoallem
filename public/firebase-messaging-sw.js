@@ -62,6 +62,15 @@ if (firebaseConfig.apiKey && firebaseConfig.projectId) {
   }
 }
 
+// Auto claim and skip waiting on install/activate to prevent stale service workers
+self.addEventListener('install', () => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
 // Fallback native push event listener when browser wakes service worker
 self.addEventListener('push', (event) => {
   if (!event.data) return;

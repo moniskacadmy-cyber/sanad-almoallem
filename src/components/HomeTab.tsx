@@ -266,7 +266,8 @@ export const HomeTab: React.FC<HomeTabProps> = ({
 
   // Subscription Status badge helper
   const getSubscriptionBadge = () => {
-    if (!profile.subscriptionExpiresAt) {
+    const rawExpiry = profile.subscriptionEndDate || profile.subscriptionExpiresAt || profile.trialEndDate;
+    if (!rawExpiry) {
       return (
         <button
           type="button"
@@ -279,9 +280,12 @@ export const HomeTab: React.FC<HomeTabProps> = ({
       );
     }
 
-    const expiry = profile.subscriptionExpiresAt.toDate
-      ? profile.subscriptionExpiresAt.toDate()
-      : new Date(profile.subscriptionExpiresAt);
+    const expiry = typeof rawExpiry.toDate === 'function'
+      ? rawExpiry.toDate()
+      : typeof rawExpiry._seconds === 'number'
+      ? new Date(rawExpiry._seconds * 1000)
+      : new Date(rawExpiry);
+
     const diffMs = expiry.getTime() - now.getTime();
     const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 

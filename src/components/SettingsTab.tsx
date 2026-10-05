@@ -479,10 +479,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   };
 
   const getSubscriptionInfo = () => {
-    if (!profile.subscriptionExpiresAt) return { title: 'غير محدد', color: 'text-slate-400' };
-    const expiry = profile.subscriptionExpiresAt.toDate
-      ? profile.subscriptionExpiresAt.toDate()
-      : new Date(profile.subscriptionExpiresAt);
+    const rawExpiry = profile.subscriptionEndDate || profile.subscriptionExpiresAt || profile.trialEndDate;
+    if (!rawExpiry) return { title: 'غير محدد', color: 'text-slate-400' };
+    const expiry = typeof rawExpiry.toDate === 'function'
+      ? rawExpiry.toDate()
+      : typeof rawExpiry._seconds === 'number'
+      ? new Date(rawExpiry._seconds * 1000)
+      : new Date(rawExpiry);
     const diffDays = Math.ceil((expiry.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 
     if (profile.subscriptionStatus === 'active') {

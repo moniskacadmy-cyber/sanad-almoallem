@@ -22,6 +22,7 @@ import { AdminSecretGate } from './components/AdminSecretGate';
 import { NearExpiryOverlay } from './components/NearExpiryOverlay';
 import { OfflineIndicator } from './OfflineIndicator';
 import { AIAssistantChat } from './components/AIAssistantChat';
+import { LoadingFallback } from './components/LoadingFallback';
 
 // Code-split heavy screen tabs with React.lazy to accelerate initial load time
 const StudentsTab = React.lazy(() => import('./components/StudentsTab').then((m) => ({ default: m.StudentsTab })));
@@ -66,6 +67,30 @@ export default function App() {
   const [profile, setProfile] = useState<TeacherProfile | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loadingAuth, setLoadingAuth] = useState(true);
+  const [loadingTimeout, setLoadingTimeout] = useState(false);
+  const [profileLoadingTimeout, setProfileLoadingTimeout] = useState(false);
+
+  // Safety net timer: Ensure loadingAuth never hangs indefinitely
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setLoadingTimeout(true);
+      // Force exit loading mode if auth listener hasn't responded after 6 seconds
+      setLoadingAuth(false);
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Safety net timer for teacher profile loading
+  useEffect(() => {
+    if (!currentUser || profile) {
+      setProfileLoadingTimeout(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setProfileLoadingTimeout(true);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [currentUser, profile]);
 
   // Routing State (/ or /admin)
   const [currentPath, setCurrentPath] = useState<string>(() => {
@@ -378,10 +403,11 @@ export default function App() {
   // Loading Screen
   if (loadingAuth) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-purple-300">
-        <Loader2 className="w-10 h-10 animate-spin text-purple-500 mb-3" />
-        <p className="text-sm font-bold">جارٍ تحميل سند المعلم...</p>
-      </div>
+      <LoadingFallback
+        message="جارٍ تحميل سند المعلم..."
+        subMessage="جاري الاتصال بالسيرفر وتحضير بيانات التطبيق"
+        timeoutMs={5000}
+      />
     );
   }
 
@@ -395,23 +421,42 @@ export default function App() {
     );
   }
 
-  // If user signed in but profile document is not created yet
+  // If user signed in but profile document is not loaded or created yet
   if (!profile) {
     return (
-      <div className="min-h-screen bg-[#070314] flex flex-col justify-center items-center p-4">
+      <div className="min-h-screen bg-[#070314] flex flex-col justify-center items-center p-4 text-center text-white dir-rtl" dir="rtl">
         <OfflineIndicator />
-        <AuthModal onSuccess={() => {}} />
+        {!profileLoadingTimeout ? (
+          <LoadingFallback
+            message="جارٍ تجهيز بيانات المعلم..."
+            subMessage="جاري إعداد حسابك وشخصنة البيانات الإدارية"
+            timeoutMs={4000}
+          />
+        ) : (
+          <div className="w-full max-w-sm space-y-4">
+            <AuthModal onSuccess={() => {}} />
+          </div>
+        )}
       </div>
     );
   }
 
-  // Expiration & Remaining Days Calculation
-  const effectiveExpiry = profile.subscriptionEndDate || profile.subscriptionExpiresAt;
-  const expiryDate = effectiveExpiry?.toDate
-    ? effectiveExpiry.toDate()
-    : effectiveExpiry
-    ? new Date(effectiveExpiry)
-    : null;
+  // Expiration & Remaining Days Calculation (Safe timestamp resolver)
+  const effectiveExpiry = profile.subscriptionEndDate || profile.subscriptionExpiresAt || profile.trialEndDate;
+  let expiryDate: Date | null = null;
+  if (effectiveExpiry) {
+    if (typeof effectiveExpiry.toDate === 'function') {
+      expiryDate = effectiveExpiry.toDate();
+    } else if (typeof effectiveExpiry._seconds === 'number') {
+      expiryDate = new Date(effectiveExpiry._seconds * 1000);
+    } else if (typeof effectiveExpiry.seconds === 'number') {
+      expiryDate = new Date(effectiveExpiry.seconds * 1000);
+    } else {
+      const d = new Date(effectiveExpiry);
+      if (!isNaN(d.getTime())) expiryDate = d;
+    }
+  }
+
   const now = new Date();
   const isSubscriptionExpired = !expiryDate || expiryDate <= now || profile.isActive === false || profile.subscriptionStatus === 'expired';
   const diffMs = expiryDate ? expiryDate.getTime() - now.getTime() : 0;
