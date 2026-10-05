@@ -61,7 +61,7 @@ const envDatabaseId =
 const effectiveDatabaseId =
   envDatabaseId !== undefined && envDatabaseId !== ''
     ? envDatabaseId
-    : (rawFirebaseConfig as any).firestoreDatabaseId || 'ai-studio-f9d7667a-6157-4def-8ccd-a9acd863d453';
+    : (rawFirebaseConfig as any).firestoreDatabaseId || '(default)';
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
@@ -82,18 +82,6 @@ if (typeof window !== 'undefined') {
     }
   });
 }
-
-// Test Firestore Connection as required by skill
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Firebase client appears offline. Please check your configuration.');
-    }
-  }
-}
-testConnection();
 
 // Skill-mandated Error Handler
 export enum OperationType {
@@ -183,31 +171,35 @@ export async function registerTeacher(params: {
   }
   const normalizedEmail = (user.email || params.email).trim().toLowerCase();
 
+  const isEmailVerified = Boolean(user.emailVerified || (user.providerData && user.providerData.some(p => p.providerId === 'google.com')));
+
   // Check if admin pre-provisioned a subscription for this email
   let initialStatus: SubscriptionStatus = 'trial';
   let initialPlan: SubscriptionPlan = 'none';
   let initialEndDate = trialEnd;
   let isActive = true;
 
-  try {
-    const subDoc = await getDoc(doc(db, 'subscriptions', normalizedEmail));
-    if (subDoc.exists()) {
-      const subData = subDoc.data();
-      if (subData.subscriptionEndDate) {
-        const subDate = subData.subscriptionEndDate.toDate ? subData.subscriptionEndDate.toDate() : new Date(subData.subscriptionEndDate);
-        if (subDate > new Date() && subData.isActive !== false) {
-          initialStatus = 'active';
-          initialPlan = (subData.plan as SubscriptionPlan) || 'monthly';
-          initialEndDate = subDate;
+  if (isEmailVerified) {
+    try {
+      const subDoc = await getDoc(doc(db, 'subscriptions', normalizedEmail));
+      if (subDoc.exists()) {
+        const subData = subDoc.data();
+        if (subData.subscriptionEndDate) {
+          const subDate = subData.subscriptionEndDate.toDate ? subData.subscriptionEndDate.toDate() : new Date(subData.subscriptionEndDate);
+          if (subDate > new Date() && subData.isActive !== false) {
+            initialStatus = 'active';
+            initialPlan = (subData.plan as SubscriptionPlan) || 'monthly';
+            initialEndDate = subDate;
+          }
+        }
+        if (subData.isActive === false) {
+          isActive = false;
+          initialStatus = 'expired';
         }
       }
-      if (subData.isActive === false) {
-        isActive = false;
-        initialStatus = 'expired';
-      }
+    } catch (e) {
+      console.warn('Subscription pre-check note:', e);
     }
-  } catch (e) {
-    console.warn('Subscription pre-check note:', e);
   }
 
   const newProfile = {
@@ -312,13 +304,20 @@ export async function updateTeacherProfile(teacherId: string, updates: {
   whatsapp?: string;
   subject?: string;
   currency?: string;
+  remindersEnabled?: boolean;
   reminderMinutesBefore?: number;
+  teacherNotificationsEnabled?: boolean;
   timezone?: string;
   whatsappTemplates?: {
     welcome?: string;
     payment?: string;
     report?: string;
     lessonPrep?: string;
+  };
+  absencePolicy?: {
+    allowExcused?: boolean;
+    requireMakeup?: boolean;
+    autoCountExcused?: boolean;
   };
 }) {
   const path = `teachers/${teacherId}`;
@@ -1457,7 +1456,8 @@ export async function requestAndSaveFCMToken(): Promise<{
 
     if ('serviceWorker' in navigator) {
       try {
-        swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+        const swUrl = `/firebase-messaging-sw.js?apiKey=${encodeURIComponent(firebaseConfig.apiKey || '')}&projectId=${encodeURIComponent(firebaseConfig.projectId || '')}&messagingSenderId=${encodeURIComponent(firebaseConfig.messagingSenderId || '')}&appId=${encodeURIComponent(firebaseConfig.appId || '')}&authDomain=${encodeURIComponent(firebaseConfig.authDomain || '')}&storageBucket=${encodeURIComponent(firebaseConfig.storageBucket || '')}`;
+        swReg = await navigator.serviceWorker.register(swUrl);
       } catch (swErr) {
         console.warn('Could not register firebase-messaging-sw.js directly:', swErr);
       }
@@ -1480,21 +1480,7 @@ export async function requestAndSaveFCMToken(): Promise<{
 
     const user = auth.currentUser;
     if (user) {
-      // 1. Save in users/{uid}/fcmTokens/{tokenId}
-      const userTokenRef = doc(db, 'users', user.uid, 'fcmTokens', token);
-      await setDoc(
-        userTokenRef,
-        {
-          token,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo',
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-          userAgent: navigator.userAgent,
-        },
-        { merge: true }
-      );
-
-      // 2. Save in teachers/{uid}/fcmTokens/{tokenId}
+      // Unified storage: Save in teachers/{uid}/fcmTokens/{tokenId}
       const teacherTokenRef = doc(db, 'teachers', user.uid, 'fcmTokens', token);
       await setDoc(
         teacherTokenRef,

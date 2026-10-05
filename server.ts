@@ -140,8 +140,13 @@ const adminAuth = getAuth();
 const app = express();
 const PORT = 3000;
 
-// Body parser limited to 2mb
-app.use(express.json({ limit: '2mb' }));
+// Body parser: 4.5mb limit for /api/ai/transcribe and 2mb limit for all other routes
+app.use((req, res, next) => {
+  if (req.path === '/api/ai/transcribe') {
+    return express.json({ limit: '4.5mb' })(req, res, next);
+  }
+  return express.json({ limit: '2mb' })(req, res, next);
+});
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
 // Shared Gemini client utility
@@ -155,9 +160,9 @@ const ai = new GoogleGenAI({
 });
 
 // Gemini can temporarily return 503/UNAVAILABLE during provider demand spikes.
-// Retry a small number of times with backoff, then surface a truthful 503 to the client.
+// Retry up to 2 times with backoff for transient errors.
 async function generateGeminiContentWithRetry(request: Parameters<typeof ai.models.generateContent>[0]) {
-  const maxAttempts = 1;
+  const maxAttempts = 2;
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
@@ -170,7 +175,7 @@ async function generateGeminiContentWithRetry(request: Parameters<typeof ai.mode
       // Retrying it would only waste quota/time, so only retry 5xx/provider-unavailable errors.
       const transient = status === 500 || status === 502 || status === 503 || status === 504 || message.includes('unavailable') || message.includes('high demand');
       if (!transient || attempt === maxAttempts) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** (attempt - 1)));
+      await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
     }
   }
   throw lastError;
@@ -252,7 +257,7 @@ async function verifyFirebaseToken(
 
 type RedisLimitResult = { limited: boolean; unavailable: boolean };
 
-async function incrementRedisCounter(
+export async function incrementRedisCounter(
   key: string,
   windowSeconds: number,
   maxRequests: number
@@ -262,6 +267,9 @@ async function incrementRedisCounter(
   if (!url || !token) return { limited: false, unavailable: true };
 
   try {
+    const windowIndex = Math.floor(Date.now() / 1000 / windowSeconds);
+    const windowKey = `${key}:${windowIndex}`;
+
     const response = await fetch(`${url.replace(/\/$/, '')}/pipeline`, {
       method: 'POST',
       headers: {
@@ -269,8 +277,8 @@ async function incrementRedisCounter(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify([
-        ['INCR', key],
-        ['EXPIRE', key, windowSeconds],
+        ['INCR', windowKey],
+        ['EXPIRE', windowKey, windowSeconds * 2],
       ]),
     });
 
@@ -289,6 +297,21 @@ async function incrementRedisCounter(
 const rateLimitMap = new Map<string, number[]>();
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const MAX_REQUESTS_PER_WINDOW = 30;
+
+// In-memory buckets for AI limits fallback outside Vercel
+const memoryAiBuckets = new Map<string, number[]>();
+
+export function checkAndIncrementMemoryAiBucket(key: string, windowMs: number, maxRequests: number): boolean {
+  const now = Date.now();
+  const timestamps = memoryAiBuckets.get(key) || [];
+  const recent = timestamps.filter((t) => now - t < windowMs);
+  if (recent.length >= maxRequests) {
+    return false; // rejected
+  }
+  recent.push(now);
+  memoryAiBuckets.set(key, recent);
+  return true; // allowed
+}
 
 async function userRateLimiter(
   req: express.Request,
@@ -320,13 +343,13 @@ async function userRateLimiter(
   next();
 }
 
-const AI_LIMITS = {
+export const AI_LIMITS = {
   ask: { perMinute: 10, daily: 100 },
   assistant: { perMinute: 15, daily: 100 },
   transcribe: { perMinute: 5, daily: 50 },
 } as const;
 
-async function aiRateLimiter(
+export async function aiRateLimiter(
   routeName: keyof typeof AI_LIMITS,
   req: express.Request,
   res: express.Response,
@@ -338,36 +361,63 @@ async function aiRateLimiter(
   const limits = AI_LIMITS[routeName];
   const totalDailyLimit = Number(process.env.AI_DAILY_REQUESTS || 100);
 
-  // Check limits in order so a request rejected by a tighter limit does not
-  // consume the remaining daily counters.
-  const minute = await incrementRedisCounter(`ai:${routeName}:minute:${userId}`, 60, limits.perMinute);
-  if (minute.unavailable) {
-    if (process.env.VERCEL) {
-      return res.status(503).json({ error: 'حماية الذكاء الاصطناعي غير متاحة مؤقتاً. حاول بعد قليل.' });
-    }
-  }
-  if (minute.limited) {
-    return res.status(429).json({ error: 'تم تجاوز الحد المسموح به من طلبات الذكاء الاصطناعي خلال الدقيقة.' });
+  const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
+  const hasRedis = Boolean(url && token);
+
+  if (!hasRedis && process.env.VERCEL) {
+    return res.status(503).json({ error: 'حماية الذكاء الاصطناعي غير متاحة مؤقتاً. حاول بعد قليل.' });
   }
 
-  const day = await incrementRedisCounter(`ai:${routeName}:day:${userId}`, 86400, limits.daily);
-  if (day.unavailable) {
-    if (process.env.VERCEL) {
-      return res.status(503).json({ error: 'حماية الذكاء الاصطناعي غير متاحة مؤقتاً. حاول بعد قليل.' });
+  if (hasRedis) {
+    // Check minute limit first
+    const minute = await incrementRedisCounter(`ai:${routeName}:minute:${userId}`, 60, limits.perMinute);
+    if (minute.unavailable) {
+      if (process.env.VERCEL) {
+        return res.status(503).json({ error: 'حماية الذكاء الاصطناعي غير متاحة مؤقتاً. حاول بعد قليل.' });
+      }
     }
-  }
-  if (day.limited) {
-    return res.status(429).json({ error: 'تم تجاوز الحد اليومي لهذه الخدمة من الذكاء الاصطناعي. حاول غداً.' });
-  }
+    if (minute.limited) {
+      return res.status(429).json({ error: 'تم تجاوز الحد المسموح به من طلبات الذكاء الاصطناعي خلال الدقيقة.' });
+    }
 
-  const totalDay = await incrementRedisCounter(`ai:total-day:${userId}`, 86400, totalDailyLimit);
-  if (totalDay.unavailable) {
-    if (process.env.VERCEL) {
-      return res.status(503).json({ error: 'حماية الذكاء الاصطناعي غير متاحة مؤقتاً. حاول بعد قليل.' });
+    // Check route daily limit ONLY if minute passed
+    const day = await incrementRedisCounter(`ai:${routeName}:day:${userId}`, 86400, limits.daily);
+    if (day.unavailable) {
+      if (process.env.VERCEL) {
+        return res.status(503).json({ error: 'حماية الذكاء الاصطناعي غير متاحة مؤقتاً. حاول بعد قليل.' });
+      }
     }
-  }
-  if (totalDay.limited) {
-    return res.status(429).json({ error: 'تم تجاوز إجمالي الحد اليومي للذكاء الاصطناعي. حاول غداً.' });
+    if (day.limited) {
+      return res.status(429).json({ error: 'تم تجاوز الحد اليومي لهذه الخدمة من الذكاء الاصطناعي. حاول غداً.' });
+    }
+
+    // Check total daily limit ONLY if route daily passed
+    const totalDay = await incrementRedisCounter(`ai:total-day:${userId}`, 86400, totalDailyLimit);
+    if (totalDay.unavailable) {
+      if (process.env.VERCEL) {
+        return res.status(503).json({ error: 'حماية الذكاء الاصطناعي غير متاحة مؤقتاً. حاول بعد قليل.' });
+      }
+    }
+    if (totalDay.limited) {
+      return res.status(429).json({ error: 'تم تجاوز إجمالي الحد اليومي للذكاء الاصطناعي. حاول غداً.' });
+    }
+  } else {
+    // In-memory fallback outside Vercel
+    const minuteAllowed = checkAndIncrementMemoryAiBucket(`ai:${routeName}:minute:${userId}`, 60 * 1000, limits.perMinute);
+    if (!minuteAllowed) {
+      return res.status(429).json({ error: 'تم تجاوز الحد المسموح به من طلبات الذكاء الاصطناعي خلال الدقيقة.' });
+    }
+
+    const dayAllowed = checkAndIncrementMemoryAiBucket(`ai:${routeName}:day:${userId}`, 24 * 60 * 60 * 1000, limits.daily);
+    if (!dayAllowed) {
+      return res.status(429).json({ error: 'تم تجاوز الحد اليومي لهذه الخدمة من الذكاء الاصطناعي. حاول غداً.' });
+    }
+
+    const totalDayAllowed = checkAndIncrementMemoryAiBucket(`ai:total-day:${userId}`, 24 * 60 * 60 * 1000, totalDailyLimit);
+    if (!totalDayAllowed) {
+      return res.status(429).json({ error: 'تم تجاوز إجمالي الحد اليومي للذكاء الاصطناعي. حاول غداً.' });
+    }
   }
 
   next();
@@ -376,14 +426,12 @@ async function aiRateLimiter(
 // Helper to get Admin Firestore DB.
 // MUST resolve the same database as the client (src/firebase.ts): env override,
 // then the database id from firebase-applet-config.json. '(default)' / empty -> default DB.
-const LEGACY_AI_STUDIO_DATABASE_ID = 'ai-studio-f9d7667a-6157-4def-8ccd-a9acd863d453';
-
-function resolveDatabaseId(): string | undefined {
-  const fromEnv = process.env.VITE_FIREBASE_DATABASE_ID?.trim();
+export function resolveDatabaseId(): string | undefined {
+  const fromEnv = process.env.VITE_FIREBASE_DATABASE_ID?.trim() || process.env.FIREBASE_DATABASE_ID?.trim();
   const effective =
     fromEnv !== undefined && fromEnv !== ''
       ? fromEnv
-      : appletConfig.firestoreDatabaseId || LEGACY_AI_STUDIO_DATABASE_ID;
+      : appletConfig.firestoreDatabaseId || '(default)';
   return effective === '(default)' || !effective ? undefined : effective;
 }
 
@@ -505,7 +553,7 @@ ${question}
 يرجى الإجابة بدقة مع الاستناد المباشر للمصادر والمناهج المرفوعة أعلاه ومساعدة المعلم في تقديم أفضل شرح لطلابه.`;
     }
 
-    const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+    const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     const response = await generateGeminiTextWithFreeFallback({
       model: modelName,
       contents: promptContext,
@@ -536,17 +584,17 @@ app.post('/api/ai/transcribe', verifyFirebaseToken, (req, res, next) => aiRateLi
       return res.status(400).json({ error: 'البيانات الصوتية مطلوبة.' });
     }
 
-    // Limit maximum audio payload size strictly to 2MB (2 * 1024 * 1024 bytes)
+    // Limit maximum audio payload size strictly to 1.5MB after base64 decoding (1.5 * 1024 * 1024 bytes)
     const approxByteSize = Math.floor((audioBase64.length * 3) / 4);
-    if (approxByteSize > 2 * 1024 * 1024) {
-      return res.status(400).json({ error: 'حجم المقطع الصوتي كبير جداً. الحد الأقصى المسموح به 2 ميجابايت.' });
+    if (approxByteSize > 1.5 * 1024 * 1024) {
+      return res.status(400).json({ error: 'حجم المقطع الصوتي كبير جداً. الحد الأقصى المسموح به 1.5 ميجابايت (يرجى تسجيل مقطع أقصر).' });
     }
 
     if (!process.env.GEMINI_API_KEY) {
       return res.status(500).json({ error: 'خدمة الذكاء الاصطناعي غير مهيأة.' });
     }
 
-    const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+    const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     const audioPart = {
       inlineData: {
         mimeType: mimeType || 'audio/webm',
@@ -600,7 +648,7 @@ app.post('/api/ai/assistant', verifyFirebaseToken, (req, res, next) => aiRateLim
     if (Array.isArray(messagesHistory) && messagesHistory.length) { const recent = messagesHistory.slice(-6); historyText = 'سجل المحادثة السابقة:\n' + recent.map((m: any) => `${m.role === 'user' ? 'المعلم' : 'المساعد'}: ${typeof m.text === 'string' ? m.text.slice(0, 1000) : ''}`).join('\n') + '\n===============================\n'; }
     const fullPrompt = `${formattedContext}\n${historyText}سؤال المعلم الحالي:\n${message.slice(0, 2000).trim()}`;
     if (fullPrompt.length > 12000) return res.status(400).json({ error: 'حجم الطلب النهائي كبير جداً.' });
-    const stream = streamGeminiTextWithFreeFallback({ model: process.env.GEMINI_MODEL || 'gemini-3.8-flash', contents: fullPrompt, config: { systemInstruction, maxOutputTokens: 700 } });
+    const stream = streamGeminiTextWithFreeFallback({ model: process.env.GEMINI_MODEL || 'gemini-2.5-flash', contents: fullPrompt, config: { systemInstruction, maxOutputTokens: 700 } });
     res.status(200); res.setHeader('Content-Type', 'text/event-stream; charset=utf-8'); res.setHeader('Cache-Control', 'no-cache, no-transform'); res.setHeader('Connection', 'keep-alive'); res.setHeader('X-Accel-Buffering', 'no'); res.flushHeaders?.(); streamStarted = true;
     for await (const chunkText of stream) res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
     res.write('data: [DONE]\n\n'); return res.end();
@@ -762,8 +810,8 @@ app.get('/api/reminders/cron', async (req, res) => {
         const slotTotalMinutes = slotHour * 60 + slotMin;
         const diffMinutes = slotTotalMinutes - currentTotalMinutes;
 
-        // Condition: diffMinutes is between minutesBefore - 1 and minutesBefore (inclusive)
-        const isInWindow = diffMinutes >= minutesBefore - 1 && diffMinutes <= minutesBefore;
+        // Condition: diffMinutes is within the lookahead window (0 < diffMinutes <= minutesBefore)
+        const isInWindow = diffMinutes > 0 && diffMinutes <= minutesBefore;
         if (!isInWindow) continue;
 
         const reminderId = `sent_${teacherId}_${schedDoc.id}_${todayStr}_${slot.time.replace(':', '')}`;
@@ -773,23 +821,61 @@ app.get('/api/reminders/cron', async (req, res) => {
           .collection('sentReminders')
           .doc(reminderId);
 
-        let claimed = false;
+        let shouldSend = false;
         try {
-          // Atomic document creation acts as a distributed lock
-          await sentRef.create({
-            status: 'claiming',
-            scheduleId: schedDoc.id,
-            teacherId,
-            day: todayStr,
-            claimedAt: new Date().toISOString(),
+          // Atomic distributed transaction claiming
+          await dbAdmin.runTransaction(async (transaction) => {
+            const currentDoc = await transaction.get(sentRef);
+            const nowIso = new Date().toISOString();
+            if (!currentDoc.exists) {
+              transaction.set(sentRef, {
+                status: 'claiming',
+                scheduleId: schedDoc.id,
+                teacherId,
+                day: todayStr,
+                claimedAt: nowIso,
+              });
+              shouldSend = true;
+              return;
+            }
+
+            const currentData = currentDoc.data();
+            if (currentData?.status === 'sent') {
+              shouldSend = false;
+              return;
+            }
+
+            if (currentData?.status === 'claiming') {
+              const claimedAtMs = currentData.claimedAt ? new Date(currentData.claimedAt).getTime() : 0;
+              const isStale = Date.now() - claimedAtMs > 2 * 60 * 1000;
+              if (isStale) {
+                transaction.update(sentRef, {
+                  status: 'claiming',
+                  claimedAt: nowIso,
+                  retried: true,
+                });
+                shouldSend = true;
+                return;
+              }
+              shouldSend = false;
+              return;
+            }
+
+            if (currentData?.status === 'failed') {
+              transaction.update(sentRef, {
+                status: 'claiming',
+                claimedAt: nowIso,
+                retriedFromFailed: true,
+              });
+              shouldSend = true;
+              return;
+            }
           });
-          claimed = true;
         } catch (lockError) {
-          // If already exists, skip to prevent duplicate notifications (Race Condition Prevention)
           continue;
         }
 
-        if (!claimed) continue;
+        if (!shouldSend) continue;
 
         const title = '⏰ تذكير موعد الحصة القادمة';
         const body = `أستاذ/ـة ${teacherData.name || 'المعلم'}، لديك حصة قادمة مع الطالب (${slot.studentName || 'طالب'}) في تمام الساعة ${slot.time}.`;
@@ -851,7 +937,7 @@ app.get('/api/reminders/cron', async (req, res) => {
 
           notificationsSent += sendResponse.successCount;
 
-          // Delete bad tokens: Find and delete the exact matching token document
+          // Delete bad tokens: Find and delete the exact matching token document in teachers/{uid}/fcmTokens
           sendResponse.responses.forEach((resp, idx) => {
             if (!resp.success && resp.error) {
               const errCode = resp.error.code;
@@ -865,23 +951,6 @@ app.get('/api/reminders/cron', async (req, res) => {
                   if (docPath) {
                     dbAdmin.doc(docPath).delete().catch(() => {});
                   }
-                  // Delete documents matching token field or document ID in both users and teachers collections
-                  dbAdmin
-                    .collection('users')
-                    .doc(teacherId)
-                    .collection('fcmTokens')
-                    .where('token', '==', badToken)
-                    .get()
-                    .then((snap) => snap.forEach((d) => d.ref.delete().catch(() => {})))
-                    .catch(() => {});
-                  dbAdmin
-                    .collection('users')
-                    .doc(teacherId)
-                    .collection('fcmTokens')
-                    .doc(badToken)
-                    .delete()
-                    .catch(() => {});
-
                   dbAdmin
                     .collection('teachers')
                     .doc(teacherId)
@@ -926,6 +995,42 @@ app.get('/api/reminders/cron', async (req, res) => {
   }
 });
 
+// Health check endpoint with real checks (Firebase Admin, Upstash Redis ping, Gemini key presence)
+app.get('/api/health', async (_req, res) => {
+  let firebaseOk = false;
+  let redisStatus: 'ok' | 'unavailable' | 'not_configured' = 'not_configured';
+  const geminiConfigured = Boolean(process.env.GEMINI_API_KEY?.trim());
+
+  try {
+    const dbAdmin = getAdminDb();
+    await dbAdmin.collection('admins').limit(1).get();
+    firebaseOk = true;
+  } catch (err) {
+    console.error('Health check Firebase check failure:', err instanceof Error ? err.message : 'unknown');
+  }
+
+  const redisUrl = process.env.UPSTASH_REDIS_REST_URL?.trim();
+  const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
+  if (redisUrl && redisToken) {
+    try {
+      const pingRes = await fetch(`${redisUrl.replace(/\/$/, '')}/ping`, {
+        headers: { Authorization: `Bearer ${redisToken}` },
+      });
+      redisStatus = pingRes.ok ? 'ok' : 'unavailable';
+    } catch {
+      redisStatus = 'unavailable';
+    }
+  }
+
+  const isHealthy = firebaseOk && geminiConfigured && (redisStatus !== 'unavailable');
+  return res.status(isHealthy ? 200 : 503).json({
+    ok: isHealthy,
+    firebase: firebaseOk,
+    redis: redisStatus,
+    geminiConfigured,
+  });
+});
+
 // Automated 15-Minute Class Reminders & WhatsApp/Notifications API Route (Protected)
 app.use('/api/reminders', verifyFirebaseToken, userRateLimiter, createRemindersRouter());
 
@@ -937,7 +1042,7 @@ app.use((error: unknown, _req: express.Request, res: express.Response, next: exp
 });
 
 // Local Server Runner (Vercel Serverless executes app directly via /api/index.ts)
-if (!process.env.VERCEL) {
+if (!process.env.VERCEL && process.env.NODE_ENV !== 'test') {
   async function startServer() {
     const isProd = process.env.NODE_ENV === 'production';
     if (!isProd) {

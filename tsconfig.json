@@ -23,5 +23,7 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "include": ["src", "api", "server.ts", "tests", "vite.config.ts"],
+  "exclude": ["cloudflare-reminders", "dist", "node_modules"]
 }

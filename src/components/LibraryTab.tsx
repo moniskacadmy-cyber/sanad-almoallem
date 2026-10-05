@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import * as pdfjsLib from 'pdfjs-dist';
 import { TeacherProfile, LibraryItem, LibraryItemType } from '../types';
 import { VoiceInputButton } from './VoiceInputButton';
 import { useBackHandler } from '../services/backHandler';
@@ -34,7 +35,92 @@ import {
   CheckCircle2,
   AlertCircle,
   ExternalLink,
+  Loader2,
 } from 'lucide-react';
+
+// Configure pdfjs worker if not already set
+if (typeof window !== 'undefined' && !(pdfjsLib as any).GlobalWorkerOptions.workerSrc) {
+  try {
+    (pdfjsLib as any).GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version || '4.10.38'}/pdf.worker.min.mjs`;
+  } catch (_) {}
+}
+
+async function extractTextFromPdf(file: File): Promise<{ text: string; isScanned: boolean }> {
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
+    const pdf = await loadingTask.promise;
+    let fullText = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item: any) => ('str' in item ? item.str : ''))
+        .filter(Boolean)
+        .join(' ');
+      if (pageText.trim()) {
+        fullText += `[صفحة ${i}]:\n${pageText}\n\n`;
+      }
+      if (fullText.length >= 30000) {
+        fullText = fullText.slice(0, 30000);
+        break;
+      }
+    }
+    const trimmed = fullText.trim();
+    if (!trimmed) {
+      return {
+        text: `ملف PDF: ${file.name}\n(تنبيه: ملف الـ PDF ممسوح ضوئياً أو عبارة عن صور فقط ولا يحتوي على نصوص قابلة للقراءة الآلية. يرجى كتابة ملخص يدوي لأهم النقاط).`,
+        isScanned: true,
+      };
+    }
+    return { text: trimmed, isScanned: false };
+  } catch (error) {
+    console.warn('PDF text extraction error:', error);
+    return {
+      text: `ملف PDF: ${file.name}\n(تعذر استخراج النص تلقائياً من الملف، يرجى كتابة الملخص أو الملاحظات يدوياً).`,
+      isScanned: true,
+    };
+  }
+}
+
+async function compressImage(file: File): Promise<{ base64: string; sizeKB: number } | null> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+        const maxDim = 1024;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        const approxBytes = Math.floor((dataUrl.length * 3) / 4);
+        const sizeKB = Math.round(approxBytes / 1024);
+        resolve({ base64: dataUrl, sizeKB });
+      };
+      img.onerror = () => resolve(null);
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
 
 interface LibraryTabProps {
   profile: TeacherProfile;
@@ -62,6 +148,9 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
   const [sourceFileSize, setSourceFileSize] = useState('');
   const [sourceFileData, setSourceFileData] = useState<string | undefined>(undefined);
   const [isSavingSource, setIsSavingSource] = useState(false);
+  const [isExtractingPdf, setIsExtractingPdf] = useState(false);
+  const [pdfWarningNotice, setPdfWarningNotice] = useState<string | null>(null);
+  const [fileUploadError, setFileUploadError] = useState<string | null>(null);
 
   // Preview Modal
   const [previewingSource, setPreviewingSource] = useState<LibraryItem | null>(null);
@@ -170,9 +259,12 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
   };
 
   // Handle File Upload for Sources (PDF or Images)
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    setFileUploadError(null);
+    setPdfWarningNotice(null);
 
     const sizeInKB = Math.round(file.size / 1024);
     const sizeStr = sizeInKB > 1024 ? `${(sizeInKB / 1024).toFixed(1)} MB` : `${sizeInKB} KB`;
@@ -186,21 +278,41 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
 
     if (file.type.includes('pdf')) {
       setSourceType('pdf');
-      // For PDFs, store file name and note in content
-      if (!sourceContent) {
-        setSourceContent(`ملف كتاب / منهج بصيغة PDF: ${file.name} (${sizeStr})`);
+      setIsExtractingPdf(true);
+      try {
+        const { text, isScanned } = await extractTextFromPdf(file);
+        setSourceContent(text);
+        if (isScanned) {
+          setPdfWarningNotice('تنبيه: ملف الـ PDF ممسوح ضوئياً أو لا يحتوي على نصوص قابلة للقراءة الآلية. يمكنك كتابة ملخص يدوي لأهم محتوياته.');
+        }
+      } catch (err: any) {
+        console.warn('PDF parse error:', err);
+        setSourceContent(`ملف PDF: ${file.name}`);
+      } finally {
+        setIsExtractingPdf(false);
       }
     } else if (file.type.startsWith('image/')) {
       setSourceType('image');
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const base64 = event.target?.result as string;
-        setSourceFileData(base64);
+      try {
+        const compressed = await compressImage(file);
+        if (!compressed) {
+          setFileUploadError('تعذر قراءة ملف الصورة المحدد.');
+          return;
+        }
+        if (compressed.sizeKB > 700) {
+          setFileUploadError(`حجم الصورة بعد الضغط (${compressed.sizeKB} KB) يتجاوز الحد الأقصى المسموح به (700 KB). يرجى اختيار صورة أصغر.`);
+          setSourceFileData(undefined);
+          return;
+        }
+        setSourceFileData(compressed.base64);
+        setSourceFileSize(`${compressed.sizeKB} KB`);
         if (!sourceContent) {
           setSourceContent(`صورة لدرس / صفحة من المنهج: ${file.name}`);
         }
-      };
-      reader.readAsDataURL(file);
+      } catch (err: any) {
+        console.error('Image compression error:', err);
+        setFileUploadError('حدث خطأ أثناء معالجة وضغط الصورة.');
+      }
     }
   };
 
@@ -807,15 +919,38 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                   />
                   <div className="space-y-1">
-                    <Upload className="w-6 h-6 text-purple-400 mx-auto" />
-                    <p className="text-xs text-slate-200 font-bold">
-                      {sourceFileName ? `تم اختيار: ${sourceFileName}` : 'اضغط لاختيار ملف PDF أو صورة المنهج'}
-                    </p>
-                    <p className="text-[10px] text-slate-500">
-                      يدعم الكتب والملازم والملخصات وصور صفحات الدروس
-                    </p>
+                    {isExtractingPdf ? (
+                      <div className="flex flex-col items-center justify-center gap-1.5 py-1 text-purple-300">
+                        <Loader2 className="w-6 h-6 animate-spin text-purple-400" />
+                        <p className="text-xs font-bold">جارٍ استخراج وقراءة نصوص ملف الـ PDF...</p>
+                      </div>
+                    ) : (
+                      <>
+                        <Upload className="w-6 h-6 text-purple-400 mx-auto" />
+                        <p className="text-xs text-slate-200 font-bold">
+                          {sourceFileName ? `تم اختيار: ${sourceFileName} (${sourceFileSize})` : 'اضغط لاختيار ملف PDF أو صورة المنهج'}
+                        </p>
+                        <p className="text-[10px] text-slate-500">
+                          يتم استخراج نصوص PDF تلقائياً وضغط الصور لسرعة المعالجة
+                        </p>
+                      </>
+                    )}
                   </div>
                 </div>
+
+                {fileUploadError && (
+                  <div className="mt-2 p-2.5 rounded-xl bg-rose-950/70 border border-rose-500/50 text-rose-300 text-xs flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                    <span>{fileUploadError}</span>
+                  </div>
+                )}
+
+                {pdfWarningNotice && (
+                  <div className="mt-2 p-2.5 rounded-xl bg-amber-950/70 border border-amber-500/50 text-amber-300 text-xs flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                    <span>{pdfWarningNotice}</span>
+                  </div>
+                )}
               </div>
 
               {/* Source Title */}

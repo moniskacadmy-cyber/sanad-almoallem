@@ -1,35 +1,60 @@
-// ملاحظة هامة: يجب أن تطابق إعدادات Firebase (firebaseConfig) أدناه قيم المشروع المعتمد في تطبيقك لضمان استقبال إشعارات Web Push بنجاح.
-// IMPORTANT: The firebaseConfig object below MUST match your active Firebase project configuration.
+// Firebase Service Worker for Background Web Push Notifications
+// Reads configuration dynamically from query parameters passed during registration.
 
 importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging-compat.js');
 
-const firebaseConfig = {
-  projectId: "gen-lang-client-0886550561",
-  appId: "1:65313535187:web:7652704feb5f4a04e85026",
-  apiKey: "AIzaSyCW-2H9dXUvJEpWKs9x1Cr7ME9gqV3uZMk",
-  authDomain: "gen-lang-client-0886550561.firebaseapp.com",
-  storageBucket: "gen-lang-client-0886550561.firebasestorage.app",
-  messagingSenderId: "65313535187",
-};
+function getFirebaseConfigFromLocation() {
+  const params = new URLSearchParams(self.location.search);
+  const apiKey = params.get('apiKey');
+  const projectId = params.get('projectId');
+  const messagingSenderId = params.get('messagingSenderId');
+  const appId = params.get('appId');
+  const authDomain = params.get('authDomain');
+  const storageBucket = params.get('storageBucket');
 
-firebase.initializeApp(firebaseConfig);
+  if (apiKey && projectId) {
+    return {
+      apiKey,
+      projectId,
+      messagingSenderId: messagingSenderId || undefined,
+      appId: appId || undefined,
+      authDomain: authDomain || `${projectId}.firebaseapp.com`,
+      storageBucket: storageBucket || `${projectId}.firebasestorage.app`,
+    };
+  }
 
-const messaging = firebase.messaging();
-
-messaging.onBackgroundMessage((payload) => {
-  console.log('[firebase-messaging-sw.js] Received background message:', payload);
-  const notificationTitle = payload.notification?.title || payload.data?.title || 'تذكير بالحصة ⏰';
-  const notificationOptions = {
-    body: payload.notification?.body || payload.data?.body || 'لديك حصة دراسية قريبة.',
-    icon: '/pwa-192x192.png',
-    badge: '/favicon.ico',
-    tag: payload.data?.tag || 'lesson-reminder',
-    data: payload.data || {},
+  return {
+    projectId: 'sanad-1464f',
+    authDomain: 'sanad-1464f.firebaseapp.com',
+    storageBucket: 'sanad-1464f.firebasestorage.app',
   };
+}
 
-  self.registration.showNotification(notificationTitle, notificationOptions);
-});
+const firebaseConfig = getFirebaseConfigFromLocation();
+
+if (firebaseConfig.apiKey && firebaseConfig.projectId) {
+  try {
+    firebase.initializeApp(firebaseConfig);
+    const messaging = firebase.messaging();
+
+    messaging.onBackgroundMessage((payload) => {
+      console.log('[firebase-messaging-sw.js] Received background message:', payload);
+      const notificationTitle = payload.notification?.title || payload.data?.title || 'تذكير بالحصة ⏰';
+      const notificationOptions = {
+        body: payload.notification?.body || payload.data?.body || 'لديك حصة دراسية قريبة.',
+        icon: '/pwa-192x192.png',
+        badge: '/favicon.ico',
+        tag: payload.data?.tag || 'lesson-reminder',
+        data: payload.data || {},
+      };
+
+      self.registration.showNotification(notificationTitle, notificationOptions);
+    });
+  } catch (err) {
+    console.warn('[firebase-messaging-sw.js] Initialization warning:', err);
+  }
+}
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();

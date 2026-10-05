@@ -6,6 +6,8 @@ import {
 } from '../firebase';
 import {
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
   sendPasswordResetEmail,
   User,
 } from 'firebase/auth';
@@ -21,6 +23,7 @@ import {
   UserPlus,
   AlertCircle,
   CheckCircle2,
+  Send,
 } from 'lucide-react';
 
 interface AuthModalProps {
@@ -33,6 +36,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   const [error, setError] = useState<string | null>(null);
   const [resetSuccess, setResetSuccess] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
+  const [showEmailVerificationNotice, setShowEmailVerificationNotice] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState('');
+  const [resendVerificationSuccess, setResendVerificationSuccess] = useState(false);
+  const [createdUser, setCreatedUser] = useState<User | null>(null);
 
   // Registration Fields
   const [name, setName] = useState('');
@@ -96,14 +103,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
           throw new Error('كلمة المرور يجب أن لا تقل عن 6 أحرف أو أرقام.');
         }
 
+        const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+        try {
+          await sendEmailVerification(credential.user);
+        } catch (vErr) {
+          console.warn('Could not send email verification:', vErr);
+        }
+
         await registerTeacher({
           name: name.trim(),
           email: email.trim(),
-          password,
           whatsapp: whatsapp.trim(),
           subject: effectiveSubject.trim(),
+          existingUser: credential.user,
         });
-        onSuccess();
+
+        setRegisteredEmail(email.trim());
+        setCreatedUser(credential.user);
+        setShowEmailVerificationNotice(true);
       } else {
         // Login
         if (!email.trim() || !password) {
@@ -146,6 +163,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
       setError('تعذر تسجيل الدخول عبر Google. يرجى المحاولة مجدداً أو التسجيل بالبريد.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    const targetUser = createdUser || auth.currentUser;
+    if (targetUser) {
+      try {
+        await sendEmailVerification(targetUser);
+        setResendVerificationSuccess(true);
+        setTimeout(() => setResendVerificationSuccess(false), 4000);
+      } catch (err: any) {
+        setError(err.message || 'تعذر إعادة إرسال رسالة التحقق.');
+      }
     }
   };
 
@@ -198,8 +228,60 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
           </div>
         )}
 
-        {/* Forgot Password View */}
-        {showForgot ? (
+        {/* Email Verification Screen */}
+        {showEmailVerificationNotice ? (
+          <div className="space-y-4 text-center py-2">
+            <div className="w-14 h-14 rounded-2xl bg-purple-600/20 border border-purple-500/40 text-purple-300 flex items-center justify-center mx-auto shadow-lg shadow-purple-900/30">
+              <Mail className="w-7 h-7 text-purple-400 animate-bounce" />
+            </div>
+
+            <div className="space-y-1.5">
+              <h3 className="text-base font-bold text-white">فعّل بريدك الإلكتروني لتأكيد الحساب</h3>
+              <p className="text-xs text-purple-200">
+                أرسلنا رابط التحقق والتفعيل إلى:
+              </p>
+              <div className="inline-block px-3 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs font-mono text-amber-300 dir-ltr">
+                {registeredEmail}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
+                يرجى فتح بريدك الإلكتروني والضغط على رابط التحقق. التحقق مطلوب لتفعيل الاشتراكات المسبقة والميزات الكاملة.
+              </p>
+            </div>
+
+            {resendVerificationSuccess && (
+              <div className="p-2.5 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs flex items-center justify-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span>تمت إعادة إرسال رابط التحقق بنجاح!</span>
+              </div>
+            )}
+
+            {error && (
+              <div className="p-2.5 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-300 text-xs flex items-center justify-center gap-1.5">
+                <AlertCircle className="w-4 h-4 text-rose-400" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <div className="space-y-2 pt-2">
+              <button
+                type="button"
+                onClick={onSuccess}
+                className="w-full rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 py-2.5 text-xs font-bold text-white transition active:scale-98 cursor-pointer shadow-md shadow-purple-900/40 flex items-center justify-center gap-2"
+              >
+                <span>متابعة إلى المنصة (بدء التجربة المجانية 7 أيام) 🚀</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleResendVerification}
+                className="w-full rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700 py-2 text-xs font-medium text-slate-300 hover:text-white transition cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>إعادة إرسال رابط التحقق</span>
+              </button>
+            </div>
+          </div>
+        ) : showForgot ? (
           <div>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-bold text-white">استعادة كلمة المرور</h3>

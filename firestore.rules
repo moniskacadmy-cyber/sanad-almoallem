@@ -44,6 +44,7 @@ service cloud.firestore {
       let data = incoming();
       let hasPreprovisionedSubscription =
         request.auth.token.email != null &&
+        request.auth.token.email_verified == true &&
         exists(/databases/$(database)/documents/subscriptions/$(request.auth.token.email));
 
       return isValidId(teacherId) &&
@@ -90,12 +91,20 @@ service cloud.firestore {
     function isValidTeacherProfileUpdate() {
       let data = incoming();
       let diff = incoming().diff(existing()).affectedKeys();
-      return diff.hasOnly(['name', 'whatsapp', 'subject', 'currency', 'whatsappTemplates', 'absencePolicy', 'updatedAt']) &&
+      return diff.hasOnly([
+        'name', 'whatsapp', 'subject', 'currency', 'whatsappTemplates',
+        'absencePolicy', 'remindersEnabled', 'reminderMinutesBefore',
+        'teacherNotificationsEnabled', 'timezone', 'updatedAt'
+      ]) &&
         data.updatedAt == request.time &&
         data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
         data.whatsapp is string && data.whatsapp.size() >= 8 && data.whatsapp.size() <= 30 &&
         data.subject is string && data.subject.size() >= 2 && data.subject.size() <= 100 &&
         (!('currency' in data) || (data.currency is string && data.currency.size() <= 30)) &&
+        (!('remindersEnabled' in data) || data.remindersEnabled is bool) &&
+        (!('teacherNotificationsEnabled' in data) || data.teacherNotificationsEnabled is bool) &&
+        (!('reminderMinutesBefore' in data) || (data.reminderMinutesBefore is number && data.reminderMinutesBefore >= 5 && data.reminderMinutesBefore <= 120)) &&
+        (!('timezone' in data) || (data.timezone is string && data.timezone.size() <= 64)) &&
         data.id == existing().id &&
         data.email == existing().email &&
         data.role == existing().role &&
@@ -182,7 +191,8 @@ service cloud.firestore {
         data.type in ['lesson_plan', 'quiz', 'summary', 'pdf', 'image', 'book'] &&
         data.content is string && data.content.size() <= 60000 &&
         (!('fileName' in data) || (data.fileName is string && data.fileName.size() <= 300)) &&
-        (!('fileSize' in data) || (data.fileSize is string && data.fileSize.size() <= 50));
+        (!('fileSize' in data) || (data.fileSize is string && data.fileSize.size() <= 50)) &&
+        (!('fileData' in data) || (data.fileData is string && data.fileData.size() <= 950000));
     }
 
     // Reminder log validation
@@ -196,13 +206,22 @@ service cloud.firestore {
         data.messageText is string && data.messageText.size() <= 2500;
     }
 
-    // Task validation
-    function isValidTask(teacherId) {
+    // Task validation for create
+    function isValidTaskCreate(teacherId) {
       let data = incoming();
       return data.teacherId == teacherId &&
         data.title is string && data.title.size() >= 1 && data.title.size() <= 500 &&
         data.completed is bool &&
         data.createdAt == request.time;
+    }
+
+    // Task validation for update
+    function isValidTaskUpdate(teacherId) {
+      let data = incoming();
+      return data.teacherId == teacherId &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 500 &&
+        data.completed is bool &&
+        (data.createdAt == existing().createdAt || data.createdAt == request.time);
     }
 
     // Quick Note validation
@@ -317,10 +336,14 @@ service cloud.firestore {
       // Subcollection: Tasks
       match /tasks/{taskId} {
         allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
-        allow create, update: if isValidId(teacherId) && isValidId(taskId) &&
-                                 (isTeacherOwner(teacherId) || isAdmin()) &&
-                                 isTeacherSubscriptionActive(teacherId) &&
-                                 isValidTask(teacherId);
+        allow create: if isValidId(teacherId) && isValidId(taskId) &&
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId) &&
+                         isValidTaskCreate(teacherId);
+        allow update: if isValidId(teacherId) && isValidId(taskId) &&
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId) &&
+                         isValidTaskUpdate(teacherId);
         allow delete: if isValidId(teacherId) && isValidId(taskId) &&
                          (isTeacherOwner(teacherId) || isAdmin()) &&
                          isTeacherSubscriptionActive(teacherId);

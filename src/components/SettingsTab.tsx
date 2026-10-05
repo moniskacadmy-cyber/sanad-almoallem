@@ -201,6 +201,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   };
 
   const handleUpdateReminderSetting = async (key: keyof ReminderSettings, val: any) => {
+    const previous = { ...reminderSettings };
     const updated = { ...reminderSettings, [key]: val };
     setReminderSettings(updated);
     storeReminderSettings(updated);
@@ -212,8 +213,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           ...(key === 'notifyTeacher' ? { teacherNotificationsEnabled: Boolean(val) } : {}),
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo',
         });
-      } catch (error) {
+      } catch (error: any) {
         console.warn('Could not sync reminder preference:', error);
+        setReminderSettings(previous);
+        storeReminderSettings(previous);
+        setFcmError(error?.message || 'تعذر حفظ إعدادات التذكير على الخادم، يرجى المحاولة لاحقاً.');
       }
     }
   };

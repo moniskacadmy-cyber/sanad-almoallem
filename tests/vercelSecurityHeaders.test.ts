@@ -20,6 +20,7 @@ test('security headers are configured for all responses', () => {
   assert.equal(values.get('X-Frame-Options'), 'DENY');
   assert.equal(values.get('Referrer-Policy'), 'strict-origin-when-cross-origin');
   assert.equal(values.get('Strict-Transport-Security'), 'max-age=31536000; includeSubDomains');
+  assert.match(values.get('Content-Security-Policy') || '', /script-src 'self'/);
 });
 
 test('API responses are not cacheable', () => {

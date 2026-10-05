@@ -5,6 +5,30 @@ export type AttendanceStatus = 'present' | 'absent' | 'excused';
 export type PaymentStatus = 'paid' | 'unpaid';
 export type RecurrenceType = 'daily' | 'weekly' | 'monthly' | 'once';
 
+export type AbsenceReasonType =
+  | 'excused_early'
+  | 'unexcused_sudden'
+  | 'emergency'
+  | 'illness'
+  | 'travel'
+  | 'other';
+
+export interface AbsencePolicySettings {
+  excusedCountsFinancially: boolean;
+  excusedHasMakeup: boolean;
+  unexcusedCountsFinancially: boolean;
+  unexcusedHasMakeup: boolean;
+  autoAbsenceReminder?: boolean;
+}
+
+export const DEFAULT_ABSENCE_POLICY: AbsencePolicySettings = {
+  excusedCountsFinancially: false,
+  excusedHasMakeup: true,
+  unexcusedCountsFinancially: true,
+  unexcusedHasMakeup: false,
+  autoAbsenceReminder: true,
+};
+
 export interface TeacherProfile {
   id: string;
   name: string;
@@ -24,11 +48,13 @@ export interface TeacherProfile {
   remindersEnabled?: boolean;
   teacherNotificationsEnabled?: boolean;
   timezone?: string;
+  absencePolicy?: AbsencePolicySettings;
   whatsappTemplates?: {
     welcome?: string;
     payment?: string;
     report?: string;
     lessonPrep?: string;
+    absenceReminder?: string;
   };
   createdAt: any;
   updatedAt: any;
@@ -84,6 +110,15 @@ export interface LessonLog {
   settledAt?: any; // تاريخ التصفية
   rating?: number; // 1 - 5
   notes?: string;
+  isFinancialCounted?: boolean;
+  is_financial_counted?: boolean;
+  hasMakeupClass?: boolean;
+  has_makeup_class?: boolean;
+  makeupClassDate?: string | null;
+  makeup_class_date?: string | null;
+  absenceReasonType?: string;
+  absence_reason_type?: string;
+  makeupCompleted?: boolean;
   createdAt: any;
 }
 
@@ -102,8 +137,19 @@ export interface ScheduleSlot {
   completedTodayDate?: string; // YYYY-MM-DD إذا تم تعليم الحصة كمنجزة اليوم
   rating?: number; // تقييم الحصة بالساعات/النجوم (1-5)
   notes?: string; // ملاحظات وتقييم أداء الطالب في الحصة
+  isMakeup?: boolean; // هل هي حصة تعويضية مجدولة
+  originalLessonId?: string; // معرف الحصة الأصلية الغائبة
   createdAt: any;
   updatedAt: any;
+}
+
+export function isLessonFinanciallyCounted(l: LessonLog): boolean {
+  if (l.is_financial_counted !== undefined) return Boolean(l.is_financial_counted);
+  if (l.isFinancialCounted !== undefined) return Boolean(l.isFinancialCounted);
+  if (l.attendance === 'absent' || l.attendance === 'excused') {
+    if (l.cost === 0) return false;
+  }
+  return true;
 }
 
 export type LibraryItemType = 'lesson_plan' | 'quiz' | 'summary' | 'pdf' | 'image' | 'book';
@@ -178,7 +224,8 @@ export const DEFAULT_WHATSAPP_TEMPLATES = {
   welcome: `السلام عليكم ورحمة الله وبركاته 🌷\nمرحباً بك معنا في رحلتنا التعليمية لمادة ({subject})! يسعدني جداً انضمام الطالب/ـة: {studentName} معنا.\nسنبذل قصارى جهدنا لتحقيق التفوق والتميز الدراسي إن شاء الله. 📚✨`,
   payment: `السلام عليكم ورحمة الله وبركاته 🌷\n🧾 كشف حساب ومطالبة مالية - مادة ({subject})\n\n👤 الطالب/ـة: {studentName}\n👨‍🏫 إعداد المعلم: أ. {teacherName}\n📅 التاريخ: {date}\n\n📊 تفاصيل المستحقات الحالية:\n• سعر الساعة: {hourlyRate} {currency}/ساعة\n• عدد الساعات المنفذة: {pendingHours} ساعة ({unsettledCount} حصص غير مصفاة)\n• إجمالي المستحقات المطلوبة: {pendingAmount} {currency} 💰\n\n{lessonsList}\n\nشاكرين ومقدرين لكم حسن التعاون والاهتمام الدائم 🌟`,
   report: `السلام عليكم ورحمة الله وبركاته 🌷\nتقرير المتابعة الشهري لشهر ({month})\n👤 الطالب/ـة: {studentName}\n📚 المادة: {subject}\n👨‍🏫 المعلم: أ. {teacherName}\n\n📊 ملخص الحضور والالتزام:\n• إجمالي الحصص المنفذة: {totalLessons} حصة\n• عدد مرات الحضور: {presentCount} ✅\n• مرات الغياب: {absentCount} ❌\n• اعتذارات مسبقة: {excusedCount} ⚠️\n• متوسط التقييم العام: {avgRating} من 5 ⭐\n\n{lessonsSummary}\n\n{notes}\n\nمع خالص تمنياتنا بالتفوق والنجاح الباهر دائماً 🌟`,
-  lessonPrep: `السلام عليكم ورحمة الله وبركاته 🌷\n📋 بطاقة تحضير وخطة الحصة الدراسية\n\n👤 الطالب/ـة: {studentName}\n📚 المادة: {subject}\n👨‍🏫 إعداد المعلم: أ. {teacherName}\n📅 التاريخ: {date}\n🎯 عنوان الدرس: {topic}\n{notes}\n\n1️⃣ الأهداف التعليمية:\n• استيعاب المفاهيم والمصطلحات الأساسية لدرس ({topic}).\n• التدرب على حل أمثلة ونماذج تطبيقية متنوعة.\n• التأكد من إتقان الطالب للمهارات المطلوبة قبل نهاية الحصة.\n\n2️⃣ خطة سير الحصة:\n• مراجعة سريعة لما تم في الحصة السابقة (5 إلى 10 دقائق).\n• الشرح التفاعلي المبسط وطرح الأمثلة (25 دقيقة).\n• حل تمارين تطبيقية وتقييم الفهم الفوري (15 دقيقة).\n\n3️⃣ الواجب والتكليفات المنزلية:\n• حل التمارين المحددة ومراجعة الملاحظات.\n\nمع خالص تمنياتنا بالتفوق والنجاح المستمر دائماً 🌟`
+  lessonPrep: `السلام عليكم ورحمة الله وبركاته 🌷\n📋 بطاقة تحضير وخطة الحصة الدراسية\n\n👤 الطالب/ـة: {studentName}\n📚 المادة: {subject}\n👨‍🏫 إعداد المعلم: أ. {teacherName}\n📅 التاريخ: {date}\n🎯 عنوان الدرس: {topic}\n{notes}\n\n1️⃣ الأهداف التعليمية:\n• استيعاب المفاهيم والمصطلحات الأساسية لدرس ({topic}).\n• التدرب على حل أمثلة ونماذج تطبيقية متنوعة.\n• التأكد من إتقان الطالب للمهارات المطلوبة قبل نهاية الحصة.\n\n2️⃣ خطة سير الحصة:\n• مراجعة سريعة لما تم في الحصة السابقة (5 إلى 10 دقائق).\n• الشرح التفاعلي المبسط وطرح الأمثلة (25 دقيقة).\n• حل تمارين تطبيقية وتقييم الفهم الفوري (15 دقيقة).\n\n3️⃣ الواجب والتكليفات المنزلية:\n• حل التمارين المحددة ومراجعة الملاحظات.\n\nمع خالص تمنياتنا بالتفوق والنجاح المستمر دائماً 🌟`,
+  absenceReminder: `السلام عليكم ورحمة الله وبركاته 🌷\nنود إحاطتكم علماً بخصوص حصة مادة ({subject}) للطالب/ـة: *{studentName}*:\n\n📅 موعد الحصة: {date}\n🎯 الحالة: {statusLabel}\n{financialNote}\n{makeupNote}\n{extraNotes}\nشاكرين ومقدرين حسن تعاونكم وحرصكم الدائم على مصلحة الطالب 🌟\nأ. {teacherName}`
 };
 
 export type NoteColor = 'amber' | 'emerald' | 'purple' | 'blue' | 'rose';

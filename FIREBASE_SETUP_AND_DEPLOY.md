@@ -64,7 +64,7 @@
 ### الخطوة 3: إضافة المتغيرات البيئية (Environment Variables)
 في إعدادات المشروع على Vercel، أضف المتغيرات التالية:
 - `GEMINI_API_KEY`: مفتاح Google Gemini API.
-- `GEMINI_MODEL`: (اختياري) نموذج Gemini، الافتراضي `gemini-3.8-flash`.
+- `GEMINI_MODEL`: (اختياري) نموذج Gemini، الافتراضي `gemini-2.5-flash`.
 - `CRON_SECRET`: رمز سرّي عشوائي لتأمين مسار التذكيرات التلقائية `/api/reminders/cron`.
 - `FIREBASE_SERVICE_ACCOUNT`: محتوى ملف JSON لمفتاح الخدمة.
 - `VITE_FIREBASE_API_KEY`: مفتاح Firebase للعميل.
@@ -74,7 +74,7 @@
 - `VITE_FIREBASE_MESSAGING_SENDER_ID`: معرف الإرسال.
 - `VITE_FIREBASE_APP_ID`: معرف التطبيق.
 - `VITE_FIREBASE_VAPID_KEY`: مفتاح VAPID المولد من Firebase Console.
-- `VITE_FIREBASE_DATABASE_ID`: (اختياري) اتركه فارغاً لاستخدام إعدادات AI Studio، أو ضع `(default)` إذا كنت تستخدم قاعدة بيانات Firestore الافتراضية في مشروع Firebase الخاص بك.
+- `VITE_FIREBASE_DATABASE_ID`: (اختياري) الافتراضي `(default)` لقاعدة بيانات Firestore في مشروعك الخاص.
 
 ---
 
@@ -91,7 +91,7 @@
 1. افتح موقع [cron-job.org](https://cron-job.org) وأنشيء حساباً مجانياً.
 2. أنشئ Cron Job جديد بالبيانات التالية:
    - **URL**: `https://your-app.vercel.app/api/reminders/cron`
-   - **Execution Schedule**: كل دقيقة (`Every 1 minute`).
+   - **Execution Schedule**: كل 5 دقائق (`Every 5 minutes`).
    - **Headers**:
      - Key: `Authorization`
      - Value: `Bearer <CRON_SECRET>` (حيث `<CRON_SECRET>` هي القيمة المعرفة في متغيرات بيئة Vercel).
