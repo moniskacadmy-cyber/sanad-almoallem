@@ -44,9 +44,11 @@ service cloud.firestore {
       let data = incoming();
       let hasPreprovisionedSubscription =
         request.auth.token.email != null &&
+        request.auth.token.email_verified == true &&
         exists(/databases/$(database)/documents/subscriptions/$(request.auth.token.email));
 
-      return isValidId(teacherId) &&
+      return isSignedIn() && request.auth.token.email_verified == true &&
+        isValidId(teacherId) &&
         data.keys().hasOnly([
           'id', 'name', 'email', 'whatsapp', 'subject', 'role',
           'subscriptionStatus', 'plan', 'isActive', 'subscriptionEndDate',
@@ -90,12 +92,16 @@ service cloud.firestore {
     function isValidTeacherProfileUpdate() {
       let data = incoming();
       let diff = incoming().diff(existing()).affectedKeys();
-      return diff.hasOnly(['name', 'whatsapp', 'subject', 'currency', 'whatsappTemplates', 'absencePolicy', 'updatedAt']) &&
+      return diff.hasOnly(['name', 'whatsapp', 'subject', 'currency', 'whatsappTemplates', 'absencePolicy', 'reminderMinutesBefore', 'remindersEnabled', 'teacherNotificationsEnabled', 'timezone', 'updatedAt']) &&
         data.updatedAt == request.time &&
         data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
         data.whatsapp is string && data.whatsapp.size() >= 8 && data.whatsapp.size() <= 30 &&
         data.subject is string && data.subject.size() >= 2 && data.subject.size() <= 100 &&
         (!('currency' in data) || (data.currency is string && data.currency.size() <= 30)) &&
+        (!('reminderMinutesBefore' in data) || (data.reminderMinutesBefore is number && data.reminderMinutesBefore >= 5 && data.reminderMinutesBefore <= 120)) &&
+        (!('remindersEnabled' in data) || data.remindersEnabled is bool) &&
+        (!('teacherNotificationsEnabled' in data) || data.teacherNotificationsEnabled is bool) &&
+        (!('timezone' in data) || (data.timezone is string && data.timezone.size() <= 64)) &&
         data.id == existing().id &&
         data.email == existing().email &&
         data.role == existing().role &&
@@ -103,7 +109,9 @@ service cloud.firestore {
         data.plan == existing().plan &&
         data.trialStartDate == existing().trialStartDate &&
         data.trialEndDate == existing().trialEndDate &&
-        data.subscriptionExpiresAt == existing().subscriptionExpiresAt;
+        data.subscriptionExpiresAt == existing().subscriptionExpiresAt &&
+        data.subscriptionEndDate == existing().subscriptionEndDate &&
+        data.isActive == existing().isActive;
     }
 
     // Admin teacher update (can update subscription, plan, status, etc.)
@@ -180,7 +188,8 @@ service cloud.firestore {
       return data.teacherId == teacherId &&
         data.title is string && data.title.size() >= 2 && data.title.size() <= 200 &&
         data.type in ['lesson_plan', 'quiz', 'summary', 'pdf', 'image', 'book'] &&
-        data.content is string && data.content.size() <= 60000 &&
+        data.content is string && data.content.size() <= 30000 &&
+        (!('fileData' in data) || (data.fileData is string && data.fileData.size() <= 950000)) &&
         (!('fileName' in data) || (data.fileName is string && data.fileName.size() <= 300)) &&
         (!('fileSize' in data) || (data.fileSize is string && data.fileSize.size() <= 50));
     }
@@ -197,12 +206,20 @@ service cloud.firestore {
     }
 
     // Task validation
-    function isValidTask(teacherId) {
+    function isValidTaskCreate(teacherId) {
       let data = incoming();
       return data.teacherId == teacherId &&
         data.title is string && data.title.size() >= 1 && data.title.size() <= 500 &&
         data.completed is bool &&
         data.createdAt == request.time;
+    }
+
+    function isValidTaskUpdate(teacherId) {
+      let data = incoming();
+      return data.teacherId == teacherId &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 500 &&
+        data.completed is bool &&
+        data.createdAt == existing().createdAt;
     }
 
     // Quick Note validation
@@ -317,10 +334,14 @@ service cloud.firestore {
       // Subcollection: Tasks
       match /tasks/{taskId} {
         allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
-        allow create, update: if isValidId(teacherId) && isValidId(taskId) &&
+        allow create: if isValidId(teacherId) && isValidId(taskId) &&
                                  (isTeacherOwner(teacherId) || isAdmin()) &&
                                  isTeacherSubscriptionActive(teacherId) &&
-                                 isValidTask(teacherId);
+                                 isValidTaskCreate(teacherId);
+        allow update: if isValidId(teacherId) && isValidId(taskId) &&
+                                 (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isTeacherSubscriptionActive(teacherId) &&
+                                 isValidTaskUpdate(teacherId);
         allow delete: if isValidId(teacherId) && isValidId(taskId) &&
                          (isTeacherOwner(teacherId) || isAdmin()) &&
                          isTeacherSubscriptionActive(teacherId);
