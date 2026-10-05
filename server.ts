@@ -75,35 +75,12 @@ function safeParseServiceAccount(raw: string | undefined): any {
 
 // Public (non-secret) Firebase web config shipped with the project. Used only as a
 // fallback so that server and client resolve the SAME project and Firestore database.
-interface AppletConfig {
-  projectId?: string;
-  firestoreDatabaseId?: string;
-}
-
-function readAppletConfig(): AppletConfig {
-  const candidates = [
-    path.resolve(process.cwd(), 'firebase-applet-config.json'),
-    path.resolve(__dirname, 'firebase-applet-config.json'),
-  ];
-  for (const file of candidates) {
-    try {
-      return JSON.parse(fs.readFileSync(file, 'utf-8')) as AppletConfig;
-    } catch {
-      // try next candidate
-    }
-  }
-  return {};
-}
-
-const appletConfig = readAppletConfig();
-
 // Initialize Firebase Admin SDK
 if (getApps().length === 0) {
   const serviceAccountRaw = process.env.FIREBASE_SERVICE_ACCOUNT;
   const projectId =
     process.env.FIREBASE_PROJECT_ID ||
-    process.env.VITE_FIREBASE_PROJECT_ID ||
-    appletConfig.projectId;
+    process.env.VITE_FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
@@ -424,14 +401,9 @@ export async function aiRateLimiter(
 }
 
 // Helper to get Admin Firestore DB.
-// MUST resolve the same database as the client (src/firebase.ts): env override,
-// then the database id from firebase-applet-config.json. '(default)' / empty -> default DB.
+// MUST resolve the same database as the client (src/firebase.ts): VITE_FIREBASE_DATABASE_ID or FIREBASE_DATABASE_ID. '(default)' / empty -> default DB.
 export function resolveDatabaseId(): string | undefined {
-  const fromEnv = process.env.VITE_FIREBASE_DATABASE_ID?.trim() || process.env.FIREBASE_DATABASE_ID?.trim();
-  const effective =
-    fromEnv !== undefined && fromEnv !== ''
-      ? fromEnv
-      : appletConfig.firestoreDatabaseId || '(default)';
+  const effective = process.env.VITE_FIREBASE_DATABASE_ID?.trim() || process.env.FIREBASE_DATABASE_ID?.trim() || '(default)';
   return effective === '(default)' || !effective ? undefined : effective;
 }
 
@@ -468,10 +440,16 @@ const requireActiveSubscription = createSubscriptionGuard({
   },
 });
 
-// AI Assistant Endpoint for "مكتبتي" (Ask Library Sources)
+// Simple LRU/TTL Cache for AI questions to reduce latency & API costs
+const aiAskCache = new Map<string, { answer: string; timestamp: number }>();
+const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
+// AI Assistant Endpoint for "مكتبتي" (Ask Library Sources with Streaming SSE support)
 app.post('/api/ai/ask', verifyFirebaseToken, (req, res, next) => aiRateLimiter('ask', req, res, next), requireActiveSubscription, async (req, res) => {
   try {
-    const { question, teacherName, subject, sources } = req.body;
+    const { question, teacherName, subject, sources, stream = false } = req.body;
+    const wantStream = stream === true || req.headers.accept?.includes('text/event-stream');
+
     if (!question || typeof question !== 'string') {
       return res.status(400).json({ error: 'السؤال مطلوب.' });
     }
@@ -492,6 +470,21 @@ app.post('/api/ai/ask', verifyFirebaseToken, (req, res, next) => aiRateLimiter('
       return res.status(500).json({
         error: 'خدمة الذكاء الاصطناعي غير مهيأة حالياً.',
       });
+    }
+
+    // Check Cache for identical queries
+    const cacheKey = `${teacherName || ''}:${subject || ''}:${question.trim().toLowerCase()}:${sources?.length || 0}`;
+    const cached = aiAskCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+      if (wantStream) {
+        res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-cache, no-transform');
+        res.setHeader('Connection', 'keep-alive');
+        res.write(`data: ${JSON.stringify({ text: cached.answer })}\n\n`);
+        res.write(`data: [DONE]\n\n`);
+        return res.end();
+      }
+      return res.json({ answer: cached.answer, cached: true });
     }
 
     const systemInstruction = `أنت المساعد الذكي التربوي المتقدم لمنصة "سند المعلم".
@@ -536,10 +529,13 @@ app.post('/api/ai/ask', verifyFirebaseToken, (req, res, next) => aiRateLimiter('
         return res.status(400).json({ error: 'إجمالي حجم نصوص المصادر كبير جداً ويشكل عبئاً على النظام (يتجاوز 100,000 حرف).' });
       }
 
+      // Optimize context by truncating each source to max 5000 characters for fast TTFT
       const formattedSources = sources
         .map(
-          (s: any, idx: number) =>
-            `[المصدر ${idx + 1}: ${s.title || 'مصدر بدون عنوان'} (النوع: ${s.type || 'مستند'})]\n${s.content || ''}`
+          (s: any, idx: number) => {
+            const truncatedContent = typeof s.content === 'string' ? s.content.slice(0, 5000) : '';
+            return `[المصدر ${idx + 1}: ${s.title || 'مصدر بدون عنوان'} (النوع: ${s.type || 'مستند'})]\n${truncatedContent}`;
+          }
         )
         .join('\n\n---\n\n');
 
@@ -554,14 +550,51 @@ ${question}
     }
 
     const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-    const response = await generateGeminiTextWithFreeFallback({
-      model: modelName,
-      contents: promptContext,
-      config: { systemInstruction },
-    });
 
-    const answer = response.text || 'لم يتم استلام نص من نموذج الذكاء الاصطناعي.';
-    return res.json({ answer });
+    if (wantStream) {
+      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+
+      let fullAnswer = '';
+      try {
+        const streamGenerator = streamGeminiTextWithFreeFallback({
+          model: modelName,
+          contents: promptContext,
+          config: { systemInstruction },
+        });
+
+        for await (const chunk of streamGenerator) {
+          if (chunk) {
+            fullAnswer += chunk;
+            res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
+            if (typeof (res as any).flush === 'function') (res as any).flush();
+          }
+        }
+
+        if (fullAnswer) {
+          aiAskCache.set(cacheKey, { answer: fullAnswer, timestamp: Date.now() });
+        }
+
+        res.write(`data: [DONE]\n\n`);
+        return res.end();
+      } catch (streamErr: any) {
+        console.error('Streaming Gemini Error:', streamErr);
+        res.write(`data: ${JSON.stringify({ error: 'حدث خطأ أثناء بث الإجابة.' })}\n\n`);
+        return res.end();
+      }
+    } else {
+      const response = await generateGeminiTextWithFreeFallback({
+        model: modelName,
+        contents: promptContext,
+        config: { systemInstruction },
+      });
+
+      const answer = response.text || 'لم يتم استلام نص من نموذج الذكاء الاصطناعي.';
+      aiAskCache.set(cacheKey, { answer, timestamp: Date.now() });
+      return res.json({ answer });
+    }
   } catch (error) {
     console.error('Gemini API Error:', error);
     const status = Number((error as any)?.status);
@@ -981,6 +1014,62 @@ app.get('/api/reminders/cron', async (req, res) => {
             failedAt: new Date().toISOString(),
           }).catch(() => {});
         }
+      }
+
+      // Check due tasks for teacher
+      try {
+        const tasksSnap = await dbAdmin
+          .collection('teachers')
+          .doc(teacherId)
+          .collection('tasks')
+          .where('completed', '!=', true)
+          .get();
+
+        for (const taskDoc of tasksSnap.docs) {
+          const task = taskDoc.data();
+          if (!task || !task.title) continue;
+
+          // Check if task is due today
+          const taskDueDate = task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 10) : '';
+          if (taskDueDate && taskDueDate === todayStr) {
+            const taskReminderId = `sent_task_${teacherId}_${taskDoc.id}_${todayStr}`;
+            const taskSentRef = dbAdmin
+              .collection('teachers')
+              .doc(teacherId)
+              .collection('sentReminders')
+              .doc(taskReminderId);
+
+            const taskSentDoc = await taskSentRef.get();
+            if (!taskSentDoc.exists) {
+              await taskSentRef.set({ status: 'sent', taskId: taskDoc.id, teacherId, day: todayStr, sentAt: new Date().toISOString() });
+              const sendResponse = await messagingAdmin.sendEachForMulticast({
+                tokens: fcmTokens,
+                notification: {
+                  title: '📝 تذكير بمهمة مطلوبة اليوم',
+                  body: `أستاذ/ـة ${teacherData.name || 'المعلم'}، لديك مهمة مستحقة اليوم: "${task.title}".`,
+                },
+                data: {
+                  taskId: taskDoc.id,
+                  tag: 'task-reminder',
+                },
+                webpush: {
+                  notification: {
+                    title: '📝 تذكير بمهمة مطلوبة اليوم',
+                    body: `أستاذ/ـة ${teacherData.name || 'المعلم'}، لديك مهمة مستحقة اليوم: "${task.title}".`,
+                    icon: '/pwa-192x192.png',
+                    badge: '/favicon.ico',
+                  },
+                  fcmOptions: {
+                    link: '/',
+                  },
+                },
+              });
+              notificationsSent += sendResponse.successCount;
+            }
+          }
+        }
+      } catch (taskErr) {
+        console.warn(`Task reminder error for teacher ${teacherId}:`, taskErr);
       }
     }
 

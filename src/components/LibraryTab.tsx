@@ -219,6 +219,7 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
@@ -226,15 +227,51 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
           teacherName: profile.name,
           subject: profile.subject,
           sources: sourcesContext,
+          stream: true,
         }),
       });
 
-      const data = await res.json();
       if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'فشل في استلام الإجابة من الذكاء الاصطناعي');
       }
 
-      setAiAnswer(data.answer);
+      if (res.headers.get('Content-Type')?.includes('text/event-stream') && res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let accumulated = '';
+        let buffer = '';
+
+        setAiAnswer('');
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data: ')) continue;
+            const dataStr = trimmed.replace(/^data:\s*/, '');
+            if (dataStr === '[DONE]') break;
+            try {
+              const parsed = JSON.parse(dataStr);
+              if (parsed.text) {
+                accumulated += parsed.text;
+                setAiAnswer(accumulated);
+              } else if (parsed.error) {
+                throw new Error(parsed.error);
+              }
+            } catch (_) {}
+          }
+        }
+      } else {
+        const data = await res.json();
+        setAiAnswer(data.answer);
+      }
     } catch (err: any) {
       console.error('Error asking AI:', err);
       setAiError(err.message || 'حدث خطأ أثناء التواصل مع نموذج الذكاء الاصطناعي.');

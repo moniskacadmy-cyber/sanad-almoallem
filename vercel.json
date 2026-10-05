@@ -3,11 +3,6 @@
   "framework": "vite",
   "buildCommand": "vite build",
   "outputDirectory": "dist",
-  "functions": {
-    "api/*.ts": {
-      "includeFiles": "firebase-applet-config.json"
-    }
-  },
   "headers": [
     {
       "source": "/(.*)",

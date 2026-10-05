@@ -29,7 +29,6 @@ import {
   enableMultiTabIndexedDbPersistence,
   enableIndexedDbPersistence,
 } from 'firebase/firestore';
-import rawFirebaseConfig from '../firebase-applet-config.json';
 import {
   TeacherProfile,
   Student,
@@ -43,25 +42,18 @@ import {
   NoteColor,
 } from './types';
 
-// Read Firebase configuration from environment variables with fallback to config file
+// Read Firebase configuration from environment variables
 const firebaseConfig = {
-  apiKey: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY) || rawFirebaseConfig.apiKey,
-  authDomain: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN) || rawFirebaseConfig.authDomain,
-  projectId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_PROJECT_ID) || rawFirebaseConfig.projectId,
-  storageBucket: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_STORAGE_BUCKET) || rawFirebaseConfig.storageBucket,
-  messagingSenderId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_MESSAGING_SENDER_ID) || rawFirebaseConfig.messagingSenderId,
-  appId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_APP_ID) || rawFirebaseConfig.appId,
+  apiKey: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY?.trim()) || '',
+  authDomain: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN?.trim()) || '',
+  projectId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_PROJECT_ID?.trim()) || '',
+  storageBucket: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_STORAGE_BUCKET?.trim()) || '',
+  messagingSenderId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_MESSAGING_SENDER_ID?.trim()) || '',
+  appId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_APP_ID?.trim()) || '',
 };
 
-const envDatabaseId =
-  typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_DATABASE_ID
-    ? import.meta.env.VITE_FIREBASE_DATABASE_ID.trim()
-    : undefined;
-
 const effectiveDatabaseId =
-  envDatabaseId !== undefined && envDatabaseId !== ''
-    ? envDatabaseId
-    : (rawFirebaseConfig as any).firestoreDatabaseId || '(default)';
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_DATABASE_ID?.trim()) || '(default)';
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);

@@ -25,9 +25,9 @@ function getFirebaseConfigFromLocation() {
   }
 
   return {
-    projectId: 'sanad-1464f',
-    authDomain: 'sanad-1464f.firebaseapp.com',
-    storageBucket: 'sanad-1464f.firebasestorage.app',
+    projectId: undefined,
+    authDomain: undefined,
+    storageBucket: undefined,
   };
 }
 
@@ -46,7 +46,13 @@ if (firebaseConfig.apiKey && firebaseConfig.projectId) {
         icon: '/pwa-192x192.png',
         badge: '/favicon.ico',
         tag: payload.data?.tag || 'lesson-reminder',
+        renotify: true,
+        requireInteraction: true,
+        vibrate: [200, 100, 200],
         data: payload.data || {},
+        actions: [
+          { action: 'open', title: 'فتح التطبيق 📱' }
+        ],
       };
 
       self.registration.showNotification(notificationTitle, notificationOptions);
@@ -55,6 +61,29 @@ if (firebaseConfig.apiKey && firebaseConfig.projectId) {
     console.warn('[firebase-messaging-sw.js] Initialization warning:', err);
   }
 }
+
+// Fallback native push event listener when browser wakes service worker
+self.addEventListener('push', (event) => {
+  if (!event.data) return;
+  try {
+    const payload = event.data.json();
+    const title = payload.notification?.title || payload.data?.title || 'سند المعلم 🔔';
+    const body = payload.notification?.body || payload.data?.body || 'لديك تذكير جديد بجدول الحصص والمهام.';
+    const options = {
+      body,
+      icon: '/pwa-192x192.png',
+      badge: '/favicon.ico',
+      tag: payload.data?.tag || 'sanad-push',
+      renotify: true,
+      requireInteraction: true,
+      vibrate: [200, 100, 200],
+      data: payload.data || {},
+    };
+    event.waitUntil(self.registration.showNotification(title, options));
+  } catch (e) {
+    console.warn('[firebase-messaging-sw.js] Push parse note:', e);
+  }
+});
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
