@@ -624,6 +624,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
             </button>
           </div>
         )}
+        )}
       </div>
     </div>
   );
