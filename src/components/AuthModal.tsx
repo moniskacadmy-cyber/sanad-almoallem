@@ -268,6 +268,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
             </button>
           </div>
         ) : (
+          <>
         {/* Forgot Password View */}
         {showForgot ? (
           <div>
@@ -624,6 +625,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
             </button>
           </div>
         )}
+          </>
         )}
       </div>
     </div>
