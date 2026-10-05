@@ -160,13 +160,14 @@ export interface ReminderLog {
 
 export interface ReminderSettings {
   enabled: boolean;
-  minutesBefore: number; // 15
+  minutesBefore: number; // 5-120 minutes before class
   notifyTeacher: boolean;
   notifyParent: boolean;
   soundEnabled: boolean;
   autoOpenWhatsApp?: boolean;
   endOfDaySummaryEnabled?: boolean;
   endOfDaySummaryTime?: string; // e.g. "21:00"
+  timezone?: string;
 }
 
 export const DEFAULT_WHATSAPP_TEMPLATES = {
