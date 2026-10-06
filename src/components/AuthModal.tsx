@@ -198,7 +198,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/95 backdrop-blur-xl flex flex-col items-center justify-center p-4 py-8">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950 flex flex-col items-center justify-center p-4 py-8">
       <div className="w-full max-w-[460px] bg-slate-900 border border-purple-500/30 rounded-3xl p-6 shadow-2xl relative text-right">
         {/* App Title and Branding */}
         <div className="flex flex-col items-center text-center mb-6">

@@ -103,7 +103,24 @@ export default defineConfig(({mode}) => {
     ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(import.meta.dirname ?? process.cwd(), '.'),
+      },
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id: string) {
+            if (id.includes('node_modules/firebase')) {
+              return 'firebase';
+            }
+            if (id.includes('node_modules/recharts')) {
+              return 'charts';
+            }
+            if (id.includes('node_modules/jspdf')) {
+              return 'pdf';
+            }
+          },
+        },
       },
     },
     server: {

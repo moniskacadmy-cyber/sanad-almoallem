@@ -4,7 +4,11 @@ import { updateTeacherProfile, auth, fetchAllStudentLessons, importFullTeacherBa
 import { useBackHandler } from '../services/backHandler';
 import { signOut } from 'firebase/auth';
 import { PWAInstallButton } from '../PWAInstallButton';
-import confetti from 'canvas-confetti';
+
+const triggerConfetti = (opts: Record<string, any>) => {
+  import('canvas-confetti').then((m) => m.default(opts)).catch(() => {});
+};
+
 import {
   getStoredReminderSettings,
   storeReminderSettings,
@@ -120,7 +124,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         setFcmNotice('تم تفعيل إشعارات الهاتف بنجاح وحفظ جهازك لاستقبال تذكيرات الحصص حتى عند إغلاق التطبيق! 🔔📱');
         setBrowserPermission('granted');
         playNotificationChime();
-        confetti({ particleCount: 30, spread: 60, origin: { y: 0.8 } });
+        triggerConfetti({ particleCount: 30, spread: 60, origin: { y: 0.8 } });
       } else {
         setFcmError(res.error || 'فشل تفعيل إشعارات الهاتف.');
       }
@@ -378,7 +382,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       setExportNotice(
         `تم تصدير النسخة الاحتياطية بنجاح! (${students.length} طالب • ${schedules.length} موعد • ${totalLessonsCount} حصة)`
       );
-      confetti({ particleCount: 50, spread: 60, origin: { y: 0.8 } });
+      triggerConfetti({ particleCount: 50, spread: 60, origin: { y: 0.8 } });
       setTimeout(() => setExportNotice(null), 4000);
     } catch (err) {
       console.error('Error exporting full backup:', err);
@@ -444,7 +448,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       setExportNotice(
         `تمت استعادة البيانات بنجاح! تم استيراد ${summary.studentsCount} طالب، و${summary.schedulesCount} موعد، و${summary.lessonsCount} حصة.`
       );
-      confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
+      triggerConfetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
       setTimeout(() => setExportNotice(null), 5000);
     } catch (err: any) {
       console.error('Error importing backup:', err);

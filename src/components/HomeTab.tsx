@@ -15,16 +15,8 @@ import {
   triggerAbsenceNotificationAndChime,
   getStoredReminderSettings,
 } from '../services/reminderService';
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-  CartesianGrid,
-} from 'recharts';
+import { LiveCountdown } from './LiveCountdown';
+const StatsChart = React.lazy(() => import('./StatsChart'));
 import {
   Calendar,
   Users,
@@ -115,27 +107,15 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   }).format(now);
 
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
-  // Live countdown to the next scheduled class.
-  const [countdownNow, setCountdownNow] = useState(() => new Date());
+  // Minute ticker for next scheduled class lookup (updates every 60s instead of every second)
+  const [minuteNow, setMinuteNow] = useState(() => new Date());
   useEffect(() => {
-    const timer = window.setInterval(() => setCountdownNow(new Date()), 1000);
+    const timer = window.setInterval(() => setMinuteNow(new Date()), 60000);
     return () => window.clearInterval(timer);
   }, []);
 
-  const getCountdownParts = (target: Date) => {
-    const diff = Math.max(0, target.getTime() - countdownNow.getTime());
-    const totalSeconds = Math.floor(diff / 1000);
-    return {
-      totalSeconds,
-      days: Math.floor(totalSeconds / 86400),
-      hours: Math.floor((totalSeconds % 86400) / 3600),
-      minutes: Math.floor((totalSeconds % 3600) / 60),
-      seconds: totalSeconds % 60,
-    };
-  };
-
   const nextClassInfo = (() => {
-    const base = new Date(countdownNow);
+    const base = new Date(minuteNow);
     base.setSeconds(0, 0);
 
     for (let offset = 0; offset <= 7; offset += 1) {
@@ -152,7 +132,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           target.setHours(hour, minute, 0, 0);
           return { slot, target };
         })
-        .filter(({ target }) => target.getTime() > countdownNow.getTime())
+        .filter(({ target }) => target.getTime() > minuteNow.getTime())
         .sort((a, b) => a.target.getTime() - b.target.getTime());
 
       if (candidates.length > 0) {
@@ -170,13 +150,6 @@ export const HomeTab: React.FC<HomeTabProps> = ({
     }
     return null;
   })();
-
-  const nextClassCountdown = nextClassInfo ? getCountdownParts(nextClassInfo.target) : null;
-  const countdownText = nextClassCountdown
-    ? nextClassCountdown.days > 0
-      ? `${nextClassCountdown.days} يوم و${String(nextClassCountdown.hours).padStart(2, '0')}:${String(nextClassCountdown.minutes).padStart(2, '0')}:${String(nextClassCountdown.seconds).padStart(2, '0')}`
-      : `${String(nextClassCountdown.hours).padStart(2, '0')}:${String(nextClassCountdown.minutes).padStart(2, '0')}:${String(nextClassCountdown.seconds).padStart(2, '0')}`
-    : null;
 
   // Filter and sort today's classes
   const todayClasses = schedules
@@ -560,7 +533,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           <div className="text-center min-w-[120px] rounded-2xl bg-amber-400/10 border border-amber-400/30 px-3 py-2">
             <p className="text-[9px] text-amber-200 font-bold">متبقي</p>
             <p className="text-lg font-black tracking-wider text-amber-300 tabular-nums" dir="ltr">
-              {countdownText || '--:--:--'}
+              {nextClassInfo ? <LiveCountdown target={nextClassInfo.target} /> : '--:--:--'}
             </p>
           </div>
         </div>
@@ -850,73 +823,15 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         </div>
       </div>
 
-      {/* 6. رسم بياني: إنجاز الحصص الأسبوعي مقارنة بالمخطط لها (recharts) */}
-      <div className="rounded-3xl bg-slate-900/90 border border-purple-500/20 p-4 sm:p-5 shadow-xl space-y-3">
-        <div className="flex items-center justify-between border-b border-purple-900/30 pb-2.5">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center border border-purple-500/30 shadow-inner">
-              <TrendingUp className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-sm font-black text-white">إنجاز الحصص هذا الأسبوع</h3>
-              <p className="text-[11px] text-purple-300/70">
-                مقارنة الحصص المنجزة بالمخطط لها أسبوعياً
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-950/70 border border-purple-500/30 text-xs font-bold text-purple-200">
-            <span>{totalCompletedWeek} / {totalPlannedWeek} حصة</span>
-            <span className="text-[10px] text-emerald-400">({weeklyCompletionPct}%)</span>
-          </div>
-        </div>
-
-        {/* Recharts Bar Chart */}
-        <div className="h-56 w-full pt-1" dir="ltr">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={weeklyChartData}
-              margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.35} />
-              <XAxis dataKey="day" stroke="#94a3b8" tick={{ fontSize: 11 }} />
-              <YAxis stroke="#94a3b8" tick={{ fontSize: 11 }} allowDecimals={false} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#0f172a',
-                  borderColor: '#6366f1',
-                  borderRadius: '12px',
-                  fontSize: '11px',
-                  textAlign: 'right',
-                  color: '#fff',
-                }}
-                labelStyle={{ color: '#f8fafc', fontWeight: 'bold' }}
-              />
-              <Legend
-                wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }}
-                formatter={(value) => (
-                  <span style={{ color: '#cbd5e1' }}>
-                    {value === 'planned' ? 'المخطط لها' : 'المنجزة'}
-                  </span>
-                )}
-              />
-              <Bar
-                dataKey="planned"
-                name="المخطط لها"
-                fill="#818cf8"
-                radius={[4, 4, 0, 0]}
-                maxBarSize={28}
-              />
-              <Bar
-                dataKey="completed"
-                name="المنجزة"
-                fill="#10b981"
-                radius={[4, 4, 0, 0]}
-                maxBarSize={28}
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+      {/* 6. رسم بياني: إنجاز الحصص الأسبوعي مقارنة بالمخطط لها (recharts lazy-loaded) */}
+      <React.Suspense fallback={null}>
+        <StatsChart
+          weeklyChartData={weeklyChartData}
+          totalCompletedWeek={totalCompletedWeek}
+          totalPlannedWeek={totalPlannedWeek}
+          weeklyCompletionPct={weeklyCompletionPct}
+        />
+      </React.Suspense>
 
       {/* Start Class Modal */}
       {showStartClassModal && (

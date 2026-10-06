@@ -12,7 +12,9 @@ import {
   Auth
 } from 'firebase/auth';
 import {
-  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   doc,
   getDoc,
   getDocs,
@@ -27,8 +29,6 @@ import {
   Timestamp,
   getDocFromServer,
   onSnapshot,
-  enableMultiTabIndexedDbPersistence,
-  enableIndexedDbPersistence,
   Firestore
 } from 'firebase/firestore';
 import {
@@ -78,23 +78,14 @@ try {
 
   app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
   auth = getAuth(app);
-  db =
-    effectiveDatabaseId === '(default)' || !effectiveDatabaseId
-      ? getFirestore(app)
-      : getFirestore(app, effectiveDatabaseId);
-
-  // Enable Firestore Local IndexedDB Offline Persistence safely
-  if (typeof window !== 'undefined' && db) {
-    enableMultiTabIndexedDbPersistence(db).catch((err) => {
-      if (err.code === 'failed-precondition') {
-        enableIndexedDbPersistence(db).catch((e) => {
-          console.warn('Firestore offline persistence fallback warning:', e);
-        });
-      } else if (err.code === 'unimplemented') {
-        console.warn('Firestore offline persistence is not supported in this browser.');
-      }
-    });
-  }
+  db = initializeFirestore(
+    app,
+    {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+      experimentalAutoDetectLongPolling: true,
+    },
+    effectiveDatabaseId === '(default)' || !effectiveDatabaseId ? undefined : effectiveDatabaseId
+  );
 } catch (err: any) {
   console.error('Firebase initialization error caught safely:', err);
   firebaseInitError = err instanceof Error ? err : new Error(String(err));

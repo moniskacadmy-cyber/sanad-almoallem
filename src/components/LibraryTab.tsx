@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import * as pdfjsLib from 'pdfjs-dist';
 import { TeacherProfile, LibraryItem, LibraryItemType } from '../types';
 import { VoiceInputButton } from './VoiceInputButton';
 import { useBackHandler } from '../services/backHandler';
@@ -38,15 +37,14 @@ import {
   Loader2,
 } from 'lucide-react';
 
-// Configure pdfjs worker if not already set
-if (typeof window !== 'undefined' && !(pdfjsLib as any).GlobalWorkerOptions.workerSrc) {
-  try {
-    (pdfjsLib as any).GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version || '4.10.38'}/pdf.worker.min.mjs`;
-  } catch (_) {}
-}
-
 async function extractTextFromPdf(file: File): Promise<{ text: string; isScanned: boolean }> {
   try {
+    const pdfjsLib = await import('pdfjs-dist');
+    if (typeof window !== 'undefined' && !(pdfjsLib as any).GlobalWorkerOptions.workerSrc) {
+      try {
+        (pdfjsLib as any).GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version || '4.10.38'}/pdf.worker.min.mjs`;
+      } catch (_) {}
+    }
     const arrayBuffer = await file.arrayBuffer();
     const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
     const pdf = await loadingTask.promise;

@@ -77,7 +77,7 @@ export const LockScreen: React.FC<LockScreenProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/95 backdrop-blur-xl flex flex-col items-center justify-start p-4 py-8">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950 flex flex-col items-center justify-start p-4 py-8">
       <div className="w-full max-w-[460px] bg-slate-900/90 border border-purple-500/30 rounded-3xl p-5 shadow-2xl relative text-right">
         {isVoluntary && onClose && (
           <button
