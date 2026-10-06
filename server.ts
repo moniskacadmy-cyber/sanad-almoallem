@@ -75,12 +75,23 @@ function safeParseServiceAccount(raw: string | undefined): any {
 
 // Public (non-secret) Firebase web config shipped with the project. Used only as a
 // fallback so that server and client resolve the SAME project and Firestore database.
+let fallbackConfig: any = {};
+try {
+  const configPath = path.resolve(__dirname, 'firebase-applet-config.json');
+  if (fs.existsSync(configPath)) {
+    fallbackConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  }
+} catch {
+  // ignore fallback read error
+}
+
 // Initialize Firebase Admin SDK
 if (getApps().length === 0) {
   const serviceAccountRaw = process.env.FIREBASE_SERVICE_ACCOUNT;
   const projectId =
     process.env.FIREBASE_PROJECT_ID ||
-    process.env.VITE_FIREBASE_PROJECT_ID;
+    process.env.VITE_FIREBASE_PROJECT_ID ||
+    fallbackConfig.projectId;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
@@ -403,7 +414,11 @@ export async function aiRateLimiter(
 // Helper to get Admin Firestore DB.
 // MUST resolve the same database as the client (src/firebase.ts): VITE_FIREBASE_DATABASE_ID or FIREBASE_DATABASE_ID. '(default)' / empty -> default DB.
 export function resolveDatabaseId(): string | undefined {
-  const effective = process.env.VITE_FIREBASE_DATABASE_ID?.trim() || process.env.FIREBASE_DATABASE_ID?.trim() || '(default)';
+  const effective =
+    process.env.VITE_FIREBASE_DATABASE_ID?.trim() ||
+    process.env.FIREBASE_DATABASE_ID?.trim() ||
+    fallbackConfig.firestoreDatabaseId ||
+    '(default)';
   return effective === '(default)' || !effective ? undefined : effective;
 }
 

@@ -25,9 +25,12 @@ function getFirebaseConfigFromLocation() {
   }
 
   return {
-    projectId: undefined,
-    authDomain: undefined,
-    storageBucket: undefined,
+    apiKey: 'AIzaSyCW-2H9dXUvJEpWKs9x1Cr7ME9gqV3uZMk',
+    projectId: 'gen-lang-client-0886550561',
+    messagingSenderId: '65313535187',
+    appId: '1:65313535187:web:7652704feb5f4a04e85026',
+    authDomain: 'gen-lang-client-0886550561.firebaseapp.com',
+    storageBucket: 'gen-lang-client-0886550561.firebasestorage.app',
   };
 }
 

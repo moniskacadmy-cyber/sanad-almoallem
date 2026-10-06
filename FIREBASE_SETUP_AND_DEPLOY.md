@@ -61,20 +61,30 @@
 2. اضغط **Add New** > **Project** واختر المستودع.
 3. سيتعرف Vercel تلقائياً على إعدادات `Vite`.
 
-### الخطوة 3: إضافة المتغيرات البيئية (Environment Variables)
-في إعدادات المشروع على Vercel، أضف المتغيرات التالية:
-- `GEMINI_API_KEY`: مفتاح Google Gemini API.
-- `GEMINI_MODEL`: (اختياري) نموذج Gemini، الافتراضي `gemini-2.5-flash`.
-- `CRON_SECRET`: رمز سرّي عشوائي لتأمين مسار التذكيرات التلقائية `/api/reminders/cron`.
-- `FIREBASE_SERVICE_ACCOUNT`: محتوى ملف JSON لمفتاح الخدمة.
-- `VITE_FIREBASE_API_KEY`: مفتاح Firebase للعميل.
-- `VITE_FIREBASE_AUTH_DOMAIN`: نطاق المصادقة.
+### الخطوة 3: إضافة المتغيرات البيئية (Environment Variables) ⚠️ إلزامي
+نظراً لأن ملف `.env` مستثنى في `.gitignore` ولا يُرفع إلى GitHub، يقوم Vercel ببناء المشروع وقت النشر (Build Time) ويدمج متغيرات `VITE_*` في حزمة JavaScript.
+
+اذهب إلى **Vercel Project** > **Settings** > **Environment Variables** وأضف المتغيرات التالية، مع التأكد من تحديد تفعيلها لكافة البيئات الثلاث:
+✅ **Production**  
+✅ **Preview**  
+✅ **Development**  
+
+المتغيرات المطلوبة:
+- `VITE_FIREBASE_API_KEY`: مفتاح Firebase للعميل (API Key).
+- `VITE_FIREBASE_AUTH_DOMAIN`: نطاق المصادقة (`your-project.firebaseapp.com`).
 - `VITE_FIREBASE_PROJECT_ID`: معرف المشروع.
-- `VITE_FIREBASE_STORAGE_BUCKET`: نطاق التخزين.
+- `VITE_FIREBASE_STORAGE_BUCKET`: نطاق التخزين (`your-project.firebasestorage.app`).
 - `VITE_FIREBASE_MESSAGING_SENDER_ID`: معرف الإرسال.
 - `VITE_FIREBASE_APP_ID`: معرف التطبيق.
 - `VITE_FIREBASE_VAPID_KEY`: مفتاح VAPID المولد من Firebase Console.
-- `VITE_FIREBASE_DATABASE_ID`: (اختياري) الافتراضي `(default)` لقاعدة بيانات Firestore في مشروعك الخاص.
+- `VITE_FIREBASE_DATABASE_ID`: (اختياري) ضع `(default)` أو اسم قاعدة Firestore.
+- `GEMINI_API_KEY`: مفتاح Google Gemini API.
+- `GEMINI_MODEL`: (اختياري) نموذج Gemini، الافتراضي `gemini-2.5-flash`.
+- `CRON_SECRET`: رمز سرّي عشوائي لتأمين مسار التذكيرات التلقائية `/api/reminders/cron`.
+- `FIREBASE_SERVICE_ACCOUNT`: محتوى ملف JSON لمفتاح الخدمة الكامل (Firebase Admin).
+
+> ⚠️ **خطوة هامة جداً بعد إضافة المتغيرات (Redeploy)**:  
+> بعد حفظ المتغيرات في لوحة تحكم Vercel، لن تُطبّق على النشر الحالي تلقائياً. يجب عمل **Redeploy** من صفحة **Deployments** (اختر آخر Deployment ثم اضغط `...` > `Redeploy` بدون تفعيل الكاش) لكي تندمج المتغيرات في كود الـ Frontend.
 
 ---
 

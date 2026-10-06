@@ -44,18 +44,26 @@ import {
   NoteColor,
 } from './types';
 
-// Read Firebase configuration from environment variables
+import rawFirebaseConfig from '../firebase-applet-config.json';
+
+const env = import.meta.env;
+
+const pick = (envValue: unknown, fileValue: unknown): string =>
+  (typeof envValue === 'string' && envValue.trim()) ||
+  (typeof fileValue === 'string' && fileValue.trim()) ||
+  '';
+
 const firebaseConfig = {
-  apiKey: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY?.trim()) || '',
-  authDomain: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN?.trim()) || '',
-  projectId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_PROJECT_ID?.trim()) || '',
-  storageBucket: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_STORAGE_BUCKET?.trim()) || '',
-  messagingSenderId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_MESSAGING_SENDER_ID?.trim()) || '',
-  appId: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_APP_ID?.trim()) || '',
+  apiKey: pick(env.VITE_FIREBASE_API_KEY, rawFirebaseConfig.apiKey),
+  authDomain: pick(env.VITE_FIREBASE_AUTH_DOMAIN, rawFirebaseConfig.authDomain),
+  projectId: pick(env.VITE_FIREBASE_PROJECT_ID, rawFirebaseConfig.projectId),
+  storageBucket: pick(env.VITE_FIREBASE_STORAGE_BUCKET, rawFirebaseConfig.storageBucket),
+  messagingSenderId: pick(env.VITE_FIREBASE_MESSAGING_SENDER_ID, rawFirebaseConfig.messagingSenderId),
+  appId: pick(env.VITE_FIREBASE_APP_ID, rawFirebaseConfig.appId),
 };
 
 const effectiveDatabaseId =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_DATABASE_ID?.trim()) || '(default)';
+  pick(env.VITE_FIREBASE_DATABASE_ID, (rawFirebaseConfig as any).firestoreDatabaseId) || '(default)';
 
 export let app: FirebaseApp = null as any;
 export let auth: Auth = null as any;
@@ -63,9 +71,11 @@ export let db: Firestore = null as any;
 export let firebaseInitError: Error | null = null;
 
 try {
-  if (!firebaseConfig.apiKey) {
-    throw new Error('لم يتم العثور على مفتاح VITE_FIREBASE_API_KEY في ملف البيئة .env');
+  const missing = Object.entries(firebaseConfig).filter(([, v]) => !v).map(([k]) => k);
+  if (missing.length) {
+    throw new Error(`إعدادات Firebase ناقصة: ${missing.join(', ')}. ضيفها في VITE_FIREBASE_* على Vercel وأعد النشر.`);
   }
+
   app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
   auth = getAuth(app);
   db =
