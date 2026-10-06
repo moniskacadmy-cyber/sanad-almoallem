@@ -143,7 +143,6 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   };
 
   // Collapsible sections state (Closed by default to save space)
-  const [isAddStudentLearningStyleOpen, setIsAddStudentLearningStyleOpen] = useState(false);
   const [isAddStudentNotesOpen, setIsAddStudentNotesOpen] = useState(false);
   const [isProfileLearningStyleOpen, setIsProfileLearningStyleOpen] = useState(false);
   const [isProfileNotesOpen, setIsProfileNotesOpen] = useState(false);
@@ -158,7 +157,6 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const [formHourlyRate, setFormHourlyRate] = useState<number>(100);
   const [formRemainingPaidLessons, setFormRemainingPaidLessons] = useState<string>('');
   const [formTotalPrepaidLessons, setFormTotalPrepaidLessons] = useState<string>('');
-  const [formLearningStyle, setFormLearningStyle] = useState('');
   const [formNotes, setFormNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -464,9 +462,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     setFormHourlyRate(100);
     setFormRemainingPaidLessons('');
     setFormTotalPrepaidLessons('');
-    setFormLearningStyle('');
     setFormNotes('');
-    setIsAddStudentLearningStyleOpen(false);
     setIsAddStudentNotesOpen(false);
     setFormSchedules([]);
     setFormColor('emerald');
@@ -491,12 +487,21 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
         ? String(student.totalPrepaidLessons)
         : ''
     );
-    setFormLearningStyle(student.learningStyle || '');
     setFormNotes(student.notes || '');
-    setIsAddStudentLearningStyleOpen(false);
     setIsAddStudentNotesOpen(false);
     setFormColor(student.color || 'emerald');
-    setFormSchedules([]);
+    
+    // Load existing student schedules into formSchedules!
+    const studentSchedules = (rawSchedules || []).filter((s) => s.studentId === student.id);
+    setFormSchedules(
+      studentSchedules.map((s) => ({
+        id: s.id,
+        dayOfWeek: s.dayOfWeek,
+        time: s.time,
+        duration: s.duration,
+      }))
+    );
+
     setShowAddModal(true);
   };
 
@@ -525,14 +530,29 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
     setFormErrors({});
 
-    // 2. Overlapping Schedule Validation for new student schedules before writing to Firestore
-    if (!editingStudent && formSchedules.length > 0) {
+    // 2. Overlapping Schedule Validation for new/edited student schedules before writing to Firestore
+    if (formSchedules.length > 0) {
       for (const s of formSchedules) {
-        const conflict = checkScheduleConflict(Number(s.dayOfWeek), s.time, Number(s.duration) || 60);
+        const conflict = checkScheduleConflict(
+          Number(s.dayOfWeek),
+          s.time,
+          Number(s.duration) || 60,
+          editingStudent ? s.id : undefined
+        );
         if (conflict) {
-          setToastMessage({ type: 'error', text: conflict });
-          alert(conflict);
-          return;
+          // If there is a conflict, check if it is with a class belonging to another student
+          const conflictingSlot = (rawSchedules || []).find((slot) => {
+            const hasTimeConflict = hasConflict(
+              { dayOfWeek: Number(s.dayOfWeek), time: s.time, duration: Number(s.duration) || 60 },
+              [slot]
+            ).hasConflict;
+            return hasTimeConflict && slot.id !== s.id;
+          });
+          if (conflictingSlot && conflictingSlot.studentId !== editingStudent?.id) {
+            setToastMessage({ type: 'error', text: conflict });
+            alert(conflict);
+            return;
+          }
         }
       }
     }
@@ -560,13 +580,35 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
         monthlyFee: rate * 4,
         remainingPaidLessons: remPaid,
         totalPrepaidLessons: totPrepaid,
-        learningStyle: formLearningStyle.trim() || '',
+        learningStyle: editingStudent ? (editingStudent.learningStyle || '') : '',
         notes: formNotes.trim() || '',
         color: formColor || 'emerald',
       };
 
       if (editingStudent) {
         await updateStudent(profile.id, editingStudent.id, studentData);
+
+        // Update student weekly schedules dynamically in the database for automatic Calendar sync
+        const existingStudentSchedules = (rawSchedules || []).filter((s) => s.studentId === editingStudent.id);
+        for (const es of existingStudentSchedules) {
+          await deleteSchedule(profile.id, es.id);
+        }
+
+        if (formSchedules.length > 0) {
+          for (const s of formSchedules) {
+            await addSchedule(profile.id, {
+              studentId: editingStudent.id,
+              studentName: formName.trim(),
+              dayOfWeek: Number(s.dayOfWeek),
+              time: s.time,
+              duration: Number(s.duration) || 60,
+              recurrence: 'weekly',
+              classType: formClassType,
+              color: formColor || 'emerald',
+            });
+          }
+        }
+
         setToastMessage({ type: 'success', text: 'تم تعديل بيانات الطالب بنجاح! 🎉' });
       } else {
         const newStudentId = await addStudent(profile.id, {
@@ -1534,51 +1576,6 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                 </div>
               </div>
 
-              {/* Collapsible 1: إزاي الطالب ده بيتعلم أحسن؟ */}
-              <div className="rounded-2xl border border-purple-500/25 bg-slate-900/60 overflow-hidden transition-all shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => setIsAddStudentLearningStyleOpen(!isAddStudentLearningStyleOpen)}
-                  className="w-full p-3 flex items-center justify-between text-right cursor-pointer hover:bg-purple-950/30 transition"
-                >
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-300 flex items-center justify-center flex-shrink-0">
-                      <Brain className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <span className="text-xs font-bold text-white block">
-                        إزاي الطالب ده بيتعلم أحسن؟
-                      </span>
-                      <span className="text-[10px] text-purple-300/80">
-                        {formLearningStyle ? 'تم تدوين أسلوب التعلم ✏️' : 'ملاحظات أسلوب التعلم الذكية (اختياري)'}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-slate-400">
-                    <span className="text-[10px] font-medium">
-                      {isAddStudentLearningStyleOpen ? 'إغلاق' : 'إضافة'}
-                    </span>
-                    <ChevronDown
-                      className={`w-4 h-4 transform transition-transform duration-200 ${
-                        isAddStudentLearningStyleOpen ? 'rotate-180 text-purple-400' : ''
-                      }`}
-                    />
-                  </div>
-                </button>
-
-                {isAddStudentLearningStyleOpen && (
-                  <div className="p-3 pt-0 border-t border-purple-900/30 space-y-2 mt-2">
-                    <textarea
-                      value={formLearningStyle}
-                      onChange={(e) => setFormLearningStyle(e.target.value)}
-                      placeholder="مثال: نمط بصري يفضل الرسوم التوضيحية، يحتاج تشجيع مستمر..."
-                      rows={2}
-                      className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
-                    />
-                  </div>
-                )}
-              </div>
-
               {/* Collapsible 2: الملاحظات الإضافية */}
               <div className="rounded-2xl border border-slate-800 bg-slate-900/60 overflow-hidden transition-all shadow-sm">
                 <button
@@ -1625,8 +1622,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
               </div>
 
               {/* SECTION: Weekly Class Schedules (Optional) */}
-              {!editingStudent && (
-                <div className="pt-3 border-t border-purple-900/40 space-y-2.5">
+              <div className="pt-3 border-t border-purple-900/40 space-y-2.5">
                   <div className="flex items-center justify-between">
                     <div>
                       <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
@@ -1752,7 +1748,6 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                     </div>
                   )}
                 </div>
-              )}
 
               {/* Sticky Submit Button Container */}
               <div className="sticky bottom-0 bg-slate-900 pt-3 mt-2 border-t border-slate-800 z-20 flex-shrink-0">

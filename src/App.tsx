@@ -50,6 +50,8 @@ import {
   AlertCircle,
   ChevronRight,
   LogOut,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import {
   getStoredReminderSettings,
@@ -123,6 +125,32 @@ export default function App() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
   const [showFinancialDashboard, setShowFinancialDashboard] = useState(false);
+
+  // Theme state (dark / light)
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sanad_theme_mode');
+      if (saved === 'light' || saved === 'dark') return saved;
+    }
+    return 'dark'; // Default to dark mode
+  });
+
+  // Apply theme to document element
+  useEffect(() => {
+    const root = window.document.documentElement;
+    if (theme === 'light') {
+      root.classList.add('light');
+      root.classList.remove('dark');
+    } else {
+      root.classList.add('dark');
+      root.classList.remove('light');
+    }
+    localStorage.setItem('sanad_theme_mode', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
 
   // Collections state for current teacher
   const [students, setStudents] = useState<Student[]>([]);
@@ -597,6 +625,16 @@ export default function App() {
             >
               <span>{profile.subscriptionStatus === 'active' ? 'مشترك 💎' : 'تجريبي 🎁'}</span>
             </div>
+
+            {/* Theme Mode Toggle Button */}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="p-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-amber-300 hover:text-amber-200 transition cursor-pointer"
+              title={theme === 'dark' ? 'التبديل للوضع الفاتح ☀️' : 'التبديل للوضع الداكن 🌙'}
+            >
+              {theme === 'dark' ? <Sun className="w-4.5 h-4.5" /> : <Moon className="w-4.5 h-4.5 text-purple-400" />}
+            </button>
 
             {/* Exit Application Trigger Button (Shows confirmation modal on Main Dashboard) */}
             <button
