@@ -1430,87 +1430,123 @@ export async function toggleCompleteQuickNote(teacherId: string, noteId: string,
 
 import { getMessaging, getToken, isSupported } from 'firebase/messaging';
 
+const FCM_SW_SCOPE = '/firebase-cloud-messaging-push-scope';
+let fcmRegisteredUid: string | null = null;
+let fcmRegistrationPromise: Promise<{
+  success: boolean;
+  token?: string;
+  error?: string;
+}> | null = null;
+
 // Function to request permission and save FCM token for web push notifications
-export async function requestAndSaveFCMToken(): Promise<{
+export async function requestAndSaveFCMToken(force = false): Promise<{
   success: boolean;
   token?: string;
   error?: string;
 }> {
-  try {
-    const isMessagingSupported = await isSupported();
-    if (!isMessagingSupported) {
-      return {
-        success: false,
-        error: 'المتصفح الحالي لا يدعم إشعارات الويب المباشرة (Web Push Notifications).',
-      };
-    }
+  const currentUser = auth?.currentUser;
 
-    const permission = await Notification.requestPermission();
-    if (permission === 'denied') {
-      return {
-        success: false,
-        error: 'تم رفض إذن الإشعارات من المتصفح. يرجى السماح بالإشعارات من إعدادات المتصفح وإعادة المحاولة.',
-      };
-    }
-    if (permission !== 'granted') {
-      return {
-        success: false,
-        error: 'لم يتم منح إذن الإشعارات.',
-      };
-    }
-
-    const messaging = getMessaging(app);
-    let swReg: ServiceWorkerRegistration | undefined = undefined;
-
-    if ('serviceWorker' in navigator) {
-      try {
-        const swUrl = `/firebase-messaging-sw.js?apiKey=${encodeURIComponent(firebaseConfig.apiKey || '')}&projectId=${encodeURIComponent(firebaseConfig.projectId || '')}&messagingSenderId=${encodeURIComponent(firebaseConfig.messagingSenderId || '')}&appId=${encodeURIComponent(firebaseConfig.appId || '')}&authDomain=${encodeURIComponent(firebaseConfig.authDomain || '')}&storageBucket=${encodeURIComponent(firebaseConfig.storageBucket || '')}`;
-        swReg = await navigator.serviceWorker.register(swUrl);
-      } catch (swErr) {
-        console.warn('Could not register firebase-messaging-sw.js directly:', swErr);
-      }
-    }
-
-    const vapidKey =
-      (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_VAPID_KEY) || undefined;
-
-    const token = await getToken(messaging, {
-      vapidKey,
-      serviceWorkerRegistration: swReg,
-    });
-
-    if (!token) {
-      return {
-        success: false,
-        error: 'تعذر الحصول على رمز الإشعارات (FCM Token). يرجى التأكد من إضافة مفتاح VAPID.',
-      };
-    }
-
-    const user = auth.currentUser;
-    if (user) {
-      // Unified storage: Save in teachers/{uid}/fcmTokens/{tokenId}
-      const teacherTokenRef = doc(db, 'teachers', user.uid, 'fcmTokens', token);
-      await setDoc(
-        teacherTokenRef,
-        {
-          token,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo',
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-          userAgent: navigator.userAgent,
-        },
-        { merge: true }
-      );
-    }
-
-    return { success: true, token };
-  } catch (err: any) {
-    console.error('Error enabling phone notifications / FCM:', err);
-    return {
-      success: false,
-      error: err.message || 'حدث خطأ أثناء تفعيل إشعارات الهاتف.',
-    };
+  // Prevent redundant executions for the same user within the same session
+  if (!force && currentUser && fcmRegisteredUid === currentUser.uid) {
+    return { success: true };
   }
+
+  // De-duplicate concurrent calls
+  if (fcmRegistrationPromise) {
+    return fcmRegistrationPromise;
+  }
+
+  fcmRegistrationPromise = (async () => {
+    try {
+      const isMessagingSupported = await isSupported();
+      if (!isMessagingSupported) {
+        return {
+          success: false,
+          error: 'المتصفح الحالي لا يدعم إشعارات الويب المباشرة (Web Push Notifications).',
+        };
+      }
+
+      const permission = await Notification.requestPermission();
+      if (permission === 'denied') {
+        return {
+          success: false,
+          error: 'تم رفض إذن الإشعارات من المتصفح. يرجى السماح بالإشعارات من إعدادات المتصفح وإعادة المحاولة.',
+        };
+      }
+      if (permission !== 'granted') {
+        return {
+          success: false,
+          error: 'لم يتم منح إذن الإشعارات.',
+        };
+      }
+
+      const messaging = getMessaging(app);
+      let swReg: ServiceWorkerRegistration | undefined = undefined;
+
+      if ('serviceWorker' in navigator) {
+        try {
+          const swUrl = `/firebase-messaging-sw.js?apiKey=${encodeURIComponent(firebaseConfig.apiKey || '')}&projectId=${encodeURIComponent(firebaseConfig.projectId || '')}&messagingSenderId=${encodeURIComponent(firebaseConfig.messagingSenderId || '')}&appId=${encodeURIComponent(firebaseConfig.appId || '')}&authDomain=${encodeURIComponent(firebaseConfig.authDomain || '')}&storageBucket=${encodeURIComponent(firebaseConfig.storageBucket || '')}`;
+
+          // Check if already registered for this scope first
+          const existingReg = await navigator.serviceWorker.getRegistration(FCM_SW_SCOPE);
+          if (existingReg) {
+            swReg = existingReg;
+          } else {
+            swReg = await navigator.serviceWorker.register(swUrl, { scope: FCM_SW_SCOPE });
+          }
+        } catch (swErr) {
+          console.warn('Could not register firebase-messaging-sw.js directly:', swErr);
+        }
+      }
+
+      const vapidKey =
+        (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_VAPID_KEY) || undefined;
+
+      const token = await getToken(messaging, {
+        vapidKey,
+        serviceWorkerRegistration: swReg,
+      });
+
+      if (!token) {
+        return {
+          success: false,
+          error: 'تعذر الحصول على رمز الإشعارات (FCM Token). يرجى التأكد من إضافة مفتاح VAPID.',
+        };
+      }
+
+      const user = auth?.currentUser;
+      if (user) {
+        // Mark session as registered for this user
+        fcmRegisteredUid = user.uid;
+
+        // Unified storage: Save in teachers/{uid}/fcmTokens/{tokenId}
+        const teacherTokenRef = doc(db, 'teachers', user.uid, 'fcmTokens', token);
+        await setDoc(
+          teacherTokenRef,
+          {
+            token,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo',
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            userAgent: navigator.userAgent,
+          },
+          { merge: true }
+        );
+      }
+
+      return { success: true, token };
+    } catch (err: any) {
+      console.error('Error enabling phone notifications / FCM:', err);
+      return {
+        success: false,
+        error: err.message || 'حدث خطأ أثناء تفعيل إشعارات الهاتف.',
+      };
+    } finally {
+      fcmRegistrationPromise = null;
+    }
+  })();
+
+  return fcmRegistrationPromise;
 }
 
 

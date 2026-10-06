@@ -12,6 +12,18 @@ if (typeof window !== 'undefined') {
   window.addEventListener('error', (event) => {
     console.error('Global script error captured:', event.error || event.message);
   });
+
+  // Handle Vite lazy chunk preload errors with a single-reload guard to prevent reload loops
+  window.addEventListener('vite:preloadError', (event) => {
+    console.warn('Vite lazy chunk preload error captured:', event);
+    const hasReloaded = sessionStorage.getItem('vite_preload_chunk_reloaded');
+    if (!hasReloaded) {
+      sessionStorage.setItem('vite_preload_chunk_reloaded', 'true');
+      window.location.reload();
+    } else {
+      console.error('Preload failed again after reload. Avoiding reload loop.');
+    }
+  });
 }
 
 // Register Service Worker for PWA Offline Capabilities & Static Asset Precaching

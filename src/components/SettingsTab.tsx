@@ -119,7 +119,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     setFcmNotice(null);
     setFcmError(null);
     try {
-      const res = await requestAndSaveFCMToken();
+      const res = await requestAndSaveFCMToken(true);
       if (res.success) {
         setFcmNotice('تم تفعيل إشعارات الهاتف بنجاح وحفظ جهازك لاستقبال تذكيرات الحصص حتى عند إغلاق التطبيق! 🔔📱');
         setBrowserPermission('granted');
