@@ -117,6 +117,119 @@ export function storeReminderSettings(settings: ReminderSettings) {
   }
 }
 
+// Check test reminder daily quota (max 3 times per day)
+export function checkTestReminderQuota(): { allowed: boolean; remaining: number } {
+  if (typeof localStorage === 'undefined') return { allowed: true, remaining: 3 };
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const count = parseInt(localStorage.getItem(`sanad_test_reminders_${today}`) || '0', 10);
+    const remaining = Math.max(0, 3 - count);
+    return { allowed: remaining > 0, remaining };
+  } catch (_e) {
+    return { allowed: true, remaining: 3 };
+  }
+}
+
+export function incrementTestReminderQuota(): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const count = parseInt(localStorage.getItem(`sanad_test_reminders_${today}`) || '0', 10);
+    localStorage.setItem(`sanad_test_reminders_${today}`, String(count + 1));
+  } catch (_e) {}
+}
+
+/**
+ * Evaluates in-memory schedules locally in the browser with ZERO network calls.
+ */
+export function checkLocalUpcomingSchedules(params: {
+  schedules: ScheduleSlot[];
+  students: Student[];
+  teacherName?: string;
+  teacherWhatsapp?: string;
+  minutesBefore?: number;
+  now?: Date;
+  alertedSlots?: Set<string>;
+}): {
+  dueReminders: {
+    slotId: string;
+    slotKey: string;
+    studentName: string;
+    classTime: string;
+    subject: string;
+    classType: string;
+    locationOrLink?: string;
+    whatsappUrl?: string;
+    studentPhone?: string;
+  }[];
+} {
+  const {
+    schedules = [],
+    students = [],
+    teacherName = 'المعلم',
+    minutesBefore = 15,
+    now = new Date(),
+    alertedSlots = new Set(),
+  } = params;
+
+  const currentDayOfWeek = now.getDay();
+  const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
+  const todayDateStr = now.toISOString().slice(0, 10);
+
+  const dueReminders: any[] = [];
+
+  for (const slot of schedules) {
+    if (!slot || !slot.time || !slot.time.includes(':')) continue;
+
+    // Check recurrence
+    let matchesDay = false;
+    if (slot.recurrence === 'daily') {
+      matchesDay = true;
+    } else if (slot.recurrence === 'once') {
+      matchesDay = (slot as any).date === todayDateStr;
+    } else {
+      // Default: weekly
+      matchesDay = slot.dayOfWeek === currentDayOfWeek;
+    }
+
+    if (!matchesDay) continue;
+
+    const [h, m] = slot.time.split(':').map(Number);
+    const slotTotalMinutes = h * 60 + m;
+    const diffMinutes = slotTotalMinutes - currentTotalMinutes;
+
+    // In lookahead window: starting in 0 < diff <= minutesBefore
+    const isInWindow = diffMinutes > 0 && diffMinutes <= minutesBefore;
+    if (!isInWindow) continue;
+
+    const slotKey = `${slot.id}_${todayDateStr}_${slot.time}`;
+    if (alertedSlots.has(slotKey)) continue;
+
+    const student = students.find((s) => s.id === slot.studentId) || {
+      id: slot.studentId,
+      name: slot.studentName || 'طالب',
+      whatsapp: '',
+      subject: '',
+    };
+
+    const cleanStudentPhone = (student.whatsapp || '').replace(/[^0-9]/g, '');
+
+    dueReminders.push({
+      slotId: slot.id,
+      slotKey,
+      studentName: slot.studentName || student.name || 'طالب',
+      classTime: slot.time,
+      subject: (student as any).subject || (slot as any).subject || 'المادة',
+      classType: slot.classType || 'online',
+      locationOrLink: slot.locationOrLink || '',
+      studentPhone: student.whatsapp || '',
+      whatsappUrl: cleanStudentPhone ? `https://wa.me/${cleanStudentPhone}` : undefined,
+    });
+  }
+
+  return { dueReminders };
+}
+
 // Call /api/reminders/check with the teacher's current schedules and local time
 export async function checkRemindersApi(params: {
   teacher: TeacherProfile;

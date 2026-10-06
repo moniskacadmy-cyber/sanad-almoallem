@@ -24,33 +24,27 @@ function getFirebaseConfigFromLocation() {
     };
   }
 
-  return {
-    apiKey: 'AIzaSyCW-2H9dXUvJEpWKs9x1Cr7ME9gqV3uZMk',
-    projectId: 'gen-lang-client-0886550561',
-    messagingSenderId: '65313535187',
-    appId: '1:65313535187:web:7652704feb5f4a04e85026',
-    authDomain: 'gen-lang-client-0886550561.firebaseapp.com',
-    storageBucket: 'gen-lang-client-0886550561.firebasestorage.app',
-  };
+  return null;
 }
 
 const firebaseConfig = getFirebaseConfigFromLocation();
 
-if (firebaseConfig.apiKey && firebaseConfig.projectId) {
+if (firebaseConfig && firebaseConfig.apiKey && firebaseConfig.projectId) {
   try {
     firebase.initializeApp(firebaseConfig);
     const messaging = firebase.messaging();
 
     messaging.onBackgroundMessage((payload) => {
       console.log('[firebase-messaging-sw.js] Received background message:', payload);
+      const isAndroidOrDesktop = !(/iPhone|iPad|iPod/i.test(navigator.userAgent || ''));
       const notificationTitle = payload.notification?.title || payload.data?.title || 'تذكير بالحصة ⏰';
       const notificationOptions = {
         body: payload.notification?.body || payload.data?.body || 'لديك حصة دراسية قريبة.',
         icon: '/pwa-192x192.png',
         badge: '/favicon.ico',
-        tag: payload.data?.tag || 'lesson-reminder',
+        tag: payload.data?.tag || 'class-reminder',
         renotify: true,
-        requireInteraction: true,
+        requireInteraction: isAndroidOrDesktop,
         vibrate: [200, 100, 200],
         data: payload.data || {},
         actions: [
@@ -78,6 +72,7 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('push', (event) => {
   if (!event.data) return;
   try {
+    const isAndroidOrDesktop = !(/iPhone|iPad|iPod/i.test(navigator.userAgent || ''));
     const payload = event.data.json();
     const title = payload.notification?.title || payload.data?.title || 'سند المعلم 🔔';
     const body = payload.notification?.body || payload.data?.body || 'لديك تذكير جديد بجدول الحصص والمهام.';
@@ -85,9 +80,9 @@ self.addEventListener('push', (event) => {
       body,
       icon: '/pwa-192x192.png',
       badge: '/favicon.ico',
-      tag: payload.data?.tag || 'sanad-push',
+      tag: payload.data?.tag || 'class-reminder',
       renotify: true,
-      requireInteraction: true,
+      requireInteraction: isAndroidOrDesktop,
       vibrate: [200, 100, 200],
       data: payload.data || {},
     };

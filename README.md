@@ -62,7 +62,52 @@ vercel dev
 
 ---
 
-## 🔔 إعداد تذكيرات الحصص المباشرة أثناء إغلاق التطبيق (Web Push & Cron Job):
+## ⚡ البنية المعمارية لنظام التذكيرات فائق القابلية للتوسع (Reminder Queue Architecture - 100k Scale)
+
+تمت إعادة تصميم نظام التذكيرات بالكامل للانتقال من نموذج المسح الدوري المباشر (Full Periodic Scanning) إلى **طابور التذكيرات المادية الموزعة (Event-Driven Materialized Queue + Partitioned Sharding)** لدعم **100 ألف معلم مشترك** وتحمل ذروات تصل إلى **25,000 تذكير في الدقيقة الواحدة** بدون أي تأخير أو استهلاك غير مجدٍ للموارد.
+
+### 🏗️ مكونات البنية:
+1. **طابور التذكيرات المادية (`reminderQueue` Collection)**:
+   - معرف المستند الحتمي: `{teacherId}_{scheduleId}_{yyyyMMddHHmm}`.
+   - يتم احتساب وقت الإطلاق `fireAt` بناءً على موعد الحصة وتوقيت المعلم (IANA Timezone مع مراعاة كاملة للتوقيت الصيفي والشتوي DST).
+   - يتضمن لقطة فورية لرموز الأجهزة `tokens` (بحد أقصى 5 أجهزة).
+   - حقل `expireAt` مضبوط على `fireAt + 3 days` ليتم حذفه تلقائياً عبر سياسة Firestore TTL Policy بدون أي تكلفة أو عمليات قراءة إضافية.
+   - أمان تام: المجموعة محمية في `firestore.rules` ويُمنع وصول العميل إليها نهائياً (`allow read, write: if false;`).
+
+2. **مولد التذكيرات المادية (`materializeReminders`)**:
+   - يولّد التذكيرات مسبقاً للـ 48 ساعة القادمة لجميع أنواع الجداول (`weekly`, `daily`, `monthly`, `once`).
+   - يعمل بشكل Idempotent ولا يعيد كتابة التذكيرات المرسلة (`sent`) أو قيد المعالجة (`processing`).
+   - ينظف التذكيرات المعلقة للجداول المحذوفة أو المعدلة تلقائياً.
+   - يتخطى أو يلغي التذكيرات المعلقة إذا تم تعطيل الإشعارات أو انتهى اشتراك المعلم.
+
+3. **المُرسل الموزع المجزأ (Partitioned Sharded Dispatcher)**:
+   - يقسم المعلمين إلى $N=16$ تجزئة (Shards) متوازنة حتمياً عبر الدالة `computeShard(teacherId) % 16`.
+   - يعمل كل دقيقة بالتوازي عبر جميع التجزئات (16 Shards in parallel).
+   - استلام التذكير بحجز ذري عبر Firestore Transaction (`status: 'pending' -> 'processing'` مع مهلة حجز `leaseUntil = now + 60s`).
+   - الإرسال عبر FCM Multicast مع ترويسات الاستيقاظ الفوري للأجهزة المحمولة:
+     * `webpush.headers.Urgency = 'high'`
+     * `webpush.headers.TTL = '600'`
+   - تنظيف فوري لرموز الأجهزة غير المسجلة (`messaging/registration-token-not-registered` و `messaging/invalid-registration-token`).
+   - استعادة تلقائية للحجوزات المعلقة (`stale leases`) وإعادة المحاولة حتى 3 مرات بتأخير تصاعدي (Exponential Backoff).
+   - تسجيل إحصائيات الأداء والمراقبة في `ops/reminderStats/{yyyyMMddHHmm}` وسجلات JSON مهيكلة.
+
+---
+
+### 🧮 الحسبة والقدرة الاستيعابية (25,000 تذكير / دقيقة):
+- **حجم الذروة المستهدفة**: 25,000 تذكير متزامن خلال دقيقة واحدة (مثلاً في تمام 17:45 لحصص تبدأ 18:00).
+- **التوزيع المتوازي عبر التجزئات**:
+  $$\text{Per-shard Load} = \frac{25,000 \text{ reminders}}{16 \text{ shards}} \approx 1,562.5 \text{ reminders / shard}$$
+- **دفعات الإرسال (FCM Multicast Batches)**:
+  * كل دالة `sendEachForMulticast` ترسل لـ 500 مستلم في استدعاء شبكي واحد يستغرق ~100-200ms.
+  * كل تجزئة تحتاج فقط إلى 3 أو 4 استدعاءات متتالية:
+    $$\text{Batches per shard} = \lceil \frac{1,562.5}{500} \rceil = 4 \text{ batches}$$
+  * إجمالي الوقت المستغرق للمعالجة عبر الـ 16 تجزئة المتوازية:
+    $$\text{Total Dispatch Time} = 4 \text{ rounds} \times 200\text{ms} \approx 0.8 - 2.5 \text{ seconds}$$
+  * هذا يعني إتمام إرسال الـ 25 ألف تذكير في أقل من **5 ثوانٍ** من أصل الـ 60 ثانية المتاحة في الدقيقة!
+- **توفير القراءات في Firestore**:
+  * بدلاً من قراءة ملايين المستندات عبر `collectionGroup` وجميع جداول المعلمين في كل دقيقة، يتم فقط قراءة المستندات المستحقة في الدقيقة الحالية عبر الفهرس المركب `(shard, status, fireAt)` بدقة $O(\text{due reminders})$ بدون أي إهدار.
+
+---
 
 ### 1. توليد مفتاح VAPID من Firebase Console:
 1. افتح [Firebase Console](https://console.firebase.google.com).

@@ -1,8 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { TeacherProfile, Student, ScheduleSlot, LibraryItem, BackupData, ReminderLog, ReminderSettings, DEFAULT_WHATSAPP_TEMPLATES } from '../types';
-import { updateTeacherProfile, auth, fetchAllStudentLessons, importFullTeacherBackup, requestAndSaveFCMToken } from '../firebase';
+import { updateTeacherProfile, auth, fetchAllStudentLessons, importFullTeacherBackup, requestAndSaveFCMToken, signOutTeacher } from '../firebase';
 import { useBackHandler } from '../services/backHandler';
-import { signOut } from 'firebase/auth';
 import { PWAInstallButton } from '../PWAInstallButton';
 
 const triggerConfetti = (opts: Record<string, any>) => {
@@ -19,6 +18,8 @@ import {
   fetchCronStatusApi,
   triggerTestReminderApi,
   sendEndOfDaySummaryNotification,
+  checkTestReminderQuota,
+  incrementTestReminderQuota,
 } from '../services/reminderService';
 import {
   User,
@@ -297,6 +298,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const handleSendTestReminder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!testStudentName.trim()) return;
+
+    const quota = checkTestReminderQuota();
+    if (!quota.allowed) {
+      alert('عذراً، لقد استنفدت الحد اليومي المسموح به للتذكيرات التجريبية (3 مرات يومياً).');
+      return;
+    }
+
     setIsSendingTest(true);
     try {
       const res = await triggerTestReminderApi({
@@ -308,6 +316,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         teacherWhatsapp: profile.whatsapp,
         locationOrLink: testLocation.trim(),
       });
+      incrementTestReminderQuota();
       setTestSuccessData(res);
       if (reminderSettings.autoOpenWhatsApp && res.parentReminder?.whatsappUrl) {
         try {
@@ -347,7 +356,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
   const handleSignOut = async () => {
     if (window.confirm('هل تريد بالتأكيد تسجيل الخروج من حسابك؟')) {
-      await signOut(auth);
+      await signOutTeacher(auth);
     }
   };
 
@@ -944,12 +953,27 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         </div>
 
         {/* Enable Phone Push Notifications (FCM) Card & Button */}
-        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-950/70 via-slate-950 to-indigo-950/70 border border-purple-500/40 space-y-2.5">
+        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-950/70 via-slate-950 to-indigo-950/70 border border-purple-500/40 space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <Smartphone className="w-4 h-4 text-purple-400 shrink-0" />
               <div>
-                <h4 className="text-xs font-bold text-white">إشعارات الهاتف والتطبيق مغلق (Web Push)</h4>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-xs font-bold text-white">إشعارات الهاتف والتطبيق مغلق (Web Push)</h4>
+                  {typeof window !== 'undefined' && 'Notification' in window && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold flex items-center gap-1 ${
+                      browserPermission === 'granted'
+                        ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/40'
+                        : browserPermission === 'denied'
+                        ? 'bg-rose-950 text-rose-300 border border-rose-500/40'
+                        : 'bg-amber-950 text-amber-300 border border-amber-500/40'
+                    }`}>
+                      {browserPermission === 'granted' && <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400" />}
+                      {browserPermission === 'denied' && <AlertCircle className="w-2.5 h-2.5 text-rose-400" />}
+                      {browserPermission === 'granted' ? 'مفعّل ✅' : browserPermission === 'denied' ? 'محظور ❌' : 'غير مفعل ⚠️'}
+                    </span>
+                  )}
+                </div>
                 <p className="text-[10px] text-purple-200/80">تفعيل وصول التنبيهات لشاشة الهاتف حتى عند عدم استخدام التطبيق</p>
               </div>
             </div>
@@ -968,6 +992,19 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             </button>
           </div>
 
+          {/* Denied Notice & Browser Settings Instruction */}
+          {browserPermission === 'denied' && (
+            <div className="p-3 rounded-xl bg-rose-950/80 border border-rose-500/50 text-rose-200 text-xs space-y-1">
+              <div className="flex items-center gap-1.5 font-bold text-rose-100">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>الإشعارات محظورة في هذا المتصفح:</span>
+              </div>
+              <p className="text-[11px] text-rose-200/90 leading-relaxed pr-5">
+                لإعادة التفعيل: اضغط على أيقونة القفل 🔒 أو إعدادات الموقع بجانب شريط العنوان في الأعلى، ثم اختر "السماح بالإشعارات" (Allow Notifications) وأعد تحميل التطبيق.
+              </p>
+            </div>
+          )}
+
           {/* FCM Success Notice */}
           {fcmNotice && (
             <div className="p-2.5 rounded-xl bg-emerald-950/90 border border-emerald-500/50 text-emerald-200 text-xs flex items-center gap-2">
@@ -984,13 +1021,32 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             </div>
           )}
 
-          {/* iPhone / iOS Notice */}
+          {/* iPhone / iOS Standalone Notice */}
           {typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent) && (
-            <div className="p-2.5 rounded-xl bg-amber-950/50 border border-amber-500/40 text-amber-200 text-[11px] leading-relaxed flex items-start gap-2">
+            <div className="p-3 rounded-xl bg-amber-950/50 border border-amber-500/40 text-amber-200 text-xs leading-relaxed flex items-start gap-2.5">
               <Smartphone className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <span className="font-bold block text-white">خطوات مهمة لمستخدمي آيفون (iOS 16.4+):</span>
+                <p className="text-[11px] text-amber-200/90">
+                  إشعارات الويب أثناء إغلاق التطبيق تتطلب تثبيت التطبيق على الشاشة الرئيسية أولاً:
+                  <br />
+                  1. اضغط زر المشاركة <span className="font-bold bg-amber-900/60 px-1 rounded">⬆️ المشاركة</span> في متصفح Safari.
+                  <br />
+                  2. اختر <span className="font-bold bg-amber-900/60 px-1 rounded">"إضافة إلى الشاشة الرئيسية 📲"</span> ثم افتح التطبيق من الأيقونة واضغط تفعيل الإشعارات.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Android Battery Optimization Advice */}
+          {typeof navigator !== 'undefined' && /Android/.test(navigator.userAgent) && (
+            <div className="p-2.5 rounded-xl bg-slate-900/70 border border-slate-700/60 text-slate-300 text-xs leading-relaxed flex items-start gap-2">
+              <Smartphone className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
               <div>
-                <span className="font-bold block">مستخدمو هواتف آيفون (iOS):</span>
-                <span>لتلقي إشعارات الهاتف والتطبيق مغلق، يرجى تثبيت التطبيق على الشاشة الرئيسية أولاً عبر زر المشاركة في Safari (⬆️ المشاركة) ثم اختيار "إضافة إلى الشاشة الرئيسية".</span>
+                <span className="font-bold block text-white text-[11px]">نصيحة لمستخدمي أندرويد (Android) 🤖:</span>
+                <p className="text-[10px] text-slate-400">
+                  لضمان وصول التنبيهات في وقتها الدقيق دون تأخير، استثنِ تطبيق "سند المعلم" من ميزة توفير البطارية (Battery Optimization) من إعدادات الهاتف.
+                </p>
               </div>
             </div>
           )}
@@ -1519,6 +1575,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               >
                 <X className="w-5 h-5" />
               </button>
+            </div>
+
+            <div className="flex items-center justify-between text-[11px] text-purple-300 bg-purple-950/40 p-2.5 rounded-xl border border-purple-800/40">
+              <span>الحد اليومي للتجربة (جرّب الإشعار):</span>
+              <span className="font-bold text-white bg-purple-900/60 px-2 py-0.5 rounded-md">
+                {checkTestReminderQuota().remaining} من 3 متبقية اليوم
+              </span>
             </div>
 
             <p className="text-xs text-slate-300 leading-relaxed">

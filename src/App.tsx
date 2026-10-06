@@ -10,6 +10,9 @@ import {
   runOrphanCleanup,
   registerTeacher,
   firebaseInitError,
+  signOutTeacher,
+  listenToForegroundFCM,
+  requestAndSaveFCMToken,
 } from './firebase';
 import {
   TeacherProfile,
@@ -52,10 +55,9 @@ import {
   getStoredReminderSettings,
   showBrowserNotification,
   playNotificationChime,
-  checkRemindersApi,
+  checkLocalUpcomingSchedules,
   sendEndOfDaySummaryNotification,
 } from './services/reminderService';
-import { requestAndSaveFCMToken } from './firebase';
 import {
   pushAppHistoryState,
   useBackHandler,
@@ -143,25 +145,36 @@ export default function App() {
   useBackHandler(showAdminView, () => setShowAdminView(false), 'admin_view');
   useBackHandler(!!activeReminderAlert, () => setActiveReminderAlert(null), 'active_reminder_alert', false);
 
-  // Push initial history state on mount & Request browser notification permission
+  // Push initial history state on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
       window.history.replaceState({ app: 'sanad-almoallem', tab: 0 }, '', window.location.pathname);
       pushAppHistoryState({ tab: 0 });
-
-      // Ask for native notification permission immediately upon app startup
-      if ('Notification' in window && Notification.permission === 'default') {
-        Notification.requestPermission().then((perm) => {
-          if (perm === 'granted') {
-            showBrowserNotification(
-              'سند المعلم 🔔',
-              'تم تفعيل إشعارات الهاتف والنظام بنجاح لحصصك المجدولة!'
-            );
-            playNotificationChime();
-          }
-        });
-      }
     }
+  }, []);
+
+  // Listen to Foreground Web Push Messages (Toast + Browser Notification + Sound)
+  useEffect(() => {
+    const unsub = listenToForegroundFCM((payload) => {
+      const title = payload.notification?.title || payload.data?.title || 'سند المعلم 🔔';
+      const body = payload.notification?.body || payload.data?.body || 'لديك تذكير جديد بجدول الحصص!';
+      const studentName = payload.data?.studentName || 'طالب';
+      const classTime = payload.data?.time || '';
+      const subject = payload.data?.subject || 'المادة';
+
+      playNotificationChime();
+      showBrowserNotification(title, body);
+      setActiveReminderAlert({
+        studentName,
+        classTime,
+        subject,
+        studentPhone: '',
+      });
+    });
+
+    return () => {
+      if (unsub) unsub();
+    };
   }, []);
 
   // Synchronize browser history / popstate & Smart Back Button handling
@@ -250,9 +263,7 @@ export default function App() {
             console.warn('checkIsAdmin error:', e);
             setIsAdmin(false);
           }
-          requestAndSaveFCMToken().then((result) => {
-            if (!result.success) console.warn('FCM notification registration:', result.error);
-          }).catch((e) => console.warn('FCM token error:', e));
+          requestAndSaveFCMToken(false).catch((e) => console.warn('FCM token silent sync notice:', e));
         } else {
           setProfile(null);
           setIsAdmin(false);
@@ -336,7 +347,9 @@ export default function App() {
     runOrphanCleanup(currentUser.uid, students.map(s => s.id));
   }, [currentUser, profile?.id, students]);
 
-  // Automated 15-Minute Class Reminders Periodic Check
+  // In-Memory Local Reminder Evaluation (Zero network requests, calculated locally from loaded schedules)
+  const [alertedSlots, setAlertedSlots] = useState<Set<string>>(() => new Set());
+
   useEffect(() => {
     if (!profile || !schedules || schedules.length === 0) return;
     const settings = getStoredReminderSettings();
@@ -344,22 +357,25 @@ export default function App() {
 
     let isMounted = true;
 
-    const performCheck = async () => {
+    const performLocalCheck = () => {
       try {
-        const res = await checkRemindersApi({
-          teacher: profile,
+        const { dueReminders } = checkLocalUpcomingSchedules({
           schedules,
           students,
+          teacherName: profile.name,
+          teacherWhatsapp: profile.whatsapp,
           minutesBefore: settings.minutesBefore || 15,
+          alertedSlots,
         });
 
-        if (isMounted && res.matchedReminders && res.matchedReminders.length > 0) {
-          const first = res.matchedReminders[0];
+        if (isMounted && dueReminders.length > 0) {
+          const first = dueReminders[0];
+          setAlertedSlots((prev) => new Set([...prev, first.slotKey]));
           setActiveReminderAlert({
             studentName: first.studentName,
             classTime: first.classTime,
             whatsappUrl: first.whatsappUrl,
-            studentPhone: first.recipientPhone,
+            studentPhone: first.studentPhone,
             subject: first.subject,
           });
 
@@ -404,20 +420,20 @@ export default function App() {
           }
         }
       } catch (err) {
-        console.warn('Background reminder check error:', err);
+        console.warn('Local reminder evaluation notice:', err);
       }
     };
 
     // Initial check
-    performCheck();
+    performLocalCheck();
 
-    // Check periodically every 60 seconds
-    const timer = setInterval(performCheck, 60 * 1000);
+    // Check periodically every 60 seconds locally in memory
+    const timer = setInterval(performLocalCheck, 60 * 1000);
     return () => {
       isMounted = false;
       clearInterval(timer);
     };
-  }, [profile?.id, schedules, students]);
+  }, [profile?.id, schedules, students, alertedSlots]);
 
   // Direct URL access: /admin (Protected by AdminSecretGate)
   if (currentPath === '/admin') {
@@ -518,7 +534,7 @@ export default function App() {
         <LockScreen
           profile={profile}
           isAdmin={isAdmin}
-          onSignOut={() => signOut(auth)}
+          onSignOut={() => signOutTeacher(auth)}
           onOpenAdmin={() => setShowAdminView(true)}
         />
       </div>
