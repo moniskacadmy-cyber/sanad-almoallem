@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { onAuthStateChanged, User, signOut } from 'firebase/auth';
+import { onAuthStateChanged, onIdTokenChanged, User, signOut } from 'firebase/auth';
 import {
   auth,
   checkIsAdmin,
+  getUserClaims,
   subscribeToTeacherProfile,
   subscribeToStudents,
   subscribeToSchedules,
@@ -278,9 +279,9 @@ export default function App() {
     setCurrentPath(path);
   };
 
-  // Listen to Auth State
+  // Listen to Auth State & Token Claims Changes
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
+    const unsub = onIdTokenChanged(auth, async (user) => {
       try {
         setCurrentUser(user);
         if (user) {
@@ -297,7 +298,7 @@ export default function App() {
           setIsAdmin(false);
         }
       } catch (err) {
-        console.error('Error in onAuthStateChanged listener:', err);
+        console.error('Error in onIdTokenChanged listener:', err);
       } finally {
         setLoadingAuth(false);
       }
@@ -463,8 +464,17 @@ export default function App() {
     };
   }, [profile?.id, schedules, students, alertedSlots]);
 
-  // Direct URL access: /admin (Protected by AdminSecretGate)
+  // Direct URL access: /admin (Protected by AdminSecretGate & Claims verification)
   if (currentPath === '/admin') {
+    if (loadingAuth) {
+      return (
+        <LoadingFallback
+          message="جارٍ التحقق من صلاحيات المشرف..."
+          subMessage="التحقق من تصاريح الحساب وصلاحيات الإدارة"
+          timeoutMs={4000}
+        />
+      );
+    }
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex justify-center">
         <OfflineIndicator />
@@ -479,8 +489,8 @@ export default function App() {
     );
   }
 
-  // Admin Dashboard View (activated from Settings Tab or LockScreen for verified admins)
-  if (showAdminView) {
+  // Admin Dashboard View (activated from Settings Tab or LockScreen for verified admins only)
+  if (showAdminView && isAdmin) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex justify-center">
         <OfflineIndicator />

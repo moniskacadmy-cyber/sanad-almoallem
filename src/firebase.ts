@@ -168,12 +168,64 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Check if user is system admin based purely on uid existence in admins collection
-export async function checkIsAdmin(user: User | null): Promise<boolean> {
+export const BOOTSTRAP_ADMIN_UIDS = new Set([
+  'vX0iw1yYNwauMuKOInVjaATiIRx2',
+]);
+
+/**
+ * Retrieve Custom Claims from Firebase Auth ID Token for the current user.
+ */
+export async function getUserClaims(user: User | null, forceRefresh: boolean = false): Promise<Record<string, any>> {
+  if (!user) return {};
+  try {
+    const tokenResult = await user.getIdTokenResult(forceRefresh);
+    return tokenResult.claims || {};
+  } catch (err) {
+    console.warn('Failed to retrieve user ID token claims:', err);
+    return {};
+  }
+}
+
+/**
+ * Check if the current user is a system administrator based on:
+ * 1. Firebase Auth Custom Claims (claims.admin, claims.role === 'admin', claims.isAdmin)
+ * 2. Bootstrap admin UID / master developer email
+ * 3. Firestore admins/{uid} document verification
+ */
+export async function checkIsAdmin(user: User | null, forceRefresh: boolean = false): Promise<boolean> {
   if (!user) return false;
+
+  // 1. Primary check: Firebase Auth Custom Claims object on the ID token
+  try {
+    const claims = await getUserClaims(user, forceRefresh);
+    if (claims.admin === true || claims.role === 'admin' || claims.isAdmin === true) {
+      return true;
+    }
+  } catch (err) {
+    console.warn('Error evaluating auth custom claims for admin:', err);
+  }
+
+  // 2. Secondary check: Bootstrap admin UID / master developer email
+  if (BOOTSTRAP_ADMIN_UIDS.has(user.uid) || user.email === 'moniskacadmy@gmail.com') {
+    try {
+      const adminRef = doc(db, 'admins', user.uid);
+      const adminDoc = await getDoc(adminRef);
+      if (!adminDoc.exists()) {
+        await setDoc(adminRef, {
+          email: user.email || 'moniskacadmy@gmail.com',
+          role: 'admin',
+          active: true,
+          createdAt: serverTimestamp(),
+        }, { merge: true }).catch(() => {});
+      }
+    } catch {}
+    return true;
+  }
+
+  // 3. Fallback check: Firestore 'admins' collection verification
   try {
     const adminDoc = await getDoc(doc(db, 'admins', user.uid));
-    return adminDoc.exists();
+    return adminDoc.exists() && adminDoc.data()?.active !== false;
   } catch {
     return false;
   }
