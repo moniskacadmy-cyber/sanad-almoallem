@@ -1124,40 +1124,55 @@ app.get('/api/reminders/cron', async (req, res) => {
   }
 });
 
-// Health check endpoint with real checks (Firebase Admin, Upstash Redis ping, Gemini key presence)
+// Simple public health check (no external dependency calls per Vercel serverless request cost optimizations)
 app.get('/api/health', async (_req, res) => {
-  let firebaseOk = false;
-  let redisStatus: 'ok' | 'unavailable' | 'not_configured' = 'not_configured';
-  const geminiConfigured = Boolean(process.env.GEMINI_API_KEY?.trim());
+  return res.status(200).json({ ok: true });
+});
 
+// Detailed health check endpoint with real checks (Firebase Admin, Upstash Redis ping, Gemini key presence)
+// Protected by CRON_SECRET to prevent DDoS/abuse of backend integration resources.
+app.get('/api/health/deep', async (req, res) => {
   try {
-    const dbAdmin = getAdminDb();
-    await dbAdmin.collection('admins').limit(1).get();
-    firebaseOk = true;
-  } catch (err) {
-    console.error('Health check Firebase check failure:', err instanceof Error ? err.message : 'unknown');
-  }
-
-  const redisUrl = process.env.UPSTASH_REDIS_REST_URL?.trim();
-  const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
-  if (redisUrl && redisToken) {
-    try {
-      const pingRes = await fetch(`${redisUrl.replace(/\/$/, '')}/ping`, {
-        headers: { Authorization: `Bearer ${redisToken}` },
-      });
-      redisStatus = pingRes.ok ? 'ok' : 'unavailable';
-    } catch {
-      redisStatus = 'unavailable';
+    if (!verifyCronAuthHeader(req)) {
+      return res.status(401).json({ error: 'غير مصرح به: رمز CRON_SECRET غير معرّف أو غير متطابق.' });
     }
-  }
 
-  const isHealthy = firebaseOk && geminiConfigured && (redisStatus !== 'unavailable');
-  return res.status(isHealthy ? 200 : 503).json({
-    ok: isHealthy,
-    firebase: firebaseOk,
-    redis: redisStatus,
-    geminiConfigured,
-  });
+    let firebaseOk = false;
+    let redisStatus: 'ok' | 'unavailable' | 'not_configured' = 'not_configured';
+    const geminiConfigured = Boolean(process.env.GEMINI_API_KEY?.trim());
+
+    try {
+      const dbAdmin = getAdminDb();
+      await dbAdmin.collection('admins').limit(1).get();
+      firebaseOk = true;
+    } catch (err) {
+      console.error('Deep health check Firebase check failure:', err instanceof Error ? err.message : 'unknown');
+    }
+
+    const redisUrl = process.env.UPSTASH_REDIS_REST_URL?.trim();
+    const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
+    if (redisUrl && redisToken) {
+      try {
+        const pingRes = await fetch(`${redisUrl.replace(/\/$/, '')}/ping`, {
+          headers: { Authorization: `Bearer ${redisToken}` },
+        });
+        redisStatus = pingRes.ok ? 'ok' : 'unavailable';
+      } catch {
+        redisStatus = 'unavailable';
+      }
+    }
+
+    const isHealthy = firebaseOk && geminiConfigured && (redisStatus !== 'unavailable');
+    return res.status(isHealthy ? 200 : 503).json({
+      ok: isHealthy,
+      firebase: firebaseOk,
+      redis: redisStatus,
+      geminiConfigured,
+    });
+  } catch (err) {
+    console.error('Error in GET /api/health/deep:', err);
+    return res.status(500).json({ error: 'حدث خطأ أثناء إجراء الفحص العميق.' });
+  }
 });
 
 // Automated 15-Minute Class Reminders & WhatsApp/Notifications API Route (Protected)

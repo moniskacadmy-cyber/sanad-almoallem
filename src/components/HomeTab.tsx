@@ -513,7 +513,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         </div>
 
         {/* Live next-class countdown */}
-      <div className="rounded-3xl bg-slate-950/80 border border-amber-500/30 p-4 shadow-xl">
+      <div className="rounded-3xl bg-slate-950 border border-amber-500/30 p-4 shadow-xl">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[11px] text-amber-300 font-black">الحصة القادمة ⏰</p>
@@ -835,7 +835,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
 
       {/* Start Class Modal */}
       {showStartClassModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-slate-900 border border-purple-500/30 rounded-3xl p-5 shadow-2xl text-right">
             <div className="flex items-center justify-between border-b border-purple-900/40 pb-3 mb-4">
               <h3 className="text-base font-bold text-white">تسجيل تفاصيل الحصة</h3>
@@ -988,7 +988,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
 
       {/* Edit Before Send Modal for WhatsApp Class Report */}
       {showClassReportEditModal && pendingReportStudent && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-slate-900 border border-emerald-500/30 rounded-3xl p-5 shadow-2xl text-right space-y-4">
             <div className="flex items-center justify-between border-b border-emerald-900/40 pb-3">
               <h3 className="text-base font-bold text-white flex items-center gap-2">

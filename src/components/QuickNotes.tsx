@@ -282,7 +282,7 @@ export const QuickNotes: React.FC<QuickNotesProps> = ({ profile }) => {
               onChange={(e) => setNewText(e.target.value)}
               placeholder="اكتب ملاحظتك، فكرة الدرس، أسماء الواجبات، أو تذكيرك هنا..."
               maxLength={2000}
-              className="w-full rounded-xl bg-slate-950/80 border border-slate-700/80 px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 leading-relaxed resize-none"
+              className="w-full rounded-xl bg-slate-950 border border-slate-700/80 px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 leading-relaxed resize-none"
             />
             <div className="flex justify-between items-center text-[10px] text-slate-500 mt-1">
               <div className="flex items-center gap-2">
@@ -556,7 +556,7 @@ export const QuickNotes: React.FC<QuickNotesProps> = ({ profile }) => {
 
       {/* Edit Note Modal */}
       {editingNote && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-slate-900 border border-purple-500/40 rounded-3xl p-5 shadow-2xl text-right space-y-3">
             <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
               <h3 className="text-sm font-bold text-white flex items-center gap-1.5">

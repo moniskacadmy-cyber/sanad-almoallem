@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { TeacherProfile, Student, LessonLog, ClassType, PaymentStatus, ScheduleSlot, DEFAULT_WHATSAPP_TEMPLATES, renderTemplate, isLessonFinanciallyCounted } from '../types';
 import { AbsenceDetailsModal, AbsenceDetailsResult } from './AbsenceDetailsModal';
 import { DailyAttendanceModal } from './DailyAttendanceModal';
@@ -109,6 +109,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [selectedProfileStudent, setSelectedProfileStudent] = useState<Student | null>(null);
   const [studentLessons, setStudentLessons] = useState<LessonLog[]>([]);
+  const [lessonsLimitDays, setLessonsLimitDays] = useState<number>(60);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<Student | null>(null);
   const [showMonthlyReportModal, setShowMonthlyReportModal] = useState(false);
   const [reportEditableText, setReportEditableText] = useState('');
@@ -405,9 +406,14 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     setIsProfileNotesOpen(false);
     const unsub = subscribeToStudentLessons(profile.id, selectedProfileStudent.id, (lessons) => {
       setStudentLessons(lessons);
-    });
+    }, lessonsLimitDays);
     return () => unsub();
-  }, [profile.id, selectedProfileStudent]);
+  }, [profile.id, selectedProfileStudent, lessonsLimitDays]);
+
+  // Reset lessonsLimitDays to 60 when switching students
+  useEffect(() => {
+    setLessonsLimitDays(60);
+  }, [selectedProfileStudent?.id]);
 
   const handleSaveProfileNotes = async () => {
     if (!selectedProfileStudent) return;
@@ -427,19 +433,21 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     }
   };
 
-  // Filter students
-  const filteredStudents = students.filter((s) => {
-    const matchesSearch =
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.whatsapp && s.whatsapp.includes(searchQuery)) ||
-      s.subject.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesType =
-      typeFilter === 'all' ||
-      s.classType === typeFilter ||
-      (typeFilter === 'in_person' && (s.classType === 'private' || s.classType === 'center' || !s.classType));
-    const matchesPayment = paymentFilter === 'all' || s.paymentStatus === paymentFilter;
-    return matchesSearch && matchesType && matchesPayment;
-  });
+  // Filter students (memoized for >50 items scalability)
+  const filteredStudents = useMemo(() => {
+    return students.filter((s) => {
+      const matchesSearch =
+        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (s.whatsapp && s.whatsapp.includes(searchQuery)) ||
+        s.subject.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesType =
+        typeFilter === 'all' ||
+        s.classType === typeFilter ||
+        (typeFilter === 'in_person' && (s.classType === 'private' || s.classType === 'center' || !s.classType));
+      const matchesPayment = paymentFilter === 'all' || s.paymentStatus === paymentFilter;
+      return matchesSearch && matchesType && matchesPayment;
+    });
+  }, [students, searchQuery, typeFilter, paymentFilter]);
 
   const handleOpenStudentProfile = (s: Student) => {
     setSelectedProfileStudent(s);
@@ -1342,7 +1350,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
       {/* Add / Edit Student Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-slate-950  flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-slate-900 border border-purple-500/30 rounded-3xl p-5 shadow-2xl text-right max-h-[90vh] flex flex-col relative overflow-hidden">
             <div className="flex items-center justify-between border-b border-purple-900/40 pb-3 mb-3 flex-shrink-0">
               <h3 className="text-base font-bold text-white">
@@ -1767,7 +1775,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
       {/* Delete Student Confirmation Modal */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-slate-950  flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-slate-900 border border-rose-500/30 rounded-3xl p-5 shadow-2xl text-right">
             <h3 className="text-base font-bold text-white mb-2">تأكيد حذف الطالب</h3>
             <p className="text-xs text-slate-300 mb-4 leading-relaxed">
@@ -1795,7 +1803,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
       {/* Student Detailed Profile Modal (With Reports, Payments, and Learning Style) */}
       {selectedProfileStudent && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-4">
           <div className="w-full max-w-lg bg-slate-900 border border-purple-500/30 rounded-3xl p-5 shadow-2xl text-right max-h-[92vh] flex flex-col space-y-3.5">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
@@ -2170,7 +2178,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                       onChange={(e) => setProfileLearningStyle(e.target.value)}
                       placeholder="سجل ملاحظاتك عن أسلوب استيعاب الطالب ونقاط قوته..."
                       rows={2}
-                      className="w-full rounded-xl bg-slate-950/80 border border-slate-700/80 p-2 text-xs text-slate-200 focus:outline-none focus:border-purple-400"
+                      className="w-full rounded-xl bg-slate-950 border border-slate-700/80 p-2 text-xs text-slate-200 focus:outline-none focus:border-purple-400"
                     />
 
                     <div className="flex items-center justify-between">
@@ -2255,7 +2263,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                 (sched) => sched.studentId === selectedProfileStudent.id
               );
               return (
-                <div className="rounded-2xl bg-slate-950/80 border border-purple-500/30 p-3.5 space-y-3 shadow-lg">
+                <div className="rounded-2xl bg-slate-950 border border-purple-500/30 p-3.5 space-y-3 shadow-lg">
                   {/* Card Header with prominent title & buttons */}
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-2">
@@ -2806,6 +2814,15 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                   </div>
                 ))
               )}
+              {lessonsLimitDays !== 0 && studentLessons.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setLessonsLimitDays(0)}
+                  className="w-full py-2.5 mt-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 transition cursor-pointer"
+                >
+                  🔄 تحميل الحصص الأقدم (أكثر من 60 يوماً)
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -2813,7 +2830,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
       {/* MODAL: MONTHLY REPORT FOR PARENTS (Edit Before Send Modal) */}
       {showMonthlyReportModal && selectedProfileStudent && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-4">
           <div className="w-full max-w-lg bg-slate-900 border border-emerald-500/40 rounded-3xl p-5 shadow-2xl text-right max-h-[92vh] flex flex-col space-y-3">
             <div className="flex items-center justify-between border-b border-emerald-900/40 pb-3">
               <div className="flex items-center gap-2">
@@ -2853,7 +2870,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                 value={reportEditableText}
                 onChange={(e) => setReportEditableText(e.target.value)}
                 rows={11}
-                className="w-full rounded-2xl bg-slate-950/90 border border-emerald-500/30 focus:border-emerald-400 p-3.5 text-xs text-slate-100 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition resize-y"
+                className="w-full rounded-2xl bg-slate-950 border border-emerald-500/30 focus:border-emerald-400 p-3.5 text-xs text-slate-100 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-emerald-500/40 transition resize-y"
                 placeholder="اكتب أو عدل نص التقرير هنا..."
               />
             </div>
@@ -2905,7 +2922,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
       {/* MODAL: LESSON PREPARATION (Edit Before Send Modal) */}
       {showLessonPrepModal && selectedProfileStudent && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-4">
           <div className="w-full max-w-lg bg-slate-900 border border-purple-500/40 rounded-3xl p-5 shadow-2xl text-right max-h-[92vh] flex flex-col space-y-3">
             <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
               <div className="flex items-center gap-2">
@@ -2929,7 +2946,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
             </div>
 
             {/* Quick Topic Modifier */}
-            <div className="flex items-center gap-2 bg-slate-950/80 p-2.5 rounded-2xl border border-purple-500/25">
+            <div className="flex items-center gap-2 bg-slate-950 p-2.5 rounded-2xl border border-purple-500/25">
               <span className="text-[11px] font-bold text-purple-300 whitespace-nowrap">
                 عنوان الدرس:
               </span>
@@ -2968,7 +2985,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                 value={prepEditableText}
                 onChange={(e) => setPrepEditableText(e.target.value)}
                 rows={11}
-                className="w-full rounded-2xl bg-slate-950/90 border border-purple-500/30 focus:border-purple-400 p-3.5 text-xs text-slate-100 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-purple-500/40 transition resize-y"
+                className="w-full rounded-2xl bg-slate-950 border border-purple-500/30 focus:border-purple-400 p-3.5 text-xs text-slate-100 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-purple-500/40 transition resize-y"
                 placeholder="اكتب أو عدل نص تحضير الحصة هنا..."
               />
             </div>
@@ -3019,7 +3036,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
       {/* Settle Account Confirmation Modal (تصفية الحساب وبدء دورة جديدة) */}
       {showConfirmSettleStudent && (
-        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 text-right">
+        <div className="fixed inset-0 z-50 bg-slate-950  flex items-center justify-center p-4 text-right">
           <div className="w-full max-w-sm bg-slate-900 border border-emerald-500/40 rounded-3xl p-5 shadow-2xl space-y-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30 flex-shrink-0">

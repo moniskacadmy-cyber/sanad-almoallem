@@ -505,20 +505,18 @@ export async function adminSaveSubscription(params: {
   // 2. Find if teacher with this email already exists in teachers collection
   let teacherFound = false;
   try {
-    const snap = await getDocs(collection(db, 'teachers'));
+    const q = query(collection(db, 'teachers'), where('email', '==', normalizedEmail));
+    const snap = await getDocs(q);
     for (const tDoc of snap.docs) {
-      const tData = tDoc.data();
-      if (tData.email && tData.email.trim().toLowerCase() === normalizedEmail) {
-        teacherFound = true;
-        await updateDoc(doc(db, 'teachers', tDoc.id), {
-          isActive,
-          subscriptionStatus: status,
-          plan: planName,
-          subscriptionEndDate: Timestamp.fromDate(newExpiryDate),
-          subscriptionExpiresAt: Timestamp.fromDate(newExpiryDate),
-          updatedAt: serverTimestamp(),
-        });
-      }
+      teacherFound = true;
+      await updateDoc(doc(db, 'teachers', tDoc.id), {
+        isActive,
+        subscriptionStatus: status,
+        plan: planName,
+        subscriptionEndDate: Timestamp.fromDate(newExpiryDate),
+        subscriptionExpiresAt: Timestamp.fromDate(newExpiryDate),
+        updatedAt: serverTimestamp(),
+      });
     }
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, 'teachers');
@@ -741,8 +739,22 @@ export function subscribeToStudents(
   onUpdate: (students: Student[]) => void
 ) {
   const path = `teachers/${teacherId}/students`;
+  const colRef = collection(db, 'teachers', teacherId, 'students');
+
+  // Silent migration to ensure backward compatibility with where('status', '!=', 'inactive')
+  getDocs(colRef).then((snap) => {
+    snap.docs.forEach((docSnap) => {
+      const data = docSnap.data();
+      if (data.status === undefined) {
+        updateDoc(docSnap.ref, { status: 'active' }).catch(() => {});
+      }
+    });
+  }).catch(() => {});
+
+  const q = query(colRef, where('status', '!=', 'inactive'));
+
   return onSnapshot(
-    collection(db, 'teachers', teacherId, 'students'),
+    q,
     (snap) => {
       const students = snap.docs.map((d) => ({
         ...d.data(),
@@ -765,6 +777,7 @@ export async function addStudent(
     const colRef = collection(db, 'teachers', teacherId, 'students');
     const newDoc = doc(colRef);
     await setDoc(newDoc, {
+      status: 'active',
       ...student,
       id: newDoc.id,
       teacherId,
@@ -856,11 +869,24 @@ export async function toggleStudentPaymentStatus(
 export function subscribeToStudentLessons(
   teacherId: string,
   studentId: string,
-  onUpdate: (lessons: LessonLog[]) => void
+  onUpdate: (lessons: LessonLog[]) => void,
+  limitDays = 60
 ) {
   const path = `teachers/${teacherId}/students/${studentId}/lessons`;
+  const colRef = collection(db, 'teachers', teacherId, 'students', studentId, 'lessons');
+  
+  let q;
+  if (limitDays > 0) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - limitDays);
+    const dateStr = cutoffDate.toISOString().split('T')[0];
+    q = query(colRef, where('date', '>=', dateStr));
+  } else {
+    q = colRef;
+  }
+
   return onSnapshot(
-    collection(db, 'teachers', teacherId, 'students', studentId, 'lessons'),
+    q,
     (snap) => {
       const lessons = snap.docs.map((d) => ({
         ...d.data(),
@@ -1187,15 +1213,25 @@ export async function seedDefaultLibraryItems(teacherId: string) {
 // Backup & Data Export / Import Operations
 export async function fetchAllStudentLessons(
   teacherId: string,
-  students: Student[]
+  students: Student[],
+  limitDays = 60
 ): Promise<Record<string, LessonLog[]>> {
   const allLessons: Record<string, LessonLog[]> = {};
+  
+  let cutoffDateStr = '';
+  if (limitDays > 0) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - limitDays);
+    cutoffDateStr = cutoffDate.toISOString().split('T')[0];
+  }
+
   for (const student of students) {
     const path = `teachers/${teacherId}/students/${student.id}/lessons`;
     try {
-      const snap = await getDocs(
-        collection(db, 'teachers', teacherId, 'students', student.id, 'lessons')
-      );
+      const colRef = collection(db, 'teachers', teacherId, 'students', student.id, 'lessons');
+      const q = cutoffDateStr ? query(colRef, where('date', '>=', cutoffDateStr)) : colRef;
+      
+      const snap = await getDocs(q);
       allLessons[student.id] = snap.docs.map((d) => ({
         ...(d.data() as LessonLog),
         id: d.id,

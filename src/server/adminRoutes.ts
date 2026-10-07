@@ -244,5 +244,98 @@ export function createAdminRouter() {
     }
   });
 
+  /**
+   * GET /api/admin/teachers (Paginated teachers list with filter and search)
+   */
+  router.get('/teachers', async (req: Request, res: Response) => {
+    try {
+      const dbAdmin = getDb();
+      const limit = Math.min(Number(req.query.limit) || 50, 100);
+      const { cursor, status, search } = req.query;
+
+      let queryRef: any = dbAdmin.collection('teachers');
+
+      // Apply status filter if specified and not 'all'
+      if (status && typeof status === 'string' && status !== 'all') {
+        queryRef = queryRef.where('subscriptionStatus', '==', status);
+      }
+
+      // Apply search filter (prefix range on name, or exact on email)
+      if (search && typeof search === 'string' && search.trim()) {
+        const searchTerm = search.trim();
+        if (searchTerm.includes('@')) {
+          queryRef = queryRef.where('email', '==', searchTerm.toLowerCase());
+          queryRef = queryRef.orderBy('createdAt', 'desc');
+        } else {
+          queryRef = queryRef
+            .where('name', '>=', searchTerm)
+            .where('name', '<=', searchTerm + '\uf8ff')
+            .orderBy('name', 'asc')
+            .orderBy('createdAt', 'desc');
+        }
+      } else {
+        queryRef = queryRef.orderBy('createdAt', 'desc');
+      }
+
+      // Cursor-based pagination lookup
+      if (cursor && typeof cursor === 'string') {
+        const cursorDoc = await dbAdmin.collection('teachers').doc(cursor).get();
+        if (cursorDoc.exists) {
+          queryRef = queryRef.startAfter(cursorDoc);
+        }
+      }
+
+      // Limit results by limit + 1 to check if there is a next page
+      const snap = await queryRef.limit(limit + 1).get();
+
+      const teachers = snap.docs.slice(0, limit).map((d: any) => ({
+        id: d.id,
+        ...d.data()
+      }));
+
+      const nextCursor = snap.docs.length > limit ? snap.docs[limit - 1].id : null;
+
+      return res.status(200).json({
+        teachers,
+        nextCursor
+      });
+    } catch (err: any) {
+      console.error('Error fetching admin teachers list:', err);
+      return res.status(500).json({ error: 'فشل جلب قائمة المعلمين.' });
+    }
+  });
+
+  /**
+   * GET /api/admin/stats (O(1) Realtime count aggregation on database level)
+   */
+  router.get('/stats', async (req: Request, res: Response) => {
+    try {
+      const dbAdmin = getDb();
+      const teachersCol = dbAdmin.collection('teachers');
+
+      const [totalSnap, activeSnap, expiredSnap, trialSnap, deactivatedSnap] = await Promise.all([
+        teachersCol.count().get(),
+        teachersCol.where('subscriptionStatus', '==', 'active').count().get(),
+        teachersCol.where('subscriptionStatus', '==', 'expired').count().get(),
+        teachersCol.where('subscriptionStatus', '==', 'trial').count().get(),
+        teachersCol.where('isActive', '==', false).count().get()
+      ]);
+
+      const stats = {
+        totalTeachers: totalSnap.data().count,
+        activeSubscribers: activeSnap.data().count,
+        expiredSubscribers: expiredSnap.data().count,
+        trialAccounts: trialSnap.data().count,
+        deactivatedTeachers: deactivatedSnap.data().count,
+        lastUpdated: new Date().toISOString()
+      };
+
+      return res.status(200).json(stats);
+    } catch (err: any) {
+      console.error('Error fetching admin stats:', err);
+      return res.status(500).json({ error: 'فشل جلب إحصائيات المعلمين.' });
+    }
+  });
+
   return router;
 }

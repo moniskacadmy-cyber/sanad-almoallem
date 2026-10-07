@@ -468,7 +468,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex justify-center">
         <OfflineIndicator />
-        <div className="w-full max-w-[460px] min-h-screen bg-slate-950/95 border-x border-purple-950/40 flex flex-col relative shadow-2xl p-4">
+        <div className="w-full max-w-[460px] min-h-screen bg-slate-950 border-x border-purple-950/40 flex flex-col relative shadow-2xl p-4">
           <AdminSecretGate
             currentUser={currentUser}
             isAdmin={isAdmin}
@@ -484,7 +484,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex justify-center">
         <OfflineIndicator />
-        <div className="w-full max-w-[460px] min-h-screen bg-slate-950/95 border-x border-purple-950/40 flex flex-col relative shadow-2xl p-4">
+        <div className="w-full max-w-[460px] min-h-screen bg-slate-950 border-x border-purple-950/40 flex flex-col relative shadow-2xl p-4">
           <AdminDashboard onBackToApp={() => setShowAdminView(false)} />
         </div>
       </div>
@@ -591,9 +591,9 @@ export default function App() {
       )}
 
       {/* Mobile-first centered frame (up to 460px) */}
-      <div className="w-full max-w-[460px] min-h-screen bg-slate-950/95 border-x border-purple-950/40 flex flex-col relative shadow-2xl">
+      <div className="w-full max-w-[460px] min-h-screen bg-slate-950 border-x border-purple-950/40 flex flex-col relative shadow-2xl">
         {/* Top App Header */}
-        <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-purple-900/30 px-3.5 py-2.5 flex items-center justify-between">
+        <header className="sticky top-0 z-40 bg-slate-950  border-b border-purple-900/30 px-3.5 py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-2">
             {activeTab !== 0 ? (
               <button
@@ -776,7 +776,7 @@ export default function App() {
         </main>
 
         {/* Bottom Tab Navigation Bar */}
-        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[460px] z-40 bg-slate-950/95 backdrop-blur-lg border-t border-purple-900/40 px-2 py-1.5 flex items-center justify-around shadow-2xl">
+        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[460px] z-40 bg-slate-950  border-t border-purple-900/40 px-2 py-1.5 flex items-center justify-around shadow-2xl">
           {tabs.map((tab, idx) => {
             const Icon = tab.icon;
             const isActive = activeTab === idx;
@@ -831,7 +831,7 @@ export default function App() {
         {/* Exit Application Confirmation Modal */}
         {showExitConfirmModal && (
           <div
-            className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 text-right"
+            className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-4 text-right"
             dir="rtl"
           >
             <div className="w-full max-w-sm bg-gradient-to-b from-slate-900 to-slate-950 border border-purple-500/40 rounded-3xl p-6 shadow-2xl relative space-y-4 animate-in fade-in zoom-in-95 duration-200">

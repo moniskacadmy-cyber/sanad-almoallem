@@ -192,7 +192,7 @@ export default function StudentManager({ onStudentAdd, initialStudents = [] }: S
             {students.map((student) => (
               <li
                 key={student.id}
-                className="bg-slate-950/80 border border-slate-800 hover:border-slate-700 rounded-xl p-3.5 flex items-center justify-between transition group"
+                className="bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-xl p-3.5 flex items-center justify-between transition group"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold text-sm">

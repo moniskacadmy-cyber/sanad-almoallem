@@ -4,6 +4,10 @@
   :root {
     --bg-app: #070314;
     --color-text: #f1f5f9;
+    --bg-glass-panel: #1a1033;
+    --border-glass-panel: rgba(168, 85, 247, 0.25);
+    --bg-glass-card: #241444;
+    --border-glass-card: rgba(147, 51, 234, 0.25);
   }
 
   /* When .light is active on the html/body element */
@@ -40,9 +44,9 @@
     --color-amber-300: #92400e;
 
     /* Override specific glass styles for light mode */
-    --bg-glass-panel: rgba(241, 245, 249, 0.9);
+    --bg-glass-panel: #f1f5f9;
     --border-glass-panel: rgba(147, 51, 234, 0.22);
-    --bg-glass-card: rgba(255, 255, 255, 0.9);
+    --bg-glass-card: #ffffff;
     --border-glass-card: rgba(147, 51, 234, 0.16);
   }
 
@@ -78,17 +82,13 @@
 
 /* Luxury Glow and Glass */
 .glass-panel {
-  background: var(--bg-glass-panel, rgba(26, 16, 51, 0.75));
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid var(--border-glass-panel, rgba(168, 85, 247, 0.18));
+  background: var(--bg-glass-panel);
+  border: 1px solid var(--border-glass-panel);
 }
 
 .glass-card {
-  background: var(--bg-glass-card, rgba(36, 20, 68, 0.6));
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid var(--border-glass-card, rgba(147, 51, 234, 0.15));
+  background: var(--bg-glass-card);
+  border: 1px solid var(--border-glass-card);
 }
 
 .glow-purple {

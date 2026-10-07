@@ -1048,7 +1048,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
           >
             <div className="min-w-[780px] relative">
               {/* Sticky Days Header Row */}
-              <div className="sticky top-0 z-30 flex bg-slate-950/95 backdrop-blur-md border-b border-purple-900/40">
+              <div className="sticky top-0 z-30 flex bg-slate-950  border-b border-purple-900/40">
                 <div className="w-16 flex-shrink-0 p-2.5 text-center text-[10px] font-bold text-slate-400 border-l border-slate-800 sticky right-0 z-40 bg-slate-950 shadow-md">
                   الوقت
                 </div>
@@ -1096,7 +1096,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
                         key={slot.time24}
                         style={{ height: `${ROW_HEIGHT}px` }}
                         className={`flex items-center justify-center text-[10px] font-mono border-b border-slate-800/50 ${
-                          isHourMark ? 'text-slate-300 font-bold bg-slate-950' : 'text-slate-500 bg-slate-950/80'
+                          isHourMark ? 'text-slate-300 font-bold bg-slate-950' : 'text-slate-500 bg-slate-950'
                         }`}
                       >
                         <span>{slot.label}</span>
@@ -1488,7 +1488,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
 
       {/* MODAL 1: VIEW DETAILS OF A BOOKED CLASS */}
       {viewingScheduleDetails && (
-        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-slate-950  flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-slate-900 border border-purple-500/40 rounded-3xl p-5 shadow-2xl text-right space-y-4 animate-fadeIn">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
@@ -1591,7 +1591,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
 
       {/* MODAL 2: QUICK ADD / EDIT SCHEDULE MODAL (WITH MULTIPLE TIME SLOTS SUPPORT) */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-3 sm:p-4">
           <div className="w-full max-w-xl bg-slate-900 border border-purple-500/40 rounded-3xl p-5 shadow-2xl text-right max-h-[92vh] flex flex-col animate-fadeIn">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-purple-900/40 pb-3 mb-3">
@@ -1985,7 +1985,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
                       return (
                         <div
                           key={slotItem.id}
-                          className="p-3.5 rounded-2xl bg-slate-950/80 border border-purple-900/40 space-y-3 relative group"
+                          className="p-3.5 rounded-2xl bg-slate-950 border border-purple-900/40 space-y-3 relative group"
                         >
                           {/* Slot Header */}
                           <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
@@ -2174,7 +2174,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
 
       {/* Quick Evaluation Modal */}
       {showQuickEvalModal && evalTargetSlot && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950  animate-fadeIn">
           <div
             className="relative w-full max-w-md rounded-3xl bg-slate-900 border border-purple-500/30 p-5 space-y-4 shadow-2xl text-right"
             dir="rtl"

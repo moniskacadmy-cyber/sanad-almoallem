@@ -655,7 +655,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               onChange={(e) => setTemplateText(e.target.value)}
               rows={12}
               dir="rtl"
-              className="w-full rounded-xl bg-slate-950/90 border border-purple-500/20 focus:border-purple-500 p-3 text-xs text-slate-100 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-purple-500/40 transition resize-y text-right"
+              className="w-full rounded-xl bg-slate-950 border border-purple-500/20 focus:border-purple-500 p-3 text-xs text-slate-100 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-purple-500/40 transition resize-y text-right"
               placeholder="اكتب قالب الرسالة هنا..."
             />
           </div>
@@ -1353,7 +1353,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
       {/* Edit Profile Modal */}
       {showEditProfile && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-slate-900 border border-purple-500/30 rounded-3xl p-5 shadow-2xl text-right">
             <div className="flex items-center justify-between border-b border-purple-900/40 pb-3 mb-4">
               <h3 className="text-base font-bold text-white">تعديل الملف الشخصي</h3>
@@ -1436,7 +1436,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
       {/* JSON Import & Restore Confirmation Modal */}
       {showImportModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 text-right">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-4 text-right">
           <div className="w-full max-w-md bg-slate-900 border border-emerald-500/40 rounded-3xl p-6 shadow-2xl relative space-y-4">
             <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
               <div className="flex items-center gap-2">
@@ -1559,7 +1559,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
       {/* Test Reminder Modal */}
       {showTestModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 text-right">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-4 text-right">
           <div className="w-full max-w-md bg-slate-900 border border-purple-500/40 rounded-3xl p-6 shadow-2xl relative space-y-4">
             <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
               <div className="flex items-center gap-2">
@@ -1722,7 +1722,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
       {/* Logs Modal */}
       {showLogsModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 text-right">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-4 text-right">
           <div className="w-full max-w-lg bg-slate-900 border border-purple-500/40 rounded-3xl p-6 shadow-2xl relative space-y-4">
             <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
               <div className="flex items-center gap-2">

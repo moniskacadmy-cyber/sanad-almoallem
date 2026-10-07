@@ -245,7 +245,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
           </div>
 
           {/* Privacy & Masking Banner */}
-          <div className="bg-slate-950/90 border-b border-purple-500/20 px-3 py-2 flex items-center justify-between text-[11px]">
+          <div className="bg-slate-950 border-b border-purple-500/20 px-3 py-2 flex items-center justify-between text-[11px]">
             <div className="flex items-center gap-1.5 text-slate-300">
               <Shield className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <span className="text-[10px] text-slate-300">خصوصية الطلاب:</span>

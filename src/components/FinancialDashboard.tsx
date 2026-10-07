@@ -679,7 +679,7 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
 
       {/* CONFIRM SETTLE MODAL */}
       {showConfirmSettle && (
-        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-slate-950  flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-slate-900 border border-emerald-500/40 rounded-3xl p-5 space-y-4 shadow-2xl">
             <h3 className="text-sm font-bold text-white">تأكيد تصفية واستلام الحساب</h3>
             <p className="text-xs text-slate-300">
@@ -707,7 +707,7 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
 
       {/* WHATSAPP INVOICE MODAL */}
       {showInvoiceModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-slate-950  flex items-center justify-center p-4">
           <div className="w-full max-w-lg bg-slate-900 border border-emerald-500/40 rounded-3xl p-5 space-y-3 shadow-2xl flex flex-col max-h-[90vh]">
             <div className="flex items-center justify-between border-b border-emerald-900/40 pb-2">
               <h3 className="text-sm font-bold text-white">مطالبة واتساب المالية</h3>
