@@ -29,7 +29,7 @@ function getFirebaseConfigFromLocation() {
 
 const firebaseConfig = getFirebaseConfigFromLocation();
 
-if (firebaseConfig.apiKey && firebaseConfig.projectId) {
+if (firebaseConfig?.apiKey && firebaseConfig?.projectId) {
   try {
     firebase.initializeApp(firebaseConfig);
     const messaging = firebase.messaging();
