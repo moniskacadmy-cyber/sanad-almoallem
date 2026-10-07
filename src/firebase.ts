@@ -1496,6 +1496,21 @@ export async function toggleCompleteQuickNote(teacherId: string, noteId: string,
 import { getMessaging, getToken, deleteToken, onMessage, isSupported } from 'firebase/messaging';
 
 const FCM_SW_SCOPE = '/firebase-cloud-messaging-push-scope';
+
+// FCM registration tokens can contain characters rejected by our Firestore
+// document-id validation rules (for example ':'). Keep the real token in data,
+// but use a deterministic SHA-256 id for the document key.
+async function getFcmTokenDocumentId(token: string): Promise<string> {
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    const bytes = new TextEncoder().encode(token);
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('');
+  }
+  return token.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
+}
+
 let fcmRegisteredUid: string | null = null;
 let currentActiveFcmToken: string | null = null;
 let fcmRegistrationPromise: Promise<{
@@ -1605,19 +1620,22 @@ export async function requestAndSaveFCMToken(interactive = false): Promise<{
       if (user) {
         fcmRegisteredUid = user.uid;
 
-        // Unified storage: Save in teachers/{uid}/fcmTokens/{tokenId}
-        const teacherTokenRef = doc(db, 'teachers', user.uid, 'fcmTokens', token);
-        await setDoc(
-          teacherTokenRef,
-          {
-            token,
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo',
-            updatedAt: serverTimestamp(),
-            lastSeenAt: serverTimestamp(),
-            userAgent: navigator.userAgent,
-          },
-          { merge: true }
-        );
+        // Unified storage: Save in teachers/{uid}/fcmTokens/{safeTokenId}.
+        // The real FCM token remains in the document data for the server dispatcher.
+        const tokenDocumentId = await getFcmTokenDocumentId(token);
+        const teacherTokenRef = doc(db, 'teachers', user.uid, 'fcmTokens', tokenDocumentId);
+        const existingTokenDoc = await getDoc(teacherTokenRef);
+        const tokenData: Record<string, unknown> = {
+          token,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo',
+          updatedAt: serverTimestamp(),
+          lastSeenAt: serverTimestamp(),
+          userAgent: navigator.userAgent,
+        };
+        if (!existingTokenDoc.exists()) {
+          tokenData.createdAt = serverTimestamp();
+        }
+        await setDoc(teacherTokenRef, tokenData, { merge: true });
 
         // Enforce max 5 device tokens per teacher: prune oldest tokens if count > 5
         try {
@@ -1628,7 +1646,7 @@ export async function requestAndSaveFCMToken(interactive = false): Promise<{
             const excess = tokensSnap.size - 5;
             const oldestDocs = tokensSnap.docs.slice(0, excess);
             for (const oldDoc of oldestDocs) {
-              if (oldDoc.id !== token) {
+              if (oldDoc.id !== tokenDocumentId) {
                 await deleteDoc(oldDoc.ref).catch(() => {});
               }
             }
@@ -1659,7 +1677,8 @@ export async function signOutTeacher(authInstance: any = auth): Promise<void> {
     const user = authInstance?.currentUser;
     if (user && currentActiveFcmToken) {
       try {
-        const tokenRef = doc(db, 'teachers', user.uid, 'fcmTokens', currentActiveFcmToken);
+        const tokenDocumentId = await getFcmTokenDocumentId(currentActiveFcmToken);
+        const tokenRef = doc(db, 'teachers', user.uid, 'fcmTokens', tokenDocumentId);
         await deleteDoc(tokenRef).catch(() => {});
       } catch (delErr) {
         console.warn('Could not delete token doc on signout:', delErr);
