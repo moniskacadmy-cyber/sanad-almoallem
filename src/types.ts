@@ -77,7 +77,6 @@ export interface Student {
   name: string;
   whatsapp?: string;
   subject: string;
-  grade?: string;
   classType: ClassType;
   hourlyRate: number; // سعر الساعة (Hourly Rate)
   monthlyFee?: number; // legacy backward compatibility

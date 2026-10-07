@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { TeacherProfile, SubscriptionPlan } from '../types';
 import { useBackHandler } from '../services/backHandler';
 import {
-  auth,
+  adminGetAllTeachers,
   adminSaveSubscription,
   adminToggleTeacherActive,
   adminActivateTeacher,
@@ -35,15 +35,6 @@ interface AdminDashboardProps {
   onBackToApp: () => void;
 }
 
-interface AdminStats {
-  totalTeachers: number;
-  activeSubscribers: number;
-  expiredSubscribers: number;
-  trialAccounts: number;
-  deactivatedTeachers: number;
-  lastUpdated?: string;
-}
-
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToApp }) => {
   const [teachers, setTeachers] = useState<TeacherProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,12 +43,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToApp }) =
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [deleteConfirmTeacher, setDeleteConfirmTeacher] = useState<TeacherProfile | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
-
-  // Pagination & Aggregated Stats state
-  const [stats, setStats] = useState<AdminStats | null>(null);
-  const [loadingStats, setLoadingStats] = useState(false);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
 
   // Form State: Add / Activate Teacher
   const [newEmail, setNewEmail] = useState('');
@@ -75,65 +60,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToApp }) =
   useBackHandler(showAddForm, () => setShowAddForm(false), 'admin_add_form');
   useBackHandler(!!customExpiryTeacher, () => setCustomExpiryTeacher(null), 'admin_custom_expiry_modal');
 
-  const fetchStats = async () => {
-    setLoadingStats(true);
+  const fetchTeachers = async () => {
+    setLoading(true);
     try {
-      const currentUser = auth.currentUser;
-      const token = currentUser ? await currentUser.getIdToken() : '';
-      const response = await fetch('/api/admin/stats', {
-        headers: { Authorization: token ? `Bearer ${token}` : '' }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setStats(data);
-      }
-    } catch (err) {
-      console.error('Error fetching admin stats:', err);
-    } finally {
-      setLoadingStats(false);
-    }
-  };
-
-  const fetchTeachers = async (resetCursor = false) => {
-    if (resetCursor) {
-      setLoading(true);
-    } else {
-      setLoadingMore(true);
-    }
-    try {
-      const currentUser = auth.currentUser;
-      const token = currentUser ? await currentUser.getIdToken() : '';
-      const cursorParam = resetCursor ? '' : (nextCursor || '');
-      
-      const url = `/api/admin/teachers?limit=50&cursor=${encodeURIComponent(cursorParam)}&status=${encodeURIComponent(statusFilter)}&search=${encodeURIComponent(searchQuery)}`;
-      
-      const response = await fetch(url, {
-        headers: { Authorization: token ? `Bearer ${token}` : '' }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (resetCursor) {
-          setTeachers(data.teachers);
-        } else {
-          setTeachers((prev) => [...prev, ...data.teachers]);
-        }
-        setNextCursor(data.nextCursor);
-      }
+      const data = await adminGetAllTeachers();
+      setTeachers(data);
     } catch (err) {
       console.error('Error fetching teachers for admin', err);
-      showToast('تعذر تحميل المعلمين', 'error');
     } finally {
       setLoading(false);
-      setLoadingMore(false);
     }
   };
 
-  // Re-fetch teachers and stats when statusFilter or searchQuery resets/changes
   useEffect(() => {
-    fetchTeachers(true);
-    fetchStats();
-  }, [statusFilter]);
+    fetchTeachers();
+  }, []);
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
     setToastMessage({ text, type });
@@ -167,8 +108,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToApp }) =
       setNewName('');
       setCustomEndDate('');
       setShowAddForm(false);
-      await fetchTeachers(true);
-      await fetchStats();
+      await fetchTeachers();
     } catch (err: any) {
       console.error('Error adding subscription', err);
       showToast(err.message || 'حدث خطأ أثناء تفعيل الاشتراك', 'error');
@@ -183,8 +123,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToApp }) =
     try {
       await adminActivateTeacher(teacher.id, days, plan);
       showToast(`تم تمديد اشتراك ${teacher.name} بنجاح (+${days} يوم)!`);
-      await fetchTeachers(true);
-      await fetchStats();
+      await fetchTeachers();
     } catch (err) {
       console.error('Error activating subscription', err);
       showToast('تعذر تمديد الاشتراك', 'error');
@@ -207,8 +146,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToApp }) =
       showToast(`تم تحديد تاريخ انتهاء جديد للمعلم: ${modalCustomDate}`);
       setCustomExpiryTeacher(null);
       setModalCustomDate('');
-      await fetchTeachers(true);
-      await fetchStats();
+      await fetchTeachers();
     } catch (err) {
       console.error('Error setting custom expiry', err);
       showToast('تعذر حفظ التاريخ', 'error');
@@ -228,8 +166,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToApp }) =
           ? `تم إعادة تفعيل حساب المعلم (${teacher.name})`
           : `تم إلغاء تفعيل / حظر حساب المعلم (${teacher.name})`
       );
-      await fetchTeachers(true);
-      await fetchStats();
+      await fetchTeachers();
     } catch (err) {
       console.error('Error toggling active status', err);
       showToast('تعذر تغيير حالة الحساب', 'error');
@@ -244,8 +181,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToApp }) =
     try {
       await adminResetTrial(teacher.id);
       showToast(`تمت إعادة ضبط الفترة التجريبية (7 أيام) للمعلم ${teacher.name}!`);
-      await fetchTeachers(true);
-      await fetchStats();
+      await fetchTeachers();
     } catch (err) {
       console.error('Error resetting trial', err);
       showToast('تعذر إعادة ضبط التجربة', 'error');
@@ -260,23 +196,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToApp }) =
       await adminDeleteTeacher(teacherId);
       setDeleteConfirmTeacher(null);
       showToast('تم حذف حساب المعلم بنجاح.');
-      await fetchTeachers(true);
-      await fetchStats();
+      await fetchTeachers();
     } catch (err) {
       console.error('Error deleting teacher', err);
       showToast('تعذر حذف الحساب', 'error');
     }
   };
 
-  // Statistics calculation from aggregated server stats
-  const totalTeachers = stats?.totalTeachers ?? 0;
-  const activeSubscribers = stats?.activeSubscribers ?? 0;
-  const inTrial = stats?.trialAccounts ?? 0;
-  const expired = stats?.expiredSubscribers ?? 0;
-  const deactivated = stats?.deactivatedTeachers ?? 0;
+  // Statistics calculation
+  const totalTeachers = teachers.length;
+  const activeSubscribers = teachers.filter((t) => t.isActive !== false && t.subscriptionStatus === 'active').length;
+  const inTrial = teachers.filter((t) => t.isActive !== false && t.subscriptionStatus === 'trial').length;
+  const expired = teachers.filter((t) => t.subscriptionStatus === 'expired' && t.isActive !== false).length;
+  const deactivated = teachers.filter((t) => t.isActive === false).length;
 
-  // Search filtered server-side
-  const filteredTeachers = teachers;
+  const filteredTeachers = teachers.filter((t) => {
+    const matchesSearch =
+      (t.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (t.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (t.whatsapp || '').includes(searchQuery) ||
+      (t.subject || '').toLowerCase().includes(searchQuery.toLowerCase());
+
+    if (!matchesSearch) return false;
+
+    if (statusFilter === 'all') return true;
+    if (statusFilter === 'active') return t.isActive !== false && t.subscriptionStatus === 'active';
+    if (statusFilter === 'trial') return t.isActive !== false && t.subscriptionStatus === 'trial';
+    if (statusFilter === 'expired') return t.isActive !== false && t.subscriptionStatus === 'expired';
+    if (statusFilter === 'deactivated') return t.isActive === false;
+
+    return true;
+  });
 
   const getStatusBadge = (t: TeacherProfile) => {
     if (t.isActive === false) {
@@ -330,7 +280,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToApp }) =
           </div>
 
           <button
-            onClick={() => { fetchTeachers(true); fetchStats(); }}
+            onClick={fetchTeachers}
             className="p-1.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white transition cursor-pointer"
             title="تحديث البيانات"
           >
@@ -492,25 +442,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToApp }) =
 
       {/* Search & Status Filters */}
       <div className="space-y-2">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            fetchTeachers(true);
-          }}
-          className="relative text-right"
-        >
+        <div className="relative">
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="بحث بالاسم أو البريد الإلكتروني (اضغط Enter للبحث)..."
-            className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2 pr-9 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 text-right"
-            dir="rtl"
+            placeholder="بحث بالاسم، البريد الإلكتروني، الواتساب أو المادة..."
+            className="w-full rounded-xl bg-slate-900 border border-slate-700 px-3.5 py-2 pr-9 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400"
           />
-          <button type="submit" className="absolute right-3 top-2.5 p-0 bg-transparent border-0 cursor-pointer">
-            <Search className="w-4 h-4 text-slate-400" />
-          </button>
-        </form>
+          <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
+        </div>
 
         <div className="flex items-center gap-1.5 overflow-x-auto text-[11px] pb-1">
           {[
@@ -571,7 +512,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToApp }) =
                 key={t.id}
                 className={`rounded-2xl bg-slate-900/90 border p-3.5 space-y-3 transition shadow-md ${
                   isDeactivated
-                    ? 'border-rose-900/40 opacity-85 bg-slate-950'
+                    ? 'border-rose-900/40 opacity-85 bg-slate-950/90'
                     : 'border-purple-500/20 hover:border-purple-400/40'
                 }`}
               >
@@ -728,26 +669,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToApp }) =
             );
           })
         )}
-
-        {nextCursor && !loading && (
-          <button
-            type="button"
-            onClick={() => fetchTeachers(false)}
-            disabled={loadingMore}
-            className="w-full py-2.5 rounded-xl bg-purple-950/60 hover:bg-purple-900 border border-purple-500/30 text-purple-300 text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
-          >
-            {loadingMore ? (
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <span>عرض المزيد من المعلمين 🔄</span>
-            )}
-          </button>
-        )}
       </div>
 
       {/* Custom Expiry Modal */}
       {customExpiryTeacher && (
-        <div className="fixed inset-0 z-50 bg-slate-950  flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-slate-900 border border-purple-500/40 rounded-3xl p-5 shadow-2xl text-right space-y-4">
             <div>
               <h3 className="text-sm font-bold text-white mb-1">تحديد تاريخ انتهاء مخصص باليوم</h3>
@@ -792,7 +718,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToApp }) =
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmTeacher && (
-        <div className="fixed inset-0 z-50 bg-slate-950  flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-slate-900 border border-rose-500/40 rounded-3xl p-5 shadow-2xl text-right">
             <h3 className="text-base font-bold text-white mb-2">تأكيد حذف حساب المعلم</h3>
             <p className="text-xs text-slate-300 mb-4 leading-relaxed">

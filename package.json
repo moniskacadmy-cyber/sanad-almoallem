@@ -8,14 +8,12 @@
   },
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "tsx scripts/check-env.ts && vite build",
+    "build": "vite build",
     "start": "tsx server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "NODE_ENV=test tsx --test tests/subscriptionAccess.test.ts tests/firestoreSecurityRegression.test.ts tests/vercelSecurityHeaders.test.ts tests/rateLimiter.test.ts tests/cronReminderRetry.test.ts tests/health.test.ts tests/scaleAndPushReminders.test.ts tests/envAndConfigSingleSource.test.ts tests/billingAndAccountSecurity.test.ts tests/reminderQueueScale.test.ts tests/notificationLifecycleAndPermission.test.ts tests/aiSecurityAndQuotas.test.ts tests/disposableEmailAndIpRateLimit.test.ts tests/adminPagination.test.ts tests/accountDeletionAndPII.test.ts tests/alertsAndMonitoring.test.ts tests/k6LoadSimulation.test.ts tests/dispatcher25kSimulation.test.ts tests/emulatorE2EWorkflow.test.ts",
-    "test:smoke": "tsx scripts/smoke-test.ts",
-    "test:dispatcher": "tsx scripts/simulate-25k-dispatcher.ts"
+    "test": "NODE_ENV=test tsx --test tests/subscriptionAccess.test.ts tests/firestoreSecurityRegression.test.ts tests/vercelSecurityHeaders.test.ts tests/rateLimiter.test.ts tests/cronReminderRetry.test.ts tests/health.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

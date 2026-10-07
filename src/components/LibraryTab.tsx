@@ -582,7 +582,7 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
                 onChange={(e) => setQuestion(e.target.value)}
                 placeholder="مثلاً: اشرح لي الفرق بين present perfect و past simple بطريقة مناسبة لطالب مستوى A2"
                 rows={3}
-                className="w-full rounded-2xl bg-slate-950 border border-purple-500/30 p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400 leading-relaxed"
+                className="w-full rounded-2xl bg-slate-950/90 border border-purple-500/30 p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400 leading-relaxed"
               />
 
               {/* Quick Question Chips */}
@@ -924,7 +924,7 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
 
       {/* MODAL: إضافة مصدر جديد (Add Source Modal) */}
       {showAddSourceModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-slate-900 border border-purple-500/30 rounded-3xl p-5 shadow-2xl text-right max-h-[92vh] flex flex-col space-y-3.5">
             <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
               <div className="flex items-center gap-2">
@@ -1068,7 +1068,7 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
 
       {/* MODAL: معاينة المصدر (Preview Source Modal) */}
       {previewingSource && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-slate-900 border border-purple-500/40 rounded-3xl p-5 shadow-2xl text-right max-h-[90vh] flex flex-col space-y-3">
             <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
               <div className="flex items-center gap-2">
@@ -1131,7 +1131,7 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
 
       {/* MODAL: View Template Details */}
       {viewingItem && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-slate-900 border border-purple-500/40 rounded-3xl p-5 shadow-2xl text-right max-h-[90vh] flex flex-col space-y-3">
             <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
               <h3 className="text-sm font-bold text-white">{viewingItem.title}</h3>
@@ -1191,7 +1191,7 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
 
       {/* MODAL: CREATE LESSON PREP (Edit Before Send Modal) */}
       {showCreateLessonPrepModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
           <div className="w-full max-w-lg bg-slate-900 border border-purple-500/40 rounded-3xl p-5 shadow-2xl text-right max-h-[92vh] flex flex-col space-y-3">
             <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
               <div className="flex items-center gap-2">
@@ -1215,7 +1215,7 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
             </div>
 
             {/* Topic & Grade Form Fields */}
-            <div className="grid grid-cols-2 gap-2 bg-slate-950 p-2.5 rounded-2xl border border-purple-500/25">
+            <div className="grid grid-cols-2 gap-2 bg-slate-950/80 p-2.5 rounded-2xl border border-purple-500/25">
               <div>
                 <label className="block text-[10px] font-bold text-purple-300 mb-1">
                   عنوان الدرس:
@@ -1250,7 +1250,7 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
             </div>
 
             {/* Recipient Phone for WhatsApp */}
-            <div className="flex items-center gap-2 bg-slate-950 p-2.5 rounded-2xl border border-emerald-500/25">
+            <div className="flex items-center gap-2 bg-slate-950/80 p-2.5 rounded-2xl border border-emerald-500/25">
               <span className="text-[11px] font-bold text-emerald-300 whitespace-nowrap flex items-center gap-1">
                 <MessageCircle className="w-3.5 h-3.5" />
                 <span>رقم الواتساب المستهدف:</span>
@@ -1290,7 +1290,7 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
                 value={prepModalContent}
                 onChange={(e) => setPrepModalContent(e.target.value)}
                 rows={11}
-                className="w-full rounded-2xl bg-slate-950 border border-purple-500/30 focus:border-purple-400 p-3.5 text-xs text-slate-100 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-purple-500/40 transition resize-y"
+                className="w-full rounded-2xl bg-slate-950/90 border border-purple-500/30 focus:border-purple-400 p-3.5 text-xs text-slate-100 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-purple-500/40 transition resize-y"
                 placeholder="اكتب أو عدل نص تحضير الحصة هنا..."
               />
             </div>

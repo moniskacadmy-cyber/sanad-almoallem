@@ -1,66 +1,16 @@
 @import "tailwindcss";
 
 @layer base {
-  :root {
-    --bg-app: #070314;
-    --color-text: #f1f5f9;
-    --bg-glass-panel: #1a1033;
-    --border-glass-panel: rgba(168, 85, 247, 0.25);
-    --bg-glass-card: #241444;
-    --border-glass-card: rgba(147, 51, 234, 0.25);
-  }
-
-  /* When .light is active on the html/body element */
-  .light {
-    --bg-app: #f8fafc;
-    --color-text: #0f172a;
-
-    /* Override slate colors for light mode */
-    --color-slate-950: #f1f5f9; /* Very light background background */
-    --color-slate-900: #ffffff; /* Card/Modal background */
-    --color-slate-800: #e2e8f0; /* Borders / inputs background */
-    --color-slate-700: #cbd5e1; /* Accent border */
-    --color-slate-600: #94a3b8;
-    --color-slate-500: #64748b;
-    --color-slate-400: #475569; /* Muted texts */
-    --color-slate-300: #334155; /* Normal text */
-    --color-slate-200: #1e293b;
-    --color-slate-100: #0f172a; /* Bold text */
-
-    /* Override purple/indigo/amber to look soft and legible in light mode */
-    --color-purple-950: #f3e8ff;
-    --color-purple-900: #e9d5ff;
-    --color-purple-800: #d8b4fe;
-    --color-purple-600: #9333ea;
-    --color-purple-500: #a855f7;
-    --color-purple-400: #7e22ce; /* readable purple */
-    --color-purple-300: #6b21a8;
-
-    --color-indigo-950: #e0e7ff;
-    --color-indigo-900: #c7d2fe;
-    
-    --color-amber-950: #fef3c7;
-    --color-amber-400: #b45309; /* readable amber */
-    --color-amber-300: #92400e;
-
-    /* Override specific glass styles for light mode */
-    --bg-glass-panel: #f1f5f9;
-    --border-glass-panel: rgba(147, 51, 234, 0.22);
-    --bg-glass-card: #ffffff;
-    --border-glass-card: rgba(147, 51, 234, 0.16);
-  }
-
   * {
     font-family: 'Cairo', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
 
   body {
-    background-color: var(--bg-app);
-    color: var(--color-text);
+    background-color: #070314;
+    color: #f1f5f9;
     direction: rtl;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
-    transition: background-color 0.25s ease, color 0.25s ease;
   }
 }
 
@@ -70,7 +20,7 @@
   height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--color-slate-950);
+  background: rgba(15, 23, 42, 0.6);
 }
 ::-webkit-scrollbar-thumb {
   background: rgba(147, 51, 234, 0.4);
@@ -82,13 +32,17 @@
 
 /* Luxury Glow and Glass */
 .glass-panel {
-  background: var(--bg-glass-panel);
-  border: 1px solid var(--border-glass-panel);
+  background: rgba(26, 16, 51, 0.75);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(168, 85, 247, 0.18);
 }
 
 .glass-card {
-  background: var(--bg-glass-card);
-  border: 1px solid var(--border-glass-card);
+  background: rgba(36, 20, 68, 0.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(147, 51, 234, 0.15);
 }
 
 .glow-purple {

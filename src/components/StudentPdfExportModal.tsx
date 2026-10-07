@@ -148,7 +148,7 @@ export const StudentPdfExportModal: React.FC<StudentPdfExportModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-3 sm:p-4">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
       <div className="w-full max-w-lg bg-slate-900 border border-purple-500/40 rounded-3xl p-5 shadow-2xl text-right max-h-[92vh] flex flex-col space-y-4 animate-fadeIn">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">

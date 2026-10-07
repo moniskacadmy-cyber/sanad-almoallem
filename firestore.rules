@@ -24,10 +24,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && (
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
-        request.auth.uid == 'vX0iw1yYNwauMuKOInVjaATiIRx2'
-      );
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
     function isTeacherOwner(teacherId) {
@@ -248,31 +245,6 @@ service cloud.firestore {
     match /subscriptions/{subId} {
       allow read, write: if isAdmin();
       allow get: if isSignedIn() && (isAdmin() || (request.auth.token.email != null && (request.auth.token.email == subId || request.auth.token.email == resource.data.email)));
-    }
-
-    // Reminder Queue & Ops collections (Server-only / Admin SDK only - client strictly forbidden)
-    match /reminderQueue/{docId} {
-      allow read, write: if false;
-    }
-
-    match /ops/{doc=**} {
-      allow read, write: if false;
-    }
-
-    match /payments/{paymentId} {
-      allow read, write: if false;
-    }
-
-    match /auditLogs/{logId} {
-      allow read, write: if false;
-    }
-
-    match /trialsUsed/{hash} {
-      allow read, write: if false;
-    }
-
-    match /usage/{doc=**} {
-      allow read, write: if false;
     }
 
     // FCM tokens under users/{userId}

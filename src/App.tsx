@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { onAuthStateChanged, onIdTokenChanged, User, signOut } from 'firebase/auth';
+import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import {
   auth,
   checkIsAdmin,
-  getUserClaims,
   subscribeToTeacherProfile,
   subscribeToStudents,
   subscribeToSchedules,
@@ -11,9 +10,6 @@ import {
   runOrphanCleanup,
   registerTeacher,
   firebaseInitError,
-  signOutTeacher,
-  listenToForegroundFCM,
-  requestAndSaveFCMToken,
 } from './firebase';
 import {
   TeacherProfile,
@@ -51,16 +47,15 @@ import {
   AlertCircle,
   ChevronRight,
   LogOut,
-  Sun,
-  Moon,
 } from 'lucide-react';
 import {
   getStoredReminderSettings,
   showBrowserNotification,
   playNotificationChime,
-  checkLocalUpcomingSchedules,
+  checkRemindersApi,
   sendEndOfDaySummaryNotification,
 } from './services/reminderService';
+import { requestAndSaveFCMToken } from './firebase';
 import {
   pushAppHistoryState,
   useBackHandler,
@@ -127,32 +122,6 @@ export default function App() {
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
   const [showFinancialDashboard, setShowFinancialDashboard] = useState(false);
 
-  // Theme state (dark / light)
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('sanad_theme_mode');
-      if (saved === 'light' || saved === 'dark') return saved;
-    }
-    return 'dark'; // Default to dark mode
-  });
-
-  // Apply theme to document element
-  useEffect(() => {
-    const root = window.document.documentElement;
-    if (theme === 'light') {
-      root.classList.add('light');
-      root.classList.remove('dark');
-    } else {
-      root.classList.add('dark');
-      root.classList.remove('light');
-    }
-    localStorage.setItem('sanad_theme_mode', theme);
-  }, [theme]);
-
-  const toggleTheme = () => {
-    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
-  };
-
   // Collections state for current teacher
   const [students, setStudents] = useState<Student[]>([]);
   const [schedules, setSchedules] = useState<ScheduleSlot[]>([]);
@@ -174,36 +143,25 @@ export default function App() {
   useBackHandler(showAdminView, () => setShowAdminView(false), 'admin_view');
   useBackHandler(!!activeReminderAlert, () => setActiveReminderAlert(null), 'active_reminder_alert', false);
 
-  // Push initial history state on mount
+  // Push initial history state on mount & Request browser notification permission
   useEffect(() => {
     if (typeof window !== 'undefined') {
       window.history.replaceState({ app: 'sanad-almoallem', tab: 0 }, '', window.location.pathname);
       pushAppHistoryState({ tab: 0 });
+
+      // Ask for native notification permission immediately upon app startup
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission().then((perm) => {
+          if (perm === 'granted') {
+            showBrowserNotification(
+              'سند المعلم 🔔',
+              'تم تفعيل إشعارات الهاتف والنظام بنجاح لحصصك المجدولة!'
+            );
+            playNotificationChime();
+          }
+        });
+      }
     }
-  }, []);
-
-  // Listen to Foreground Web Push Messages (Toast + Browser Notification + Sound)
-  useEffect(() => {
-    const unsub = listenToForegroundFCM((payload) => {
-      const title = payload.notification?.title || payload.data?.title || 'سند المعلم 🔔';
-      const body = payload.notification?.body || payload.data?.body || 'لديك تذكير جديد بجدول الحصص!';
-      const studentName = payload.data?.studentName || 'طالب';
-      const classTime = payload.data?.time || '';
-      const subject = payload.data?.subject || 'المادة';
-
-      playNotificationChime();
-      showBrowserNotification(title, body);
-      setActiveReminderAlert({
-        studentName,
-        classTime,
-        subject,
-        studentPhone: '',
-      });
-    });
-
-    return () => {
-      if (unsub) unsub();
-    };
   }, []);
 
   // Synchronize browser history / popstate & Smart Back Button handling
@@ -279,9 +237,9 @@ export default function App() {
     setCurrentPath(path);
   };
 
-  // Listen to Auth State & Token Claims Changes
+  // Listen to Auth State
   useEffect(() => {
-    const unsub = onIdTokenChanged(auth, async (user) => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
       try {
         setCurrentUser(user);
         if (user) {
@@ -292,13 +250,15 @@ export default function App() {
             console.warn('checkIsAdmin error:', e);
             setIsAdmin(false);
           }
-          requestAndSaveFCMToken(false).catch((e) => console.warn('FCM token silent sync notice:', e));
+          requestAndSaveFCMToken().then((result) => {
+            if (!result.success) console.warn('FCM notification registration:', result.error);
+          }).catch((e) => console.warn('FCM token error:', e));
         } else {
           setProfile(null);
           setIsAdmin(false);
         }
       } catch (err) {
-        console.error('Error in onIdTokenChanged listener:', err);
+        console.error('Error in onAuthStateChanged listener:', err);
       } finally {
         setLoadingAuth(false);
       }
@@ -376,9 +336,7 @@ export default function App() {
     runOrphanCleanup(currentUser.uid, students.map(s => s.id));
   }, [currentUser, profile?.id, students]);
 
-  // In-Memory Local Reminder Evaluation (Zero network requests, calculated locally from loaded schedules)
-  const [alertedSlots, setAlertedSlots] = useState<Set<string>>(() => new Set());
-
+  // Automated 15-Minute Class Reminders Periodic Check
   useEffect(() => {
     if (!profile || !schedules || schedules.length === 0) return;
     const settings = getStoredReminderSettings();
@@ -386,25 +344,22 @@ export default function App() {
 
     let isMounted = true;
 
-    const performLocalCheck = () => {
+    const performCheck = async () => {
       try {
-        const { dueReminders } = checkLocalUpcomingSchedules({
+        const res = await checkRemindersApi({
+          teacher: profile,
           schedules,
           students,
-          teacherName: profile.name,
-          teacherWhatsapp: profile.whatsapp,
           minutesBefore: settings.minutesBefore || 15,
-          alertedSlots,
         });
 
-        if (isMounted && dueReminders.length > 0) {
-          const first = dueReminders[0];
-          setAlertedSlots((prev) => new Set([...prev, first.slotKey]));
+        if (isMounted && res.matchedReminders && res.matchedReminders.length > 0) {
+          const first = res.matchedReminders[0];
           setActiveReminderAlert({
             studentName: first.studentName,
             classTime: first.classTime,
             whatsappUrl: first.whatsappUrl,
-            studentPhone: first.studentPhone,
+            studentPhone: first.recipientPhone,
             subject: first.subject,
           });
 
@@ -449,36 +404,27 @@ export default function App() {
           }
         }
       } catch (err) {
-        console.warn('Local reminder evaluation notice:', err);
+        console.warn('Background reminder check error:', err);
       }
     };
 
     // Initial check
-    performLocalCheck();
+    performCheck();
 
-    // Check periodically every 60 seconds locally in memory
-    const timer = setInterval(performLocalCheck, 60 * 1000);
+    // Check periodically every 60 seconds
+    const timer = setInterval(performCheck, 60 * 1000);
     return () => {
       isMounted = false;
       clearInterval(timer);
     };
-  }, [profile?.id, schedules, students, alertedSlots]);
+  }, [profile?.id, schedules, students]);
 
-  // Direct URL access: /admin (Protected by AdminSecretGate & Claims verification)
+  // Direct URL access: /admin (Protected by AdminSecretGate)
   if (currentPath === '/admin') {
-    if (loadingAuth) {
-      return (
-        <LoadingFallback
-          message="جارٍ التحقق من صلاحيات المشرف..."
-          subMessage="التحقق من تصاريح الحساب وصلاحيات الإدارة"
-          timeoutMs={4000}
-        />
-      );
-    }
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex justify-center">
         <OfflineIndicator />
-        <div className="w-full max-w-[460px] min-h-screen bg-slate-950 border-x border-purple-950/40 flex flex-col relative shadow-2xl p-4">
+        <div className="w-full max-w-[460px] min-h-screen bg-slate-950/95 border-x border-purple-950/40 flex flex-col relative shadow-2xl p-4">
           <AdminSecretGate
             currentUser={currentUser}
             isAdmin={isAdmin}
@@ -489,12 +435,12 @@ export default function App() {
     );
   }
 
-  // Admin Dashboard View (activated from Settings Tab or LockScreen for verified admins only)
-  if (showAdminView && isAdmin) {
+  // Admin Dashboard View (activated from Settings Tab or LockScreen for verified admins)
+  if (showAdminView) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex justify-center">
         <OfflineIndicator />
-        <div className="w-full max-w-[460px] min-h-screen bg-slate-950 border-x border-purple-950/40 flex flex-col relative shadow-2xl p-4">
+        <div className="w-full max-w-[460px] min-h-screen bg-slate-950/95 border-x border-purple-950/40 flex flex-col relative shadow-2xl p-4">
           <AdminDashboard onBackToApp={() => setShowAdminView(false)} />
         </div>
       </div>
@@ -572,7 +518,7 @@ export default function App() {
         <LockScreen
           profile={profile}
           isAdmin={isAdmin}
-          onSignOut={() => signOutTeacher(auth)}
+          onSignOut={() => signOut(auth)}
           onOpenAdmin={() => setShowAdminView(true)}
         />
       </div>
@@ -601,9 +547,9 @@ export default function App() {
       )}
 
       {/* Mobile-first centered frame (up to 460px) */}
-      <div className="w-full max-w-[460px] min-h-screen bg-slate-950 border-x border-purple-950/40 flex flex-col relative shadow-2xl">
+      <div className="w-full max-w-[460px] min-h-screen bg-slate-950/95 border-x border-purple-950/40 flex flex-col relative shadow-2xl">
         {/* Top App Header */}
-        <header className="sticky top-0 z-40 bg-slate-950  border-b border-purple-900/30 px-3.5 py-2.5 flex items-center justify-between">
+        <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-purple-900/30 px-3.5 py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-2">
             {activeTab !== 0 ? (
               <button
@@ -635,16 +581,6 @@ export default function App() {
             >
               <span>{profile.subscriptionStatus === 'active' ? 'مشترك 💎' : 'تجريبي 🎁'}</span>
             </div>
-
-            {/* Theme Mode Toggle Button */}
-            <button
-              type="button"
-              onClick={toggleTheme}
-              className="p-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-amber-300 hover:text-amber-200 transition cursor-pointer"
-              title={theme === 'dark' ? 'التبديل للوضع الفاتح ☀️' : 'التبديل للوضع الداكن 🌙'}
-            >
-              {theme === 'dark' ? <Sun className="w-4.5 h-4.5" /> : <Moon className="w-4.5 h-4.5 text-purple-400" />}
-            </button>
 
             {/* Exit Application Trigger Button (Shows confirmation modal on Main Dashboard) */}
             <button
@@ -786,7 +722,7 @@ export default function App() {
         </main>
 
         {/* Bottom Tab Navigation Bar */}
-        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[460px] z-40 bg-slate-950  border-t border-purple-900/40 px-2 py-1.5 flex items-center justify-around shadow-2xl">
+        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[460px] z-40 bg-slate-950/95 backdrop-blur-lg border-t border-purple-900/40 px-2 py-1.5 flex items-center justify-around shadow-2xl">
           {tabs.map((tab, idx) => {
             const Icon = tab.icon;
             const isActive = activeTab === idx;
@@ -841,7 +777,7 @@ export default function App() {
         {/* Exit Application Confirmation Modal */}
         {showExitConfirmModal && (
           <div
-            className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-4 text-right"
+            className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 text-right"
             dir="rtl"
           >
             <div className="w-full max-w-sm bg-gradient-to-b from-slate-900 to-slate-950 border border-purple-500/40 rounded-3xl p-6 shadow-2xl relative space-y-4 animate-in fade-in zoom-in-95 duration-200">

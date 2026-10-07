@@ -483,7 +483,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   style={{
                     borderColor: isCompleted ? 'rgba(16, 185, 129, 0.4)' : colorInfo.border,
                   }}
-                  className={`rounded-2xl bg-slate-950 p-3.5 border transition hover:border-purple-500/50 flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 shadow-md ${
+                  className={`rounded-2xl bg-slate-950/85 p-3.5 border transition hover:border-purple-500/50 flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 shadow-md ${
                     isCompleted ? 'opacity-90 bg-emerald-950/15' : ''
                   }`}
                 >
@@ -629,7 +629,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
         return (
           <div
-            className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-4 text-right"
+            className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 text-right"
             dir="rtl"
           >
             <div className="w-full max-w-lg bg-gradient-to-b from-slate-900 to-slate-950 border border-purple-500/35 rounded-3xl p-5 shadow-2xl relative space-y-4 max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-200">
@@ -716,7 +716,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                       <div
                         key={slot.id}
                         style={{ borderColor: colorInfo.border }}
-                        className="rounded-2xl bg-slate-950 p-3.5 border transition hover:border-purple-500/50 space-y-3 shadow-md"
+                        className="rounded-2xl bg-slate-950/90 p-3.5 border transition hover:border-purple-500/50 space-y-3 shadow-md"
                       >
                         <div className="flex items-center justify-between gap-2 flex-wrap">
                           <div className="flex items-center gap-2.5">

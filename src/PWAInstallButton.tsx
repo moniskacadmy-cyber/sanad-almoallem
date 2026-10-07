@@ -45,7 +45,7 @@ export const PWAInstallButton: React.FC<{ compact?: boolean }> = ({ compact = fa
         </button>
 
         {showIOSGuide && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950  p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
             <div className="w-full max-w-sm rounded-2xl bg-slate-900 border border-purple-500/30 p-5 shadow-2xl text-right">
               <div className="flex items-center justify-between border-b border-purple-900/50 pb-3 mb-4">
                 <div className="flex items-center gap-2">
