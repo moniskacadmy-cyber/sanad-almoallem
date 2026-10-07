@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { TeacherProfile, Student, ScheduleSlot, LessonLog } from '../types';
 import { VoiceInputButton } from './VoiceInputButton';
 import { useBackHandler } from '../services/backHandler';
@@ -11,6 +11,8 @@ import {
 } from '../firebase';
 import { AbsenceDetailsModal, AbsenceDetailsResult } from './AbsenceDetailsModal';
 import { DailyAttendanceModal } from './DailyAttendanceModal';
+import { SingleLessonModal } from './SingleLessonModal';
+import { QuickOnboardingModal } from './QuickOnboardingModal';
 import {
   triggerAbsenceNotificationAndChime,
   getStoredReminderSettings,
@@ -43,6 +45,10 @@ import {
   CheckCircle2,
   AlertTriangle,
   UserCheck,
+  Bot,
+  Gift,
+  Share2,
+  Plus,
 } from 'lucide-react';
 
 interface HomeTabProps {
@@ -52,6 +58,7 @@ interface HomeTabProps {
   onNavigateToTab: (tabIndex: number) => void;
   onOpenUpgradeModal: () => void;
   onOpenFinancialDashboard?: () => void;
+  onOpenContextAi?: (student: Student, promptPreset: string) => void;
 }
 
 export const HomeTab: React.FC<HomeTabProps> = ({
@@ -61,9 +68,28 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   onNavigateToTab,
   onOpenUpgradeModal,
   onOpenFinancialDashboard,
+  onOpenContextAi,
 }) => {
   // Only valid schedules belonging to active students
   const schedules = rawSchedules.filter((s) => students.some((st) => st.id === s.studentId));
+
+  // Single Lesson Interactive Modal State
+  const [singleLessonStudent, setSingleLessonStudent] = useState<Student | null>(null);
+  const [singleLessonSlot, setSingleLessonSlot] = useState<ScheduleSlot | undefined>(undefined);
+
+  // Quick Onboarding Modal State
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(() => {
+    try {
+      const alreadyDone = localStorage.getItem(`sanad_onboarding_completed_${profile.id}`);
+      return !alreadyDone && students.length === 0;
+    } catch {
+      return false;
+    }
+  });
+
+  // Referral State
+  const [copiedReferral, setCopiedReferral] = useState(false);
+  const referralCode = `SANAD-${(profile.id || 'TEACHER').replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase()}`;
 
   // Modal State for "تسجيل حصة"
   const [showStartClassModal, setShowStartClassModal] = useState(false);
@@ -93,6 +119,8 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   useBackHandler(showClassReportEditModal, () => setShowClassReportEditModal(false), 'home_class_report_edit_modal');
   useBackHandler(!!absenceModalStudent, () => setAbsenceModalStudent(null), 'home_absence_modal');
   useBackHandler(showDailyAttendanceModal, () => setShowDailyAttendanceModal(false), 'home_daily_attendance_modal');
+  useBackHandler(!!singleLessonStudent, () => setSingleLessonStudent(null), 'home_single_lesson_modal');
+  useBackHandler(showOnboarding, () => setShowOnboarding(false), 'home_onboarding_modal');
 
   // Date & Time helpers
   const now = new Date();
@@ -137,8 +165,10 @@ export const HomeTab: React.FC<HomeTabProps> = ({
 
       if (candidates.length > 0) {
         const candidate = candidates[0];
+        const student = students.find((s) => s.id === candidate.slot.studentId);
         return {
           ...candidate,
+          student,
           dayLabel:
             offset === 0
               ? 'اليوم'
@@ -148,6 +178,677 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         };
       }
     }
+    return null;
+  })();
+
+  // Filter and sort today's classes
+  const todayClasses = schedules
+    .filter((s) => s.dayOfWeek === currentDayOfWeek)
+    .sort((a, b) => a.time.localeCompare(b.time));
+
+  // Evaluate remaining and completed
+  const completedTodayClasses = todayClasses.filter((s) => s.completedTodayDate === todayStr);
+  const remainingTodayClasses = todayClasses.filter((s) => s.completedTodayDate !== todayStr);
+
+  // Weekly Planned vs Completed Lessons
+  const [weeklyLessonLogs, setWeeklyLessonLogs] = useState<LessonLog[]>([]);
+
+  useEffect(() => {
+    if (!profile?.id || students.length === 0) return;
+    let isMounted = true;
+    fetchAllStudentLessons(profile.id, students)
+      .then((res) => {
+        if (!isMounted) return;
+        const all: LessonLog[] = [];
+        Object.values(res).forEach((list) => all.push(...list));
+        setWeeklyLessonLogs(all);
+      })
+      .catch((err) => console.warn('Could not load lessons for weekly chart:', err));
+    return () => {
+      isMounted = false;
+    };
+  }, [profile?.id, students]);
+
+  // Derived Real Key Alerts (No fake numbers)
+  const keyAlerts = useMemo(() => {
+    const alerts: { id: string; type: 'warning' | 'money' | 'time'; text: string; actionText?: string; onAction?: () => void }[] = [];
+
+    // 1. Check if next class starts in <= 30 mins
+    if (nextClassInfo) {
+      const diffMs = nextClassInfo.target.getTime() - minuteNow.getTime();
+      const diffMins = Math.round(diffMs / (1000 * 60));
+      if (diffMins > 0 && diffMins <= 30) {
+        alerts.push({
+          id: 'upcoming_soon',
+          type: 'time',
+          text: `📚 لديك حصة مع (${nextClassInfo.slot.studentName}) تبدأ بعد ${diffMins} دقيقة!`,
+          actionText: 'فتح الحصة',
+          onAction: () => {
+            if (nextClassInfo.student) {
+              setSingleLessonStudent(nextClassInfo.student);
+              setSingleLessonSlot(nextClassInfo.slot);
+            }
+          },
+        });
+      }
+    }
+
+    // 2. Check students with unsettled/pending lessons count
+    const unsettledStudents = students.filter((st) => {
+      const stLessons = weeklyLessonLogs.filter((l) => l.studentId === st.id);
+      return stLessons.some((l) => !l.settled);
+    });
+    if (unsettledStudents.length > 0) {
+      alerts.push({
+        id: 'unsettled_dues',
+        type: 'money',
+        text: `💰 ${unsettledStudents.length} طلاب لديهم حصص ومستحقات معلقة بانتظار التصفية.`,
+        actionText: 'عرض الحسابات',
+        onAction: onOpenFinancialDashboard,
+      });
+    }
+
+    // 3. Check recent student absences
+    const recentAbsentLessons = weeklyLessonLogs.filter(
+      (l) => (l.attendance === 'absent' || l.attendance === 'excused') && l.hasMakeupClass === false
+    );
+    if (recentAbsentLessons.length > 0) {
+      alerts.push({
+        id: 'recent_absences',
+        type: 'warning',
+        text: `⚠️ ${recentAbsentLessons.length} حصص غياب واعتذار مسجلة مؤخراً بدون موعد تعويضي.`,
+        actionText: 'سجل الحضور',
+        onAction: () => setShowDailyAttendanceModal(true),
+      });
+    }
+
+    return alerts;
+  }, [nextClassInfo, minuteNow, students, weeklyLessonLogs, onOpenFinancialDashboard]);
+
+  // Current week days (Saturday to Friday)
+  const currentWeekDays = [
+    { name: 'السبت', dayOfWeek: 6, offsetFromSat: 0 },
+    { name: 'الأحد', dayOfWeek: 0, offsetFromSat: 1 },
+    { name: 'الإثنين', dayOfWeek: 1, offsetFromSat: 2 },
+    { name: 'الثلاثاء', dayOfWeek: 2, offsetFromSat: 3 },
+    { name: 'الأربعاء', dayOfWeek: 3, offsetFromSat: 4 },
+    { name: 'الخميس', dayOfWeek: 4, offsetFromSat: 5 },
+    { name: 'الجمعة', dayOfWeek: 5, offsetFromSat: 6 },
+  ];
+
+  // Find Saturday of the current week
+  const diffToSaturday = (currentDayOfWeek + 1) % 7;
+  const currentWeekSat = new Date(now);
+  currentWeekSat.setDate(now.getDate() - diffToSaturday);
+  currentWeekSat.setHours(0, 0, 0, 0);
+
+  const weeklyChartData = currentWeekDays.map((d) => {
+    const dayDate = new Date(currentWeekSat);
+    dayDate.setDate(currentWeekSat.getDate() + d.offsetFromSat);
+    const dayDateStr = new Intl.DateTimeFormat('en-CA').format(dayDate);
+
+    const planned = schedules.filter((s) => s.dayOfWeek === d.dayOfWeek).length;
+    const lessonsOnThisDay = weeklyLessonLogs.filter((l) => l.date === dayDateStr).length;
+    const slotsCompletedToday =
+      dayDateStr === todayStr
+        ? schedules.filter((s) => s.dayOfWeek === d.dayOfWeek && s.completedTodayDate === todayStr).length
+        : 0;
+
+    const completed = Math.max(lessonsOnThisDay, slotsCompletedToday);
+
+    return {
+      day: d.name,
+      planned,
+      completed,
+      date: dayDateStr,
+    };
+  });
+
+  const totalPlannedWeek = weeklyChartData.reduce((acc, d) => acc + d.planned, 0);
+  const totalCompletedWeek = weeklyChartData.reduce((acc, d) => acc + d.completed, 0);
+  const weeklyCompletionPct =
+    totalPlannedWeek > 0 ? Math.round((totalCompletedWeek / totalPlannedWeek) * 100) : 0;
+  const formatTime12h = (timeStr: string) => {
+    if (!timeStr || !timeStr.includes(':')) return timeStr;
+    const [h, m] = timeStr.split(':').map(Number);
+    const period = h >= 12 ? 'م' : 'ص';
+    const displayH = h % 12 || 12;
+    return `${displayH.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${period}`;
+  };
+
+  // Subscription Status badge helper
+  const getSubscriptionBadge = () => {
+    const rawExpiry = profile.subscriptionEndDate || profile.subscriptionExpiresAt || profile.trialEndDate;
+    if (!rawExpiry) {
+      return (
+        <button
+          type="button"
+          onClick={onOpenUpgradeModal}
+          className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold hover:bg-amber-500/30 transition cursor-pointer"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>ترقية الاشتراك</span>
+        </button>
+      );
+    }
+
+    const expiry = typeof rawExpiry.toDate === 'function'
+      ? rawExpiry.toDate()
+      : typeof rawExpiry._seconds === 'number'
+      ? new Date(rawExpiry._seconds * 1000)
+      : new Date(rawExpiry);
+
+    const diffMs = expiry.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+    if (profile.subscriptionStatus === 'trial') {
+      return (
+        <button
+          type="button"
+          onClick={onOpenUpgradeModal}
+          className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold hover:bg-amber-500/30 transition cursor-pointer shadow-sm"
+        >
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+          <span>تجربة مجانية • متبقي {Math.max(0, diffDays)} أيام</span>
+        </button>
+      );
+    }
+
+    if (profile.subscriptionStatus === 'active') {
+      return (
+        <button
+          type="button"
+          onClick={onOpenUpgradeModal}
+          className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-xs font-bold hover:bg-emerald-900/80 transition cursor-pointer shadow-sm"
+        >
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span>
+            مشترك نشط 👑 • حتى{' '}
+            {new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'short' }).format(expiry)}
+          </span>
+        </button>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={onOpenUpgradeModal}
+        className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-950/80 border border-rose-500/40 text-rose-300 text-xs font-bold hover:bg-rose-900/80 transition cursor-pointer shadow-sm"
+      >
+        <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse" />
+        <span>الاشتراك منتهي ⚠️ • تجديد الآن</span>
+      </button>
+    );
+  };
+
+  // Handle Start Class Submit
+  const handleStartClassSubmit = async (sendWhatsApp: boolean) => {
+    if (!selectedStudentId || !classTopic.trim()) return;
+    const student = students.find((s) => s.id === selectedStudentId);
+    if (!student) return;
+
+    if (attendance === 'absent' || attendance === 'excused') {
+      setAbsenceModalStudent(student);
+      setAbsenceModalType(attendance);
+      setAbsenceModalTopic(classTopic.trim());
+      return;
+    }
+
+    setSavingClass(true);
+    try {
+      const todaySlot = schedules.find(
+        (s) => s.studentId === student.id && s.dayOfWeek === currentDayOfWeek
+      );
+      const duration = todaySlot?.duration || 60;
+      const hourlyRate = student.hourlyRate || 100;
+      const cost = Math.round((duration / 60) * hourlyRate);
+
+      await addLessonLog(profile.id, student.id, {
+        date: todayStr,
+        topic: classTopic.trim(),
+        homework: classHomework.trim(),
+        attendance,
+        duration,
+        hourlyRate,
+        cost,
+        settled: false,
+        rating,
+        notes: '',
+        isFinancialCounted: true,
+        is_financial_counted: true,
+        hasMakeupClass: false,
+        has_makeup_class: false,
+      });
+
+      if (todaySlot) {
+        await toggleScheduleCompletedToday(profile.id, todaySlot.id, true);
+      }
+
+      if (student.remainingPaidLessons !== undefined && student.remainingPaidLessons > 0) {
+        await updateStudent(profile.id, student.id, {
+          remainingPaidLessons: Math.max(0, student.remainingPaidLessons - 1),
+        });
+      }
+
+      if (sendWhatsApp && student.whatsapp) {
+        const attendanceAr = 'حاضر ✅';
+        const msgText =
+          `السلام عليكم، تقرير حصة مادة ${profile.subject} للطالب/ـة: ${student.name}\n` +
+          `📅 التاريخ: ${todayArabicName} ${dateFormatted}\n` +
+          `🎯 الحالة: ${attendanceAr}\n` +
+          `📖 ما تم شرحه: ${classTopic.trim()}\n` +
+          (classHomework.trim() ? `📝 الواجب المطلوب: ${classHomework.trim()}\n` : '') +
+          `⭐ التقييم: ${'★'.repeat(rating)}${'☆'.repeat(5 - rating)}\n\n` +
+          `تحياتي، أ. ${profile.name}`;
+
+        setPendingReportStudent(student);
+        setEditableClassReportText(msgText);
+        setShowClassReportEditModal(true);
+      }
+
+      setShowStartClassModal(false);
+      setClassTopic('');
+      setClassHomework('');
+      setSelectedStudentId('');
+    } catch (e) {
+      console.error('Error saving class log:', e);
+    } finally {
+      setSavingClass(false);
+    }
+  };
+
+  const handleShareReferral = () => {
+    const text = `انضم إلى منصة «سند المعلم» الذكية لتنظيم الحصص والطلاب والمواعيد مجاناً! استخدم كود الإحالة الخاص بي: (${referralCode}) للحصول على شهر مجاني إضافي 🎁✨`;
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      navigator.share({ title: 'سند المعلم', text }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(text);
+      setCopiedReferral(true);
+      setTimeout(() => setCopiedReferral(false), 3000);
+    }
+  };
+
+  return (
+    <div className="space-y-4 pb-20 text-right" dir="rtl">
+      {/* 1. Header & Greeting */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        <div>
+          <h2 className="text-lg font-black text-white">مرحباً، أ. {profile.name} 👋</h2>
+          <p className="text-xs text-purple-200/80 mt-0.5">
+            لوحة المهام: <span className="font-bold text-amber-300">«ماذا أفعل اليوم؟»</span> • {todayArabicName}، {dateFormatted}
+          </p>
+        </div>
+        <div>{getSubscriptionBadge()}</div>
+      </div>
+
+      {/* 2. Touch-Friendly Quick Actions Bar */}
+      <div className="bg-slate-900/90 border border-purple-500/30 rounded-3xl p-3 shadow-xl space-y-2">
+        <div className="flex items-center justify-between px-1">
+          <span className="text-[11px] font-black text-white">⚡ إجراءات سريعة:</span>
+          <span className="text-[10px] text-purple-300">إنجاز فوري بضغطة واحدة</span>
+        </div>
+        <div className="grid grid-cols-5 gap-1.5 text-center">
+          <button
+            type="button"
+            onClick={() => onNavigateToTab(1)}
+            className="p-2 rounded-2xl bg-purple-950/60 hover:bg-purple-900/70 border border-purple-500/30 text-white flex flex-col items-center justify-center gap-1 transition cursor-pointer active:scale-95 shadow-sm"
+          >
+            <UserPlus className="w-4 h-4 text-emerald-400" />
+            <span className="text-[10px] font-bold">+ طالب</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (students.length > 0 && !selectedStudentId) {
+                setSelectedStudentId(students[0].id);
+              }
+              setShowStartClassModal(true);
+            }}
+            className="p-2 rounded-2xl bg-purple-950/60 hover:bg-purple-900/70 border border-purple-500/30 text-white flex flex-col items-center justify-center gap-1 transition cursor-pointer active:scale-95 shadow-sm"
+          >
+            <Play className="w-4 h-4 text-amber-300 fill-amber-300" />
+            <span className="text-[10px] font-bold">+ حصة</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowDailyAttendanceModal(true)}
+            className="p-2 rounded-2xl bg-purple-950/60 hover:bg-purple-900/70 border border-purple-500/30 text-white flex flex-col items-center justify-center gap-1 transition cursor-pointer active:scale-95 shadow-sm"
+          >
+            <UserCheck className="w-4 h-4 text-sky-400" />
+            <span className="text-[10px] font-bold">+ حضور</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenFinancialDashboard}
+            className="p-2 rounded-2xl bg-purple-950/60 hover:bg-purple-900/70 border border-purple-500/30 text-white flex flex-col items-center justify-center gap-1 transition cursor-pointer active:scale-95 shadow-sm"
+          >
+            <DollarSign className="w-4 h-4 text-teal-400" />
+            <span className="text-[10px] font-bold">+ دفعة</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (onOpenContextAi && students.length > 0) {
+                onOpenContextAi(students[0], 'ساعدني في تحضير الدرس القادم');
+              } else {
+                alert('المساعد الذكي جاهز لمساعدتك عبر الزر العائم بالأسفل!');
+              }
+            }}
+            className="p-2 rounded-2xl bg-gradient-to-tr from-indigo-900 to-purple-900 hover:from-indigo-800 hover:to-purple-800 border border-purple-400/40 text-white flex flex-col items-center justify-center gap-1 transition cursor-pointer active:scale-95 shadow-md"
+          >
+            <Bot className="w-4 h-4 text-amber-300" />
+            <span className="text-[10px] font-black text-amber-300">🤖 AI</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 3. Next Class Widget with [فتح الحصة] button */}
+      <div className="rounded-3xl bg-gradient-to-br from-purple-900 via-indigo-950 to-slate-950 p-4 sm:p-5 shadow-2xl border border-purple-500/40 space-y-3">
+        <div className="flex items-center justify-between border-b border-purple-800/40 pb-2.5">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-amber-400/20 text-amber-300 flex items-center justify-center border border-amber-400/30 shadow-inner">
+              <Clock className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-white">الحصة القادمة</h3>
+              <p className="text-[10px] text-purple-200/80">الدرس المجدول التالي مباشرة</p>
+            </div>
+          </div>
+          {nextClassInfo?.student && (
+            <button
+              type="button"
+              onClick={() => {
+                setSingleLessonStudent(nextClassInfo.student!);
+                setSingleLessonSlot(nextClassInfo.slot);
+              }}
+              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-400 to-amber-300 hover:from-amber-300 hover:to-amber-200 text-slate-950 text-xs font-black transition cursor-pointer shadow-lg active:scale-95 flex items-center gap-1.5"
+            >
+              <Play className="w-3.5 h-3.5 fill-slate-950" />
+              <span>فتح الحصة ⚡</span>
+            </button>
+          )}
+        </div>
+
+        {nextClassInfo ? (
+          <div className="flex items-center justify-between gap-3 bg-slate-950/70 p-3.5 rounded-2xl border border-amber-500/30">
+            <div className="min-w-0">
+              <h4 className="text-base font-black text-white truncate">
+                {nextClassInfo.slot.studentName}
+              </h4>
+              <p className="text-xs text-purple-200/90 mt-0.5">
+                مادة: <span className="text-amber-300 font-bold">{nextClassInfo.student?.subject || profile.subject}</span> • {nextClassInfo.dayLabel} الساعة {formatTime12h(nextClassInfo.slot.time)}
+              </p>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                المدة: {nextClassInfo.slot.duration || 60} دقيقة • {nextClassInfo.slot.classType === 'online' ? 'أونلاين 🌐' : 'حضور شخصي 👤'}
+              </p>
+            </div>
+            <div className="text-center min-w-[110px] rounded-2xl bg-amber-400/15 border border-amber-400/40 px-3 py-2 shrink-0">
+              <p className="text-[9px] text-amber-200 font-bold">الوقت المتبقي</p>
+              <p className="text-base sm:text-lg font-black tracking-wider text-amber-300 tabular-nums" dir="ltr">
+                <LiveCountdown target={nextClassInfo.target} />
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-3 bg-slate-950/50 rounded-2xl border border-purple-500/20 text-xs text-slate-300">
+            لا توجد حصص قادمة مجدولة في الوقت الحالي ☕
+          </div>
+        )}
+      </div>
+
+      {/* 4. Today's Summary (ملخص اليوم) */}
+      <div className="rounded-3xl bg-slate-900/90 border border-purple-500/20 p-4 shadow-xl space-y-3">
+        <div className="flex items-center justify-between border-b border-purple-900/30 pb-2">
+          <h3 className="text-sm font-black text-white flex items-center gap-1.5">
+            <Calendar className="w-4 h-4 text-purple-400" />
+            <span>ملخص اليوم ({todayArabicName})</span>
+          </h3>
+          <span className="text-[10px] text-purple-300 font-bold">
+            {todayClasses.length} حصص مجدولة
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+          <div className="p-2.5 rounded-2xl bg-slate-950 border border-purple-500/20">
+            <span className="text-[10px] text-slate-400 block">إجمالي الحصص</span>
+            <span className="text-base font-black text-white font-mono">{todayClasses.length}</span>
+          </div>
+
+          <div className="p-2.5 rounded-2xl bg-slate-950 border border-emerald-500/30">
+            <span className="text-[10px] text-emerald-300 block">المنجزة اليوم</span>
+            <span className="text-base font-black text-emerald-400 font-mono">{completedTodayClasses.length}</span>
+          </div>
+
+          <div className="p-2.5 rounded-2xl bg-slate-950 border border-amber-500/30">
+            <span className="text-[10px] text-amber-300 block">المتبقية</span>
+            <span className="text-base font-black text-amber-300 font-mono">{remainingTodayClasses.length}</span>
+          </div>
+
+          <div className="p-2.5 rounded-2xl bg-slate-950 border border-sky-500/30">
+            <span className="text-[10px] text-sky-300 block">الطلاب النشطين</span>
+            <span className="text-base font-black text-sky-300 font-mono">{students.length}</span>
+          </div>
+        </div>
+
+        {/* Remaining list if present */}
+        {remainingTodayClasses.length > 0 && (
+          <div className="space-y-1.5 pt-1">
+            <span className="text-[11px] font-bold text-slate-300 block">الحصص المتبقية اليوم:</span>
+            {remainingTodayClasses.map((slot) => {
+              const student = students.find((s) => s.id === slot.studentId);
+              return (
+                <div
+                  key={slot.id}
+                  className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950/70 border border-purple-500/20 text-xs"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-amber-400" />
+                    <span className="font-bold text-white">{slot.studentName}</span>
+                    <span className="text-[10px] text-slate-400">({formatTime12h(slot.time)})</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (student) {
+                        setSingleLessonStudent(student);
+                        setSingleLessonSlot(slot);
+                      }
+                    }}
+                    className="px-2 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-bold transition flex items-center gap-1 shadow"
+                  >
+                    <Play className="w-2.5 h-2.5 fill-white" />
+                    <span>بدء الحصة</span>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 5. Real Key Alerts (تنبيهات مهمة) */}
+      {keyAlerts.length > 0 && (
+        <div className="rounded-3xl bg-slate-900/90 border border-amber-500/30 p-4 shadow-xl space-y-2.5">
+          <div className="flex items-center gap-2 text-amber-300 font-bold text-xs border-b border-amber-900/30 pb-1.5">
+            <AlertTriangle className="w-4 h-4" />
+            <span>تنبيهات هامة تحتاج انتباهك:</span>
+          </div>
+          <div className="space-y-2">
+            {keyAlerts.map((alt) => (
+              <div
+                key={alt.id}
+                className={`p-2.5 rounded-2xl border text-xs flex items-center justify-between gap-2 ${
+                  alt.type === 'money'
+                    ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-200'
+                    : alt.type === 'time'
+                    ? 'bg-amber-950/40 border-amber-500/40 text-amber-200'
+                    : 'bg-rose-950/40 border-rose-500/30 text-rose-200'
+                }`}
+              >
+                <span className="leading-relaxed">{alt.text}</span>
+                {alt.actionText && alt.onAction && (
+                  <button
+                    type="button"
+                    onClick={alt.onAction}
+                    className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold shrink-0 transition border border-slate-700"
+                  >
+                    {alt.actionText}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 6. Referral & Growth Banner */}
+      <div className="rounded-3xl bg-gradient-to-r from-purple-950/80 via-indigo-950 to-slate-900 border border-purple-500/40 p-4 shadow-xl space-y-2.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-purple-600/30 text-amber-300 flex items-center justify-center border border-purple-400/40">
+              <Gift className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-xs sm:text-sm font-black text-white">ادعُ 3 معلمين واحصل على 30 يوماً Pro مجاناً! 🎁</h3>
+              <p className="text-[10px] text-purple-200/80">شارك كود الإحالة الخاص بك واستفد من الترقية المجانية</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 bg-slate-950 p-2 rounded-2xl border border-purple-500/30">
+          <span className="text-xs font-mono font-black text-amber-300 px-2 select-all">
+            {referralCode}
+          </span>
+          <button
+            type="button"
+            onClick={handleShareReferral}
+            className="mr-auto px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition flex items-center gap-1.5 shadow"
+          >
+            {copiedReferral ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5" />}
+            <span>{copiedReferral ? 'تم النسخ!' : 'مشاركة الكود 📲'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 7. Weekly Stats Chart */}
+      <React.Suspense fallback={null}>
+        <StatsChart
+          weeklyChartData={weeklyChartData}
+          totalCompletedWeek={totalCompletedWeek}
+          totalPlannedWeek={totalPlannedWeek}
+          weeklyCompletionPct={weeklyCompletionPct}
+        />
+      </React.Suspense>
+
+      {/* Single Lesson Interactive Modal */}
+      {singleLessonStudent && (
+        <SingleLessonModal
+          isOpen={!!singleLessonStudent}
+          onClose={() => {
+            setSingleLessonStudent(null);
+            setSingleLessonSlot(undefined);
+          }}
+          profile={profile}
+          student={singleLessonStudent}
+          scheduleSlot={singleLessonSlot}
+          onOpenContextAi={onOpenContextAi}
+        />
+      )}
+
+      {/* Quick 1-Minute Onboarding Modal */}
+      {showOnboarding && (
+        <QuickOnboardingModal
+          isOpen={showOnboarding}
+          onClose={() => setShowOnboarding(false)}
+          profile={profile}
+          onComplete={() => setShowOnboarding(false)}
+        />
+      )}
+
+      {/* Daily Attendance & Absence Register Modal */}
+      {showDailyAttendanceModal && (
+        <DailyAttendanceModal
+          isOpen={showDailyAttendanceModal}
+          onClose={() => setShowDailyAttendanceModal(false)}
+          profile={profile}
+          students={students}
+          schedules={schedules}
+        />
+      )}
+
+      {/* Legacy/Quick Start Class Modal */}
+      {showStartClassModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950 flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-slate-900 border border-purple-500/30 rounded-3xl p-5 shadow-2xl text-right">
+            <div className="flex items-center justify-between border-b border-purple-900/40 pb-3 mb-4">
+              <h3 className="text-base font-bold text-white">تسجيل تفاصيل الحصة</h3>
+              <button
+                type="button"
+                onClick={() => setShowStartClassModal(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">اختر الطالب</label>
+                <select
+                  value={selectedStudentId}
+                  onChange={(e) => setSelectedStudentId(e.target.value)}
+                  className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2.5 text-sm text-white"
+                >
+                  <option value="" disabled>-- اختر الطالب --</option>
+                  {students.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name} ({s.subject})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">ما تم شرحه *</label>
+                <textarea
+                  value={classTopic}
+                  onChange={(e) => setClassTopic(e.target.value)}
+                  placeholder="اكتب ما تم شرحه اليوم..."
+                  rows={2}
+                  className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white"
+                />
+              </div>
+
+              <div className="pt-2 flex flex-col gap-2">
+                <button
+                  type="button"
+                  disabled={savingClass || !selectedStudentId || !classTopic.trim()}
+                  onClick={() => handleStartClassSubmit(true)}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 py-2.5 text-xs font-bold text-white transition cursor-pointer shadow-lg"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  <span>حفظ وإرسال التقرير عبر واتساب</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={savingClass || !selectedStudentId || !classTopic.trim()}
+                  onClick={() => handleStartClassSubmit(false)}
+                  className="w-full rounded-xl bg-purple-600/40 hover:bg-purple-600/60 border border-purple-500/40 py-2 text-xs font-bold text-purple-200 transition"
+                >
+                  حفظ بدون واتساب
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
     return null;
   })();
 

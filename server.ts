@@ -15,6 +15,7 @@ import { createSubscriptionGuard, evaluateSubscription, type TeacherSubscription
 import { createAccountRouter } from './src/server/accountRoutes.js';
 import { installPiiLogInterceptor } from './src/server/piiScrubber.js';
 import { createBillingRouter } from './src/server/billingRoutes.js';
+import { createReferralRouter } from './src/server/referralRoutes.js';
 import { alertsService } from './src/server/alertsService.js';
 import { sentryServer } from './src/server/sentryServer.js';
 
@@ -1226,6 +1227,9 @@ app.use('/api/account', verifyFirebaseToken, createAccountRouter());
 
 // Billing & Subscriptions API Route
 app.use('/api/billing', verifyFirebaseToken, createBillingRouter());
+
+// Referral & Rewards API Route
+app.use('/api/referrals', verifyFirebaseToken, userRateLimiter, createReferralRouter());
 
 // Admin Operations & Dashboard API Route
 app.use('/api/admin', verifyFirebaseToken, createAdminRouter());

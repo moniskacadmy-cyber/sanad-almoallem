@@ -1563,6 +1563,15 @@ async function getFcmTokenDocumentId(token: string): Promise<string> {
   return token.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
 }
 
+function getSanitizedVapidKey(): string {
+  const rawKey =
+    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_VAPID_KEY) ||
+    (typeof process !== 'undefined' && (process.env as any)?.VITE_FIREBASE_VAPID_KEY) ||
+    '';
+  if (typeof rawKey !== 'string') return '';
+  return rawKey.trim().replace(/^['"]|['"]$/g, '').trim();
+}
+
 let fcmRegisteredUid: string | null = null;
 let currentActiveFcmToken: string | null = null;
 let fcmRegistrationPromise: Promise<{
@@ -1633,6 +1642,14 @@ export async function requestAndSaveFCMToken(interactive = false): Promise<{
         };
       }
 
+      const vapidKey = getSanitizedVapidKey();
+      if (!vapidKey) {
+        return {
+          success: false,
+          error: 'تعذر تفعيل إشعارات الهاتف حاليًا. مفتاح VAPID للويب غير مضاف في إعدادات البيئة (VITE_FIREBASE_VAPID_KEY).',
+        };
+      }
+
       const messaging = getMessaging(app);
       let swReg: ServiceWorkerRegistration | undefined = undefined;
 
@@ -1640,29 +1657,46 @@ export async function requestAndSaveFCMToken(interactive = false): Promise<{
         try {
           const swUrl = `/firebase-messaging-sw.js?apiKey=${encodeURIComponent(firebaseConfig.apiKey || '')}&projectId=${encodeURIComponent(firebaseConfig.projectId || '')}&messagingSenderId=${encodeURIComponent(firebaseConfig.messagingSenderId || '')}&appId=${encodeURIComponent(firebaseConfig.appId || '')}&authDomain=${encodeURIComponent(firebaseConfig.authDomain || '')}&storageBucket=${encodeURIComponent(firebaseConfig.storageBucket || '')}`;
 
-          const existingReg = await navigator.serviceWorker.getRegistration(FCM_SW_SCOPE);
+          const existingReg =
+            (await navigator.serviceWorker.getRegistration(FCM_SW_SCOPE)) ||
+            (await navigator.serviceWorker.getRegistration('/'));
+
           if (existingReg) {
             swReg = existingReg;
           } else {
             swReg = await navigator.serviceWorker.register(swUrl, { scope: FCM_SW_SCOPE });
           }
         } catch (swErr) {
-          console.warn('Could not register firebase-messaging-sw.js:', swErr);
+          console.warn('[FCM ServiceWorker] Could not register firebase-messaging-sw.js:', swErr);
         }
       }
 
-      const vapidKey =
-        (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_VAPID_KEY) || undefined;
+      let token: string | null = null;
+      try {
+        token = await getToken(messaging, {
+          vapidKey,
+          serviceWorkerRegistration: swReg,
+        });
+      } catch (tokenErr: any) {
+        const rawErrMsg = tokenErr?.message || String(tokenErr);
+        console.warn('[FCM Subscription Notice] Could not obtain FCM token:', rawErrMsg);
 
-      const token = await getToken(messaging, {
-        vapidKey,
-        serviceWorkerRegistration: swReg,
-      });
+        let userFriendlyError =
+          'تعذر تفعيل إشعارات الهاتف حاليًا. يمكنك الاستمرار في استخدام التطبيق، وسنحاول تفعيل الإشعارات لاحقًا.';
+        if (rawErrMsg.includes('permission-blocked') || rawErrMsg.includes('notifications-blocked')) {
+          userFriendlyError = 'تم حظر الإشعارات في متصفحك. يرجى تعديل الإذن من إعدادات الموقع بإضافة السماح بالإشعارات.';
+        }
+
+        return {
+          success: false,
+          error: userFriendlyError,
+        };
+      }
 
       if (!token) {
         return {
           success: false,
-          error: 'تعذر الحصول على رمز الإشعارات (FCM Token). يرجى التأكد من إضافة مفتاح VAPID.',
+          error: 'تعذر الحصول على رمز الإشعارات (FCM Token). يرجى التأكد من إضافة مفتاح VAPID في إعدادات البيئة.',
         };
       }
 
@@ -1674,23 +1708,23 @@ export async function requestAndSaveFCMToken(interactive = false): Promise<{
 
         // Unified storage: Save in teachers/{uid}/fcmTokens/{safeTokenId}.
         // The real FCM token remains in the document data for the server dispatcher.
-        const tokenDocumentId = await getFcmTokenDocumentId(token);
-        const teacherTokenRef = doc(db, 'teachers', user.uid, 'fcmTokens', tokenDocumentId);
-        const existingTokenDoc = await getDoc(teacherTokenRef);
-        const tokenData: Record<string, unknown> = {
-          token,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo',
-          updatedAt: serverTimestamp(),
-          lastSeenAt: serverTimestamp(),
-          userAgent: navigator.userAgent,
-        };
-        if (!existingTokenDoc.exists()) {
-          tokenData.createdAt = serverTimestamp();
-        }
-        await setDoc(teacherTokenRef, tokenData, { merge: true });
-
-        // Enforce max 5 device tokens per teacher: prune oldest tokens if count > 5
         try {
+          const tokenDocumentId = await getFcmTokenDocumentId(token);
+          const teacherTokenRef = doc(db, 'teachers', user.uid, 'fcmTokens', tokenDocumentId);
+          const existingTokenDoc = await getDoc(teacherTokenRef);
+          const tokenData: Record<string, unknown> = {
+            token,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo',
+            updatedAt: serverTimestamp(),
+            lastSeenAt: serverTimestamp(),
+            userAgent: navigator.userAgent,
+          };
+          if (!existingTokenDoc.exists()) {
+            tokenData.createdAt = serverTimestamp();
+          }
+          await setDoc(teacherTokenRef, tokenData, { merge: true });
+
+          // Enforce max 5 device tokens per teacher: prune oldest tokens if count > 5
           const tokensSnap = await getDocs(
             query(collection(db, 'teachers', user.uid, 'fcmTokens'), orderBy('createdAt', 'asc'))
           );
@@ -1703,17 +1737,17 @@ export async function requestAndSaveFCMToken(interactive = false): Promise<{
               }
             }
           }
-        } catch (pruneErr) {
-          console.warn('Token pruning non-critical notice:', pruneErr);
+        } catch (dbErr) {
+          console.warn('[FCM Token Storage] Notice saving token to Firestore:', dbErr);
         }
       }
 
       return { success: true, token };
     } catch (err: any) {
-      console.error('Error enabling phone notifications / FCM:', err);
+      console.warn('FCM registration notice:', err?.message || err);
       return {
         success: false,
-        error: err.message || 'حدث خطأ أثناء تفعيل إشعارات الهاتف.',
+        error: 'تعذر تفعيل إشعارات الهاتف حاليًا. يمكنك الاستمرار في استخدام التطبيق، وسنحاول تفعيل الإشعارات لاحقًا.',
       };
     } finally {
       fcmRegistrationPromise = null;
