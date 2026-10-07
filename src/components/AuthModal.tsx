@@ -25,6 +25,7 @@ import {
   CheckCircle2,
   Send,
 } from 'lucide-react';
+import { PrivacyTermsModal } from './PrivacyTermsModal';
 
 interface AuthModalProps {
   onSuccess: () => void;
@@ -40,6 +41,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   const [registeredEmail, setRegisteredEmail] = useState('');
   const [resendVerificationSuccess, setResendVerificationSuccess] = useState(false);
   const [createdUser, setCreatedUser] = useState<User | null>(null);
+  const [showPrivacyTerms, setShowPrivacyTerms] = useState(false);
+  const [privacyTermsTab, setPrivacyTermsTab] = useState<'privacy' | 'terms'>('privacy');
 
   // Registration Fields
   const [name, setName] = useState('');
@@ -584,6 +587,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 </div>
               )}
 
+              {isRegister && (
+                <div className="text-[11px] text-slate-400 text-center leading-relaxed px-1">
+                  بالتسجيل، أنت توافق على{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPrivacyTermsTab('terms');
+                      setShowPrivacyTerms(true);
+                    }}
+                    className="text-purple-300 underline hover:text-white cursor-pointer font-medium"
+                  >
+                    شروط الاستخدام
+                  </button>{' '}
+                  و{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPrivacyTermsTab('privacy');
+                      setShowPrivacyTerms(true);
+                    }}
+                    className="text-purple-300 underline hover:text-white cursor-pointer font-medium"
+                  >
+                    سياسة الخصوصية وحماية بيانات الطلاب والقُصّر
+                  </button>.
+                </div>
+              )}
+
               <button
                 type="submit"
                 disabled={loading}
@@ -637,6 +667,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
           </div>
         )}
       </div>
+
+      <PrivacyTermsModal
+        isOpen={showPrivacyTerms}
+        onClose={() => setShowPrivacyTerms(false)}
+        initialTab={privacyTermsTab}
+      />
     </div>
   );
 };

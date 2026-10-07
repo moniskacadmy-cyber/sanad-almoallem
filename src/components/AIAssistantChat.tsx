@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bot, X, Send, Sparkles, AlertCircle, User, RefreshCw, Lock } from 'lucide-react';
+import { Bot, X, Send, Sparkles, AlertCircle, User, RefreshCw, Lock, Shield, EyeOff, Eye } from 'lucide-react';
 import { TeacherProfile, Student, ScheduleSlot } from '../types';
 import { auth, fetchAllStudentLessons } from '../firebase';
 import { VoiceInputButton } from './VoiceInputButton';
@@ -40,7 +40,25 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
   ]);
   const [isLoading, setIsLoading] = useState(false);
   const [unsettledCount, setUnsettledCount] = useState<number>(0);
+  const [maskStudentNames, setMaskStudentNames] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('sanad_ai_mask_student_names') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [showPrivacyNotice, setShowPrivacyNotice] = useState<boolean>(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const toggleMaskStudentNames = () => {
+    setMaskStudentNames((prev) => {
+      const nextVal = !prev;
+      try {
+        localStorage.setItem('sanad_ai_mask_student_names', String(nextVal));
+      } catch {}
+      return nextVal;
+    });
+  };
 
   // Check subscription validity with single source of truth
   const isSubscriptionActive = (() => {
@@ -95,7 +113,18 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
 
   // Build client summary context (SAFE: student names, schedules, unsettled count ONLY; NO phone numbers / financial details)
   const buildClientSummary = () => {
-    const studentNames = students.map((s) => s.name);
+    const studentNameMap = new Map<string, string>();
+    let counter = 1;
+
+    const resolveName = (realName: string) => {
+      if (!maskStudentNames) return realName;
+      if (!studentNameMap.has(realName)) {
+        studentNameMap.set(realName, `طالب ${counter++}`);
+      }
+      return studentNameMap.get(realName)!;
+    };
+
+    const studentNames = students.map((s) => resolveName(s.name));
 
     const now = new Date();
     const todayDayOfWeek = now.getDay();
@@ -106,7 +135,8 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
 
     const formatSlot = (slot: ScheduleSlot) => {
       const student = students.find((s) => s.id === slot.studentId);
-      return `${slot.time} - ${student?.name || 'طالب'}`;
+      const name = student?.name ? resolveName(student.name) : 'طالب';
+      return `${slot.time} - ${name}`;
     };
 
     return {
@@ -135,7 +165,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
       const response = await fetch('/api/ai/assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
-        body: JSON.stringify({ message: trimmed, messagesHistory: recentHistory, summary }),
+        body: JSON.stringify({ message: trimmed, messagesHistory: recentHistory, summary, maskStudentNames }),
       });
       if (!response.ok) { const errData = await response.json().catch(() => ({})); throw new Error(errData.error || 'فشل الاتصال بالمساعد الذكي.'); }
       if (!response.body) throw new Error('لم يتم استلام بث من المساعد الذكي.');
@@ -211,6 +241,28 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
               className="p-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer"
             >
               <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Privacy & Masking Banner */}
+          <div className="bg-slate-950 border-b border-purple-500/20 px-3 py-2 flex items-center justify-between text-[11px]">
+            <div className="flex items-center gap-1.5 text-slate-300">
+              <Shield className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="text-[10px] text-slate-300">خصوصية الطلاب:</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={toggleMaskStudentNames}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer border ${
+                maskStudentNames
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                  : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+              }`}
+              title={maskStudentNames ? 'الأسماء الحقيقية مخفية ومستبدلة برموز' : 'اضغط لإخفاء الأسماء الحقيقية'}
+            >
+              {maskStudentNames ? <EyeOff className="w-3 h-3 text-emerald-400" /> : <Eye className="w-3 h-3 text-slate-400" />}
+              <span>{maskStudentNames ? 'الأسماء مشفرة (طالب 1...)' : 'إخفاء أسماء الطلاب'}</span>
             </button>
           </div>
 
@@ -319,3 +371,4 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
     </>
   );
 };
+

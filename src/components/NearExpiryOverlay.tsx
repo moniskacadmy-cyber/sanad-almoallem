@@ -34,7 +34,7 @@ export const NearExpiryOverlay: React.FC<NearExpiryOverlayProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-40 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 text-right animate-fade-in">
+    <div className="fixed inset-0 z-40 bg-slate-950  flex items-center justify-center p-4 text-right animate-fade-in">
       <div className="w-full max-w-sm bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border border-amber-500/40 rounded-3xl p-6 shadow-2xl relative space-y-4">
         {/* Glow effect */}
         <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-32 h-32 bg-amber-500/15 rounded-full blur-2xl pointer-events-none" />

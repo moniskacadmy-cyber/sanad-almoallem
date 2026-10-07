@@ -21,6 +21,16 @@ export default defineConfig(({mode}) => {
     plugins: [
       react(),
       tailwindcss(),
+      // Custom plugin to strip hmr-suppressor script tag from index.html in production builds
+      {
+        name: 'strip-hmr-suppressor',
+        apply: 'build',
+        transformIndexHtml(html) {
+          return html
+            .replace(/<script id="hmr-suppressor">[\s\S]*?<\/script>/g, '')
+            .replace(/<script type="module" src="\/src\/hmr-suppressor\.ts"><\/script>/g, '');
+        }
+      },
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg', 'firebase-messaging-sw.js'],
@@ -113,11 +123,17 @@ export default defineConfig(({mode}) => {
             if (id.includes('node_modules/firebase')) {
               return 'firebase';
             }
-            if (id.includes('node_modules/recharts')) {
+            if (id.includes('node_modules/recharts') || id.includes('node_modules/d3')) {
               return 'charts';
             }
-            if (id.includes('node_modules/jspdf')) {
-              return 'pdf';
+            if (id.includes('node_modules/react') || id.includes('node_modules/scheduler')) {
+              return 'vendor-react';
+            }
+            if (id.includes('node_modules/lucide-react')) {
+              return 'vendor-lucide';
+            }
+            if (id.includes('node_modules/jspdf') || id.includes('node_modules/pdfjs-dist') || id.includes('node_modules/canvas-confetti')) {
+              return 'vendor-pdf-confetti';
             }
           },
         },

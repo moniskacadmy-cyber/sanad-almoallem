@@ -1,5 +1,6 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Trash2, MessageCircle, ShieldAlert } from 'lucide-react';
+import { captureClientError } from '../services/sentryClient';
 
 interface Props {
   children: ReactNode;
@@ -28,6 +29,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Uncaught error caught by Global ErrorBoundary:', error, errorInfo);
+    captureClientError(error, { componentStack: errorInfo.componentStack });
     this.setState({ errorInfo });
   }
 
@@ -73,7 +75,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
             {/* Error Message Details (Collapsed or sanitized) */}
             {this.state.error && (
-              <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 text-[11px] font-mono text-rose-300 overflow-x-auto dir-ltr text-left max-h-28 overflow-y-auto">
+              <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3 text-[11px] font-mono text-rose-300 overflow-x-auto dir-ltr text-left max-h-28 overflow-y-auto">
                 <p className="font-bold">{this.state.error.toString()}</p>
               </div>
             )}

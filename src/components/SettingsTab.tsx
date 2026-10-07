@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { TeacherProfile, Student, ScheduleSlot, LibraryItem, BackupData, ReminderLog, ReminderSettings, DEFAULT_WHATSAPP_TEMPLATES } from '../types';
-import { updateTeacherProfile, auth, fetchAllStudentLessons, importFullTeacherBackup, requestAndSaveFCMToken } from '../firebase';
+import { updateTeacherProfile, auth, fetchAllStudentLessons, importFullTeacherBackup, requestAndSaveFCMToken, signOutTeacher } from '../firebase';
 import { useBackHandler } from '../services/backHandler';
-import { signOut } from 'firebase/auth';
 import { PWAInstallButton } from '../PWAInstallButton';
+import { PrivacyTermsModal } from './PrivacyTermsModal';
 
 const triggerConfetti = (opts: Record<string, any>) => {
   import('canvas-confetti').then((m) => m.default(opts)).catch(() => {});
@@ -19,10 +19,13 @@ import {
   fetchCronStatusApi,
   triggerTestReminderApi,
   sendEndOfDaySummaryNotification,
+  checkTestReminderQuota,
+  incrementTestReminderQuota,
 } from '../services/reminderService';
 import {
   User,
   Shield,
+  FileText,
   CreditCard,
   Download,
   Upload,
@@ -57,6 +60,7 @@ import {
   TrendingUp,
   ChevronLeft,
   ChevronRight,
+  Trash2,
 } from 'lucide-react';
 
 interface SettingsTabProps {
@@ -97,6 +101,16 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Delete Account State (Right to be Forgotten)
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Privacy & Terms State
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  const [privacyModalTab, setPrivacyModalTab] = useState<'privacy' | 'terms'>('privacy');
 
   // Automated Class Reminders State (15-min Cron Job & Web Push FCM)
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(() => getStoredReminderSettings());
@@ -151,6 +165,42 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   useBackHandler(showImportModal, () => setShowImportModal(false), 'settings_import_modal');
   useBackHandler(showLogsModal, () => setShowLogsModal(false), 'settings_logs_modal');
   useBackHandler(showTestModal, () => setShowTestModal(false), 'settings_test_modal');
+  useBackHandler(showDeleteAccountModal, () => setShowDeleteAccountModal(false), 'settings_delete_account_modal');
+  useBackHandler(showPrivacyModal, () => setShowPrivacyModal(false), 'settings_privacy_modal');
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmationText.trim() !== 'حذف') {
+      setDeleteError('يرجى كتابة كلمة "حذف" في المربع أدناه لتأكيد رغبتك في الحذف النهائي.');
+      return;
+    }
+
+    setIsDeletingAccount(true);
+    setDeleteError(null);
+    try {
+      const currentUser = auth.currentUser;
+      const token = currentUser ? await currentUser.getIdToken() : '';
+      const response = await fetch('/api/account/delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : '',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'فشل حذف الحساب من السيرفر.');
+      }
+
+      await signOutTeacher(auth);
+      window.location.reload();
+    } catch (err: any) {
+      console.error('Account deletion error:', err);
+      setDeleteError(err.message || 'حدث خطأ أثناء محاولة حذف الحساب.');
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
 
   const handleTestEndOfDaySummary = () => {
     const res = sendEndOfDaySummaryNotification({
@@ -297,6 +347,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const handleSendTestReminder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!testStudentName.trim()) return;
+
+    const quota = checkTestReminderQuota();
+    if (!quota.allowed) {
+      alert('عذراً، لقد استنفدت الحد اليومي المسموح به للتذكيرات التجريبية (3 مرات يومياً).');
+      return;
+    }
+
     setIsSendingTest(true);
     try {
       const res = await triggerTestReminderApi({
@@ -308,6 +365,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         teacherWhatsapp: profile.whatsapp,
         locationOrLink: testLocation.trim(),
       });
+      incrementTestReminderQuota();
       setTestSuccessData(res);
       if (reminderSettings.autoOpenWhatsApp && res.parentReminder?.whatsappUrl) {
         try {
@@ -347,7 +405,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
   const handleSignOut = async () => {
     if (window.confirm('هل تريد بالتأكيد تسجيل الخروج من حسابك؟')) {
-      await signOut(auth);
+      await signOutTeacher(auth);
     }
   };
 
@@ -458,28 +516,68 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     }
   };
 
-  // Export Students as CSV
-  const handleExportStudentsCSV = () => {
-    const headers = ['الاسم', 'رقم الواتساب', 'المادة', 'نوع الحصة', 'سعر الساعة (ج.م)', 'حالة الدفع'];
-    const rows = students.map((s) => [
-      `"${s.name}"`,
-      `"${s.whatsapp || ''}"`,
-      `"${s.subject}"`,
-      `"${s.classType === 'online' ? 'أونلاين' : s.classType === 'trial' ? 'حصة تجريبية' : s.classType === 'center' ? 'سنتر' : 'حضور شخصي'}"`,
-      s.hourlyRate || (s.monthlyFee ? Math.round(s.monthlyFee / 4) : 100),
-      `"${s.paymentStatus === 'paid' ? 'دفع' : 'لم يدفع'}"`,
-    ]);
+  // Export Students and Lessons as Excel-compatible CSV (with UTF-8 BOM)
+  const handleExportStudentsCSV = async () => {
+    setIsExporting(true);
+    setExportNotice('جارٍ تجميع بيانات الطلاب وسجل الحصص لملف Excel...');
+    try {
+      const allLessons = await fetchAllStudentLessons(profile.id, students);
+      const studentHeaders = ['اسم الطالب', 'رقم الواتساب', 'المادة', 'المرحلة الدراسية', 'نوع الحصة', 'سعر الحصة (ج.م)', 'حالة الدفع', 'عدد الحصص المسجلة'];
+      const studentRows = students.map((s) => [
+        `"${(s.name || '').replace(/"/g, '""')}"`,
+        `"${(s.whatsapp || '').replace(/"/g, '""')}"`,
+        `"${(s.subject || profile.subject || '').replace(/"/g, '""')}"`,
+        `"${(s.grade || '').replace(/"/g, '""')}"`,
+        `"${s.classType === 'online' ? 'أونلاين' : s.classType === 'trial' ? 'حصة تجريبية' : s.classType === 'center' ? 'سنتر' : 'حضور شخصي'}"`,
+        s.hourlyRate || (s.monthlyFee ? Math.round(s.monthlyFee / 4) : 100),
+        `"${s.paymentStatus === 'paid' ? 'دفع' : 'لم يدفع'}"`,
+        allLessons[s.id]?.length || 0,
+      ]);
 
-    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `sanad_students_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setExportNotice('تم تصدير جدول الطلاب (Excel CSV) بنجاح!');
-    setTimeout(() => setExportNotice(null), 3000);
+      let csvContent = '\uFEFF=== جدول بيانات الطلاب ===\r\n' + studentHeaders.join(',') + '\r\n' + studentRows.join('\r\n') + '\r\n\r\n';
+
+      const lessonHeaders = ['اسم الطالب', 'تاريخ الحصة', 'الموضوع / ما تم شرحه', 'حالة الحضور', 'حالة التصفية', 'قيمة الحصة', 'ملاحظات / واجب'];
+      const lessonRows: string[] = [];
+      for (const s of students) {
+        const studentLessons = allLessons[s.id] || [];
+        for (const l of studentLessons) {
+          const lAny = l as any;
+          const lDate = l.date || (lAny.timestamp ? new Date(lAny.timestamp).toISOString().slice(0, 10) : '');
+          const attText = l.attendance === 'present' ? 'حضر' : l.attendance === 'excused' ? 'غياب بعذر' : 'غائب';
+          const settledText = l.settled ? 'تمت التصفية' : 'معلقة';
+          const costVal = l.cost ?? l.hourlyRate ?? s.hourlyRate ?? 100;
+          lessonRows.push([
+            `"${(s.name || '').replace(/"/g, '""')}"`,
+            `"${lDate}"`,
+            `"${(l.topic || lAny.time || '').replace(/"/g, '""')}"`,
+            `"${attText}"`,
+            `"${settledText}"`,
+            costVal,
+            `"${(l.homework || l.notes || '').replace(/"/g, '""')}"`,
+          ].join(','));
+        }
+      }
+
+      if (lessonRows.length > 0) {
+        csvContent += '=== سجل الحصص والدروس التفصيلي ===\r\n' + lessonHeaders.join(',') + '\r\n' + lessonRows.join('\r\n');
+      }
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sanad_students_and_lessons_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setExportNotice(`تم تصدير ملف Excel الشامل بنجاح! (${students.length} طالب • ${lessonRows.length} حصة)`);
+      triggerConfetti({ particleCount: 50, spread: 60, origin: { y: 0.8 } });
+      setTimeout(() => setExportNotice(null), 4000);
+    } catch (err) {
+      console.error('Error exporting Excel CSV:', err);
+      setExportNotice('حدث خطأ أثناء تصدير ملف Excel، يرجى المحاولة مرة أخرى.');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const getSubscriptionInfo = () => {
@@ -646,7 +744,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               onChange={(e) => setTemplateText(e.target.value)}
               rows={12}
               dir="rtl"
-              className="w-full rounded-xl bg-slate-950/90 border border-purple-500/20 focus:border-purple-500 p-3 text-xs text-slate-100 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-purple-500/40 transition resize-y text-right"
+              className="w-full rounded-xl bg-slate-950 border border-purple-500/20 focus:border-purple-500 p-3 text-xs text-slate-100 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-purple-500/40 transition resize-y text-right"
               placeholder="اكتب قالب الرسالة هنا..."
             />
           </div>
@@ -944,12 +1042,27 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         </div>
 
         {/* Enable Phone Push Notifications (FCM) Card & Button */}
-        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-950/70 via-slate-950 to-indigo-950/70 border border-purple-500/40 space-y-2.5">
+        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-950/70 via-slate-950 to-indigo-950/70 border border-purple-500/40 space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <Smartphone className="w-4 h-4 text-purple-400 shrink-0" />
               <div>
-                <h4 className="text-xs font-bold text-white">إشعارات الهاتف والتطبيق مغلق (Web Push)</h4>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-xs font-bold text-white">إشعارات الهاتف والتطبيق مغلق (Web Push)</h4>
+                  {typeof window !== 'undefined' && 'Notification' in window && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold flex items-center gap-1 ${
+                      browserPermission === 'granted'
+                        ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/40'
+                        : browserPermission === 'denied'
+                        ? 'bg-rose-950 text-rose-300 border border-rose-500/40'
+                        : 'bg-amber-950 text-amber-300 border border-amber-500/40'
+                    }`}>
+                      {browserPermission === 'granted' && <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400" />}
+                      {browserPermission === 'denied' && <AlertCircle className="w-2.5 h-2.5 text-rose-400" />}
+                      {browserPermission === 'granted' ? 'مفعّل ✅' : browserPermission === 'denied' ? 'محظور ❌' : 'غير مفعل ⚠️'}
+                    </span>
+                  )}
+                </div>
                 <p className="text-[10px] text-purple-200/80">تفعيل وصول التنبيهات لشاشة الهاتف حتى عند عدم استخدام التطبيق</p>
               </div>
             </div>
@@ -968,6 +1081,19 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             </button>
           </div>
 
+          {/* Denied Notice & Browser Settings Instruction */}
+          {browserPermission === 'denied' && (
+            <div className="p-3 rounded-xl bg-rose-950/80 border border-rose-500/50 text-rose-200 text-xs space-y-1">
+              <div className="flex items-center gap-1.5 font-bold text-rose-100">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>الإشعارات محظورة في هذا المتصفح:</span>
+              </div>
+              <p className="text-[11px] text-rose-200/90 leading-relaxed pr-5">
+                لإعادة التفعيل: اضغط على أيقونة القفل 🔒 أو إعدادات الموقع بجانب شريط العنوان في الأعلى، ثم اختر "السماح بالإشعارات" (Allow Notifications) وأعد تحميل التطبيق.
+              </p>
+            </div>
+          )}
+
           {/* FCM Success Notice */}
           {fcmNotice && (
             <div className="p-2.5 rounded-xl bg-emerald-950/90 border border-emerald-500/50 text-emerald-200 text-xs flex items-center gap-2">
@@ -984,13 +1110,32 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             </div>
           )}
 
-          {/* iPhone / iOS Notice */}
+          {/* iPhone / iOS Standalone Notice */}
           {typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent) && (
-            <div className="p-2.5 rounded-xl bg-amber-950/50 border border-amber-500/40 text-amber-200 text-[11px] leading-relaxed flex items-start gap-2">
+            <div className="p-3 rounded-xl bg-amber-950/50 border border-amber-500/40 text-amber-200 text-xs leading-relaxed flex items-start gap-2.5">
               <Smartphone className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <span className="font-bold block text-white">خطوات مهمة لمستخدمي آيفون (iOS 16.4+):</span>
+                <p className="text-[11px] text-amber-200/90">
+                  إشعارات الويب أثناء إغلاق التطبيق تتطلب تثبيت التطبيق على الشاشة الرئيسية أولاً:
+                  <br />
+                  1. اضغط زر المشاركة <span className="font-bold bg-amber-900/60 px-1 rounded">⬆️ المشاركة</span> في متصفح Safari.
+                  <br />
+                  2. اختر <span className="font-bold bg-amber-900/60 px-1 rounded">"إضافة إلى الشاشة الرئيسية 📲"</span> ثم افتح التطبيق من الأيقونة واضغط تفعيل الإشعارات.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Android Battery Optimization Advice */}
+          {typeof navigator !== 'undefined' && /Android/.test(navigator.userAgent) && (
+            <div className="p-2.5 rounded-xl bg-slate-900/70 border border-slate-700/60 text-slate-300 text-xs leading-relaxed flex items-start gap-2">
+              <Smartphone className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
               <div>
-                <span className="font-bold block">مستخدمو هواتف آيفون (iOS):</span>
-                <span>لتلقي إشعارات الهاتف والتطبيق مغلق، يرجى تثبيت التطبيق على الشاشة الرئيسية أولاً عبر زر المشاركة في Safari (⬆️ المشاركة) ثم اختيار "إضافة إلى الشاشة الرئيسية".</span>
+                <span className="font-bold block text-white text-[11px]">نصيحة لمستخدمي أندرويد (Android) 🤖:</span>
+                <p className="text-[10px] text-slate-400">
+                  لضمان وصول التنبيهات في وقتها الدقيق دون تأخير، استثنِ تطبيق "سند المعلم" من ميزة توفير البطارية (Battery Optimization) من إعدادات الهاتف.
+                </p>
               </div>
             </div>
           )}
@@ -1280,6 +1425,70 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         </div>
       </div>
 
+      {/* Privacy, Terms & Security Section */}
+      <div className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Shield className="w-4 h-4 text-purple-400" />
+            <h3 className="text-sm font-bold text-white">الخصوصية والأمان وشروط الاستخدام</h3>
+          </div>
+        </div>
+
+        <p className="text-xs text-slate-300 leading-relaxed">
+          نلتزم بأعلى معايير حماية بيانات المعلمين والطلاب وتشفير السجلات التعليمية. يمكنك مراجعة السياسات والشروط في أي وقت:
+        </p>
+
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setPrivacyModalTab('privacy');
+              setShowPrivacyModal(true);
+            }}
+            className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-purple-950/60 border border-slate-700 hover:border-purple-500/40 text-purple-200 text-xs font-bold transition cursor-pointer"
+          >
+            <Shield className="w-3.5 h-3.5 text-purple-400" />
+            <span>سياسة الخصوصية 🔒</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setPrivacyModalTab('terms');
+              setShowPrivacyModal(true);
+            }}
+            className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-indigo-950/60 border border-slate-700 hover:border-indigo-500/40 text-indigo-200 text-xs font-bold transition cursor-pointer"
+          >
+            <FileText className="w-3.5 h-3.5 text-indigo-400" />
+            <span>شروط الاستخدام 📄</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Account Deletion & Right to Erasure Card */}
+      <div className="rounded-2xl bg-slate-900/60 border border-rose-950/60 p-4 space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Trash2 className="w-4 h-4 text-rose-400" />
+            <h3 className="text-sm font-bold text-white">حذف الحساب والبيانات</h3>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setDeleteConfirmationText('');
+              setDeleteError(null);
+              setShowDeleteAccountModal(true);
+            }}
+            className="px-3 py-1.5 rounded-xl bg-rose-950/40 hover:bg-rose-950/80 border border-rose-500/30 text-rose-300 text-xs font-bold transition cursor-pointer"
+          >
+            حذف حسابي نهائياً ⚠️
+          </button>
+        </div>
+        <p className="text-[11px] text-slate-400">
+          إزالة حسابك وسجلاتك وطلابك بالكامل وبشكل لا رجعة فيه من خوادم التطبيق وقاعدة البيانات.
+        </p>
+      </div>
+
       {/* Sign Out Button */}
       <button
         onClick={handleSignOut}
@@ -1297,7 +1506,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
       {/* Edit Profile Modal */}
       {showEditProfile && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-slate-900 border border-purple-500/30 rounded-3xl p-5 shadow-2xl text-right">
             <div className="flex items-center justify-between border-b border-purple-900/40 pb-3 mb-4">
               <h3 className="text-base font-bold text-white">تعديل الملف الشخصي</h3>
@@ -1380,7 +1589,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
       {/* JSON Import & Restore Confirmation Modal */}
       {showImportModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 text-right">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-4 text-right">
           <div className="w-full max-w-md bg-slate-900 border border-emerald-500/40 rounded-3xl p-6 shadow-2xl relative space-y-4">
             <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
               <div className="flex items-center gap-2">
@@ -1503,7 +1712,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
       {/* Test Reminder Modal */}
       {showTestModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 text-right">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-4 text-right">
           <div className="w-full max-w-md bg-slate-900 border border-purple-500/40 rounded-3xl p-6 shadow-2xl relative space-y-4">
             <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
               <div className="flex items-center gap-2">
@@ -1519,6 +1728,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               >
                 <X className="w-5 h-5" />
               </button>
+            </div>
+
+            <div className="flex items-center justify-between text-[11px] text-purple-300 bg-purple-950/40 p-2.5 rounded-xl border border-purple-800/40">
+              <span>الحد اليومي للتجربة (جرّب الإشعار):</span>
+              <span className="font-bold text-white bg-purple-900/60 px-2 py-0.5 rounded-md">
+                {checkTestReminderQuota().remaining} من 3 متبقية اليوم
+              </span>
             </div>
 
             <p className="text-xs text-slate-300 leading-relaxed">
@@ -1659,7 +1875,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
       {/* Logs Modal */}
       {showLogsModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 text-right">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950  flex items-center justify-center p-4 text-right">
           <div className="w-full max-w-lg bg-slate-900 border border-purple-500/40 rounded-3xl p-6 shadow-2xl relative space-y-4">
             <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
               <div className="flex items-center gap-2">
@@ -1740,6 +1956,86 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Privacy Policy & Terms Modal */}
+      <PrivacyTermsModal
+        isOpen={showPrivacyModal}
+        onClose={() => setShowPrivacyModal(false)}
+        initialTab={privacyModalTab}
+      />
+
+      {/* Delete Account Confirmation Modal */}
+      {showDeleteAccountModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 flex items-center justify-center p-4 text-right" dir="rtl">
+          <div className="w-full max-w-sm bg-slate-900 border border-rose-500/40 rounded-3xl p-6 shadow-2xl relative space-y-4">
+            <div className="flex items-center justify-between border-b border-rose-900/40 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-rose-950/80 text-rose-400 flex items-center justify-center border border-rose-500/30">
+                  <Trash2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">تأكيد حذف الحساب نهائياً</h3>
+                  <p className="text-[10px] text-rose-300">إجراء حرج لا يمكن التراجع عنه</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDeleteAccountModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              سيتم حذف جميع سجلات الطلاب، المواعيد الأسبوعية، الحصص المنفذة والملفات المحفوظة نهائياً من الخوادم.
+            </p>
+
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-bold text-rose-300">
+                لتأكيد الحذف، اكتب كلمة <strong className="text-white bg-rose-950 px-1.5 py-0.5 rounded font-mono">حذف</strong> في الحقل أدناه:
+              </label>
+              <input
+                type="text"
+                value={deleteConfirmationText}
+                onChange={(e) => setDeleteConfirmationText(e.target.value)}
+                placeholder="اكتب كلمة حذف هنا..."
+                className="w-full rounded-xl bg-slate-950 border border-rose-500/30 px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-400 text-center font-bold"
+              />
+            </div>
+
+            {deleteError && (
+              <div className="p-2.5 rounded-xl bg-rose-950 border border-rose-500/40 text-rose-200 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{deleteError}</span>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                disabled={isDeletingAccount}
+                onClick={handleDeleteAccount}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5 shadow"
+              >
+                {isDeletingAccount ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+                <span>{isDeletingAccount ? 'جارٍ الحذف...' : 'تأكيد الحذف النهائي'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowDeleteAccountModal(false)}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition cursor-pointer"
+              >
+                إلغاء
+              </button>
+            </div>
           </div>
         </div>
       )}

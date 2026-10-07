@@ -71,17 +71,17 @@
 
 المتغيرات المطلوبة:
 - `VITE_FIREBASE_API_KEY`: مفتاح Firebase للعميل (API Key).
-- `VITE_FIREBASE_AUTH_DOMAIN`: نطاق المصادقة (`your-project.firebaseapp.com`).
-- `VITE_FIREBASE_PROJECT_ID`: معرف المشروع.
-- `VITE_FIREBASE_STORAGE_BUCKET`: نطاق التخزين (`your-project.firebasestorage.app`).
+- `VITE_FIREBASE_AUTH_DOMAIN`: نطاق المصادقة (`sanad-1464f.firebaseapp.com`).
+- `VITE_FIREBASE_PROJECT_ID`: معرف المشروع (`sanad-1464f`).
+- `VITE_FIREBASE_STORAGE_BUCKET`: نطاق التخزين (`sanad-1464f.firebasestorage.app`).
 - `VITE_FIREBASE_MESSAGING_SENDER_ID`: معرف الإرسال.
 - `VITE_FIREBASE_APP_ID`: معرف التطبيق.
 - `VITE_FIREBASE_VAPID_KEY`: مفتاح VAPID المولد من Firebase Console.
-- `VITE_FIREBASE_DATABASE_ID`: (اختياري) ضع `(default)` أو اسم قاعدة Firestore.
+- `VITE_FIREBASE_DATABASE_ID`: (اختياري) ضع `(default)` لاستخدام قاعدة بيانات Firestore الافتراضية.
 - `GEMINI_API_KEY`: مفتاح Google Gemini API.
 - `GEMINI_MODEL`: (اختياري) نموذج Gemini، الافتراضي `gemini-2.5-flash`.
 - `CRON_SECRET`: رمز سرّي عشوائي لتأمين مسار التذكيرات التلقائية `/api/reminders/cron`.
-- `FIREBASE_SERVICE_ACCOUNT`: محتوى ملف JSON لمفتاح الخدمة الكامل (Firebase Admin).
+- `FIREBASE_SERVICE_ACCOUNT`: محتوى ملف JSON لمفتاح الخدمة الكامل (Firebase Admin لمشروع sanad-1464f).
 
 > ⚠️ **خطوة هامة جداً بعد إضافة المتغيرات (Redeploy)**:  
 > بعد حفظ المتغيرات في لوحة تحكم Vercel، لن تُطبّق على النشر الحالي تلقائياً. يجب عمل **Redeploy** من صفحة **Deployments** (اختر آخر Deployment ثم اضغط `...` > `Redeploy` بدون تفعيل الكاش) لكي تندمج المتغيرات في كود الـ Frontend.

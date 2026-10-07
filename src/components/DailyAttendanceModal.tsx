@@ -577,7 +577,7 @@ export const DailyAttendanceModal: React.FC<DailyAttendanceModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-3 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950  p-3 sm:p-4 overflow-y-auto"
       dir="rtl"
     >
       <div className="w-full max-w-2xl bg-slate-900 border border-purple-500/30 rounded-3xl p-4 sm:p-6 shadow-2xl text-right max-h-[94vh] flex flex-col space-y-4 animate-in fade-in zoom-in-95 duration-200">
@@ -695,7 +695,7 @@ export const DailyAttendanceModal: React.FC<DailyAttendanceModalProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="البحث باسم الطالب أو رقم الهاتف..."
-              className="w-full rounded-xl bg-slate-950/80 border border-slate-800 pr-9 pl-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400"
+              className="w-full rounded-xl bg-slate-950 border border-slate-800 pr-9 pl-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400"
             />
           </div>
         </div>

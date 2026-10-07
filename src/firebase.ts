@@ -1,5 +1,11 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import {
+  initializeAppCheck,
+  ReCaptchaEnterpriseProvider,
+  getToken as getAppCheckToken,
+  AppCheck,
+} from 'firebase/app-check';
+import {
   getAuth,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -44,30 +50,27 @@ import {
   NoteColor,
 } from './types';
 
-import rawFirebaseConfig from '../firebase-applet-config.json';
+const env: Record<string, any> = (typeof import.meta !== 'undefined' && import.meta.env) || (typeof process !== 'undefined' && (process.env as any)) || {};
 
-const env = import.meta.env;
-
-const pick = (envValue: unknown, fileValue: unknown): string =>
-  (typeof envValue === 'string' && envValue.trim()) ||
-  (typeof fileValue === 'string' && fileValue.trim()) ||
-  '';
+const getEnvStr = (val: unknown): string =>
+  (typeof val === 'string' && val.trim()) || '';
 
 const firebaseConfig = {
-  apiKey: pick(env.VITE_FIREBASE_API_KEY, rawFirebaseConfig.apiKey),
-  authDomain: pick(env.VITE_FIREBASE_AUTH_DOMAIN, rawFirebaseConfig.authDomain),
-  projectId: pick(env.VITE_FIREBASE_PROJECT_ID, rawFirebaseConfig.projectId),
-  storageBucket: pick(env.VITE_FIREBASE_STORAGE_BUCKET, rawFirebaseConfig.storageBucket),
-  messagingSenderId: pick(env.VITE_FIREBASE_MESSAGING_SENDER_ID, rawFirebaseConfig.messagingSenderId),
-  appId: pick(env.VITE_FIREBASE_APP_ID, rawFirebaseConfig.appId),
+  apiKey: getEnvStr(env.VITE_FIREBASE_API_KEY),
+  authDomain: getEnvStr(env.VITE_FIREBASE_AUTH_DOMAIN),
+  projectId: getEnvStr(env.VITE_FIREBASE_PROJECT_ID),
+  storageBucket: getEnvStr(env.VITE_FIREBASE_STORAGE_BUCKET),
+  messagingSenderId: getEnvStr(env.VITE_FIREBASE_MESSAGING_SENDER_ID),
+  appId: getEnvStr(env.VITE_FIREBASE_APP_ID),
 };
 
-const effectiveDatabaseId =
-  pick(env.VITE_FIREBASE_DATABASE_ID, (rawFirebaseConfig as any).firestoreDatabaseId) || '(default)';
+const rawDbId = getEnvStr(env.VITE_FIREBASE_DATABASE_ID);
+const effectiveDatabaseId = !rawDbId || rawDbId === '(default)' ? undefined : rawDbId;
 
 export let app: FirebaseApp = null as any;
 export let auth: Auth = null as any;
 export let db: Firestore = null as any;
+export let appCheck: AppCheck | null = null;
 export let firebaseInitError: Error | null = null;
 
 try {
@@ -84,11 +87,37 @@ try {
       localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
       experimentalAutoDetectLongPolling: true,
     },
-    effectiveDatabaseId === '(default)' || !effectiveDatabaseId ? undefined : effectiveDatabaseId
+    effectiveDatabaseId
   );
+
+  const siteKey = getEnvStr(env.VITE_RECAPTCHA_SITE_KEY);
+  if (app && siteKey && typeof window !== 'undefined') {
+    try {
+      if (env.DEV || getEnvStr(env.VITE_APPCHECK_DEBUG) === 'true') {
+        (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+      }
+      appCheck = initializeAppCheck(app, {
+        provider: new ReCaptchaEnterpriseProvider(siteKey),
+        isTokenAutoRefreshEnabled: true,
+      });
+    } catch (appCheckErr) {
+      console.warn('App Check init warning:', appCheckErr);
+    }
+  }
 } catch (err: any) {
   console.error('Firebase initialization error caught safely:', err);
   firebaseInitError = err instanceof Error ? err : new Error(String(err));
+}
+
+export async function getAppCheckTokenHeader(): Promise<Record<string, string>> {
+  if (!appCheck) return {};
+  try {
+    const result = await getAppCheckToken(appCheck, false);
+    return result.token ? { 'X-Firebase-AppCheck': result.token } : {};
+  } catch (err) {
+    console.warn('Failed to retrieve App Check token:', err);
+    return {};
+  }
 }
 
 // Skill-mandated Error Handler
@@ -139,12 +168,64 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Check if user is system admin based purely on uid existence in admins collection
-export async function checkIsAdmin(user: User | null): Promise<boolean> {
+export const BOOTSTRAP_ADMIN_UIDS = new Set([
+  'vX0iw1yYNwauMuKOInVjaATiIRx2',
+]);
+
+/**
+ * Retrieve Custom Claims from Firebase Auth ID Token for the current user.
+ */
+export async function getUserClaims(user: User | null, forceRefresh: boolean = false): Promise<Record<string, any>> {
+  if (!user) return {};
+  try {
+    const tokenResult = await user.getIdTokenResult(forceRefresh);
+    return tokenResult.claims || {};
+  } catch (err) {
+    console.warn('Failed to retrieve user ID token claims:', err);
+    return {};
+  }
+}
+
+/**
+ * Check if the current user is a system administrator based on:
+ * 1. Firebase Auth Custom Claims (claims.admin, claims.role === 'admin', claims.isAdmin)
+ * 2. Bootstrap admin UID / master developer email
+ * 3. Firestore admins/{uid} document verification
+ */
+export async function checkIsAdmin(user: User | null, forceRefresh: boolean = false): Promise<boolean> {
   if (!user) return false;
+
+  // 1. Primary check: Firebase Auth Custom Claims object on the ID token
+  try {
+    const claims = await getUserClaims(user, forceRefresh);
+    if (claims.admin === true || claims.role === 'admin' || claims.isAdmin === true) {
+      return true;
+    }
+  } catch (err) {
+    console.warn('Error evaluating auth custom claims for admin:', err);
+  }
+
+  // 2. Secondary check: Bootstrap admin UID / master developer email
+  if (BOOTSTRAP_ADMIN_UIDS.has(user.uid) || user.email === 'moniskacadmy@gmail.com') {
+    try {
+      const adminRef = doc(db, 'admins', user.uid);
+      const adminDoc = await getDoc(adminRef);
+      if (!adminDoc.exists()) {
+        await setDoc(adminRef, {
+          email: user.email || 'moniskacadmy@gmail.com',
+          role: 'admin',
+          active: true,
+          createdAt: serverTimestamp(),
+        }, { merge: true }).catch(() => {});
+      }
+    } catch {}
+    return true;
+  }
+
+  // 3. Fallback check: Firestore 'admins' collection verification
   try {
     const adminDoc = await getDoc(doc(db, 'admins', user.uid));
-    return adminDoc.exists();
+    return adminDoc.exists() && adminDoc.data()?.active !== false;
   } catch {
     return false;
   }
@@ -476,20 +557,18 @@ export async function adminSaveSubscription(params: {
   // 2. Find if teacher with this email already exists in teachers collection
   let teacherFound = false;
   try {
-    const snap = await getDocs(collection(db, 'teachers'));
+    const q = query(collection(db, 'teachers'), where('email', '==', normalizedEmail));
+    const snap = await getDocs(q);
     for (const tDoc of snap.docs) {
-      const tData = tDoc.data();
-      if (tData.email && tData.email.trim().toLowerCase() === normalizedEmail) {
-        teacherFound = true;
-        await updateDoc(doc(db, 'teachers', tDoc.id), {
-          isActive,
-          subscriptionStatus: status,
-          plan: planName,
-          subscriptionEndDate: Timestamp.fromDate(newExpiryDate),
-          subscriptionExpiresAt: Timestamp.fromDate(newExpiryDate),
-          updatedAt: serverTimestamp(),
-        });
-      }
+      teacherFound = true;
+      await updateDoc(doc(db, 'teachers', tDoc.id), {
+        isActive,
+        subscriptionStatus: status,
+        plan: planName,
+        subscriptionEndDate: Timestamp.fromDate(newExpiryDate),
+        subscriptionExpiresAt: Timestamp.fromDate(newExpiryDate),
+        updatedAt: serverTimestamp(),
+      });
     }
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, 'teachers');
@@ -712,8 +791,22 @@ export function subscribeToStudents(
   onUpdate: (students: Student[]) => void
 ) {
   const path = `teachers/${teacherId}/students`;
+  const colRef = collection(db, 'teachers', teacherId, 'students');
+
+  // Silent migration to ensure backward compatibility with where('status', '!=', 'inactive')
+  getDocs(colRef).then((snap) => {
+    snap.docs.forEach((docSnap) => {
+      const data = docSnap.data();
+      if (data.status === undefined) {
+        updateDoc(docSnap.ref, { status: 'active' }).catch(() => {});
+      }
+    });
+  }).catch(() => {});
+
+  const q = query(colRef, where('status', '!=', 'inactive'));
+
   return onSnapshot(
-    collection(db, 'teachers', teacherId, 'students'),
+    q,
     (snap) => {
       const students = snap.docs.map((d) => ({
         ...d.data(),
@@ -736,6 +829,7 @@ export async function addStudent(
     const colRef = collection(db, 'teachers', teacherId, 'students');
     const newDoc = doc(colRef);
     await setDoc(newDoc, {
+      status: 'active',
       ...student,
       id: newDoc.id,
       teacherId,
@@ -827,11 +921,24 @@ export async function toggleStudentPaymentStatus(
 export function subscribeToStudentLessons(
   teacherId: string,
   studentId: string,
-  onUpdate: (lessons: LessonLog[]) => void
+  onUpdate: (lessons: LessonLog[]) => void,
+  limitDays = 60
 ) {
   const path = `teachers/${teacherId}/students/${studentId}/lessons`;
+  const colRef = collection(db, 'teachers', teacherId, 'students', studentId, 'lessons');
+  
+  let q;
+  if (limitDays > 0) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - limitDays);
+    const dateStr = cutoffDate.toISOString().split('T')[0];
+    q = query(colRef, where('date', '>=', dateStr));
+  } else {
+    q = colRef;
+  }
+
   return onSnapshot(
-    collection(db, 'teachers', teacherId, 'students', studentId, 'lessons'),
+    q,
     (snap) => {
       const lessons = snap.docs.map((d) => ({
         ...d.data(),
@@ -1158,15 +1265,25 @@ export async function seedDefaultLibraryItems(teacherId: string) {
 // Backup & Data Export / Import Operations
 export async function fetchAllStudentLessons(
   teacherId: string,
-  students: Student[]
+  students: Student[],
+  limitDays = 60
 ): Promise<Record<string, LessonLog[]>> {
   const allLessons: Record<string, LessonLog[]> = {};
+  
+  let cutoffDateStr = '';
+  if (limitDays > 0) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - limitDays);
+    cutoffDateStr = cutoffDate.toISOString().split('T')[0];
+  }
+
   for (const student of students) {
     const path = `teachers/${teacherId}/students/${student.id}/lessons`;
     try {
-      const snap = await getDocs(
-        collection(db, 'teachers', teacherId, 'students', student.id, 'lessons')
-      );
+      const colRef = collection(db, 'teachers', teacherId, 'students', student.id, 'lessons');
+      const q = cutoffDateStr ? query(colRef, where('date', '>=', cutoffDateStr)) : colRef;
+      
+      const snap = await getDocs(q);
       allLessons[student.id] = snap.docs.map((d) => ({
         ...(d.data() as LessonLog),
         id: d.id,
@@ -1428,10 +1545,26 @@ export async function toggleCompleteQuickNote(teacherId: string, noteId: string,
   return updateQuickNote(teacherId, noteId, { isCompleted: !currentCompleted });
 }
 
-import { getMessaging, getToken, isSupported } from 'firebase/messaging';
+import { getMessaging, getToken, deleteToken, onMessage, isSupported } from 'firebase/messaging';
 
 const FCM_SW_SCOPE = '/firebase-cloud-messaging-push-scope';
+
+// FCM registration tokens can contain characters rejected by our Firestore
+// document-id validation rules (for example ':'). Keep the real token in data,
+// but use a deterministic SHA-256 id for the document key.
+async function getFcmTokenDocumentId(token: string): Promise<string> {
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    const bytes = new TextEncoder().encode(token);
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('');
+  }
+  return token.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
+}
+
 let fcmRegisteredUid: string | null = null;
+let currentActiveFcmToken: string | null = null;
 let fcmRegistrationPromise: Promise<{
   success: boolean;
   token?: string;
@@ -1439,16 +1572,16 @@ let fcmRegistrationPromise: Promise<{
 }> | null = null;
 
 // Function to request permission and save FCM token for web push notifications
-export async function requestAndSaveFCMToken(force = false): Promise<{
+export async function requestAndSaveFCMToken(interactive = false): Promise<{
   success: boolean;
   token?: string;
   error?: string;
 }> {
   const currentUser = auth?.currentUser;
 
-  // Prevent redundant executions for the same user within the same session
-  if (!force && currentUser && fcmRegisteredUid === currentUser.uid) {
-    return { success: true };
+  // If non-interactive and already registered in this session, return success immediately
+  if (!interactive && currentUser && fcmRegisteredUid === currentUser.uid && currentActiveFcmToken) {
+    return { success: true, token: currentActiveFcmToken };
   }
 
   // De-duplicate concurrent calls
@@ -1458,15 +1591,35 @@ export async function requestAndSaveFCMToken(force = false): Promise<{
 
   fcmRegistrationPromise = (async () => {
     try {
-      const isMessagingSupported = await isSupported();
-      if (!isMessagingSupported) {
+      if (typeof window === 'undefined' || !('Notification' in window)) {
         return {
           success: false,
           error: 'المتصفح الحالي لا يدعم إشعارات الويب المباشرة (Web Push Notifications).',
         };
       }
 
-      const permission = await Notification.requestPermission();
+      const isMessagingSupported = await isSupported().catch(() => false);
+      if (!isMessagingSupported) {
+        return {
+          success: false,
+          error: 'خدمة إشعارات FCM غير مدعومة في بيئة التصفح الحالية.',
+        };
+      }
+
+      // Non-interactive check: do NOT trigger native prompt if permission is not already granted
+      if (!interactive && Notification.permission !== 'granted') {
+        return {
+          success: false,
+          error: 'إذن الإشعارات غير مفعل بعد.',
+        };
+      }
+
+      // Interactive mode: trigger explicit user prompt
+      let permission = Notification.permission;
+      if (interactive) {
+        permission = await Notification.requestPermission();
+      }
+
       if (permission === 'denied') {
         return {
           success: false,
@@ -1487,7 +1640,6 @@ export async function requestAndSaveFCMToken(force = false): Promise<{
         try {
           const swUrl = `/firebase-messaging-sw.js?apiKey=${encodeURIComponent(firebaseConfig.apiKey || '')}&projectId=${encodeURIComponent(firebaseConfig.projectId || '')}&messagingSenderId=${encodeURIComponent(firebaseConfig.messagingSenderId || '')}&appId=${encodeURIComponent(firebaseConfig.appId || '')}&authDomain=${encodeURIComponent(firebaseConfig.authDomain || '')}&storageBucket=${encodeURIComponent(firebaseConfig.storageBucket || '')}`;
 
-          // Check if already registered for this scope first
           const existingReg = await navigator.serviceWorker.getRegistration(FCM_SW_SCOPE);
           if (existingReg) {
             swReg = existingReg;
@@ -1495,7 +1647,7 @@ export async function requestAndSaveFCMToken(force = false): Promise<{
             swReg = await navigator.serviceWorker.register(swUrl, { scope: FCM_SW_SCOPE });
           }
         } catch (swErr) {
-          console.warn('Could not register firebase-messaging-sw.js directly:', swErr);
+          console.warn('Could not register firebase-messaging-sw.js:', swErr);
         }
       }
 
@@ -1514,24 +1666,46 @@ export async function requestAndSaveFCMToken(force = false): Promise<{
         };
       }
 
+      currentActiveFcmToken = token;
+
       const user = auth?.currentUser;
       if (user) {
-        // Mark session as registered for this user
         fcmRegisteredUid = user.uid;
 
-        // Unified storage: Save in teachers/{uid}/fcmTokens/{tokenId}
-        const teacherTokenRef = doc(db, 'teachers', user.uid, 'fcmTokens', token);
-        await setDoc(
-          teacherTokenRef,
-          {
-            token,
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo',
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-            userAgent: navigator.userAgent,
-          },
-          { merge: true }
-        );
+        // Unified storage: Save in teachers/{uid}/fcmTokens/{safeTokenId}.
+        // The real FCM token remains in the document data for the server dispatcher.
+        const tokenDocumentId = await getFcmTokenDocumentId(token);
+        const teacherTokenRef = doc(db, 'teachers', user.uid, 'fcmTokens', tokenDocumentId);
+        const existingTokenDoc = await getDoc(teacherTokenRef);
+        const tokenData: Record<string, unknown> = {
+          token,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo',
+          updatedAt: serverTimestamp(),
+          lastSeenAt: serverTimestamp(),
+          userAgent: navigator.userAgent,
+        };
+        if (!existingTokenDoc.exists()) {
+          tokenData.createdAt = serverTimestamp();
+        }
+        await setDoc(teacherTokenRef, tokenData, { merge: true });
+
+        // Enforce max 5 device tokens per teacher: prune oldest tokens if count > 5
+        try {
+          const tokensSnap = await getDocs(
+            query(collection(db, 'teachers', user.uid, 'fcmTokens'), orderBy('createdAt', 'asc'))
+          );
+          if (tokensSnap.size > 5) {
+            const excess = tokensSnap.size - 5;
+            const oldestDocs = tokensSnap.docs.slice(0, excess);
+            for (const oldDoc of oldestDocs) {
+              if (oldDoc.id !== tokenDocumentId) {
+                await deleteDoc(oldDoc.ref).catch(() => {});
+              }
+            }
+          }
+        } catch (pruneErr) {
+          console.warn('Token pruning non-critical notice:', pruneErr);
+        }
       }
 
       return { success: true, token };
@@ -1547,6 +1721,51 @@ export async function requestAndSaveFCMToken(force = false): Promise<{
   })();
 
   return fcmRegistrationPromise;
+}
+
+// Sign out teacher with clean FCM token deletion
+export async function signOutTeacher(authInstance: any = auth): Promise<void> {
+  try {
+    const user = authInstance?.currentUser;
+    if (user && currentActiveFcmToken) {
+      try {
+        const tokenDocumentId = await getFcmTokenDocumentId(currentActiveFcmToken);
+        const tokenRef = doc(db, 'teachers', user.uid, 'fcmTokens', tokenDocumentId);
+        await deleteDoc(tokenRef).catch(() => {});
+      } catch (delErr) {
+        console.warn('Could not delete token doc on signout:', delErr);
+      }
+    }
+
+    try {
+      const isMessagingSupported = await isSupported().catch(() => false);
+      if (isMessagingSupported && currentActiveFcmToken) {
+        const messaging = getMessaging(app);
+        await deleteToken(messaging).catch(() => {});
+      }
+    } catch (tokenErr) {
+      console.warn('Could not unregister FCM token on signout:', tokenErr);
+    }
+  } finally {
+    fcmRegisteredUid = null;
+    currentActiveFcmToken = null;
+    await firebaseSignOut(authInstance);
+  }
+}
+
+// Foreground message receiver listener
+export function listenToForegroundFCM(
+  onMessageReceived: (payload: any) => void
+): (() => void) | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const messaging = getMessaging(app);
+    return onMessage(messaging, (payload) => {
+      onMessageReceived(payload);
+    });
+  } catch (_e) {
+    return null;
+  }
 }
 
 

@@ -225,7 +225,7 @@ export const AbsenceDetailsModal: React.FC<AbsenceDetailsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950  p-4 overflow-y-auto">
       <div className="w-full max-w-xl bg-slate-900 border border-purple-500/30 rounded-3xl p-5 shadow-2xl text-right max-h-[92vh] flex flex-col space-y-4 animate-in fade-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -311,7 +311,7 @@ export const AbsenceDetailsModal: React.FC<AbsenceDetailsModalProps> = ({
           </div>
 
           {/* 1. الجانب المالي (Financial Counting) */}
-          <div className="rounded-2xl bg-slate-950/80 border border-purple-500/25 p-3.5 space-y-2.5 shadow-sm">
+          <div className="rounded-2xl bg-slate-950 border border-purple-500/25 p-3.5 space-y-2.5 shadow-sm">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-white font-bold text-xs">
                 <DollarSign className="w-4 h-4 text-emerald-400" />
@@ -360,7 +360,7 @@ export const AbsenceDetailsModal: React.FC<AbsenceDetailsModalProps> = ({
           </div>
 
           {/* 2. الحصة التعويضية (Makeup Class) */}
-          <div className="rounded-2xl bg-slate-950/80 border border-indigo-500/25 p-3.5 space-y-2.5 shadow-sm">
+          <div className="rounded-2xl bg-slate-950 border border-indigo-500/25 p-3.5 space-y-2.5 shadow-sm">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-white font-bold text-xs">
                 <RotateCcw className="w-4 h-4 text-indigo-400" />

@@ -1,6 +1,124 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
   <head>
+    <script id="hmr-suppressor">
+      (function() {
+        if (typeof window === 'undefined') return;
+        window.$RefreshReg$ = window.$RefreshReg$ || function() {};
+        window.$RefreshSig$ = window.$RefreshSig$ || function() { return function(t) { return t; }; };
+        window.__vite_plugin_react_preamble_installed__ = true;
+
+        function shouldSuppress(msg) {
+          if (!msg) return false;
+          var str = String(msg);
+          return str.indexOf('[vite]') !== -1 ||
+                 str.indexOf('WebSocket') !== -1 ||
+                 str.indexOf('websocket') !== -1 ||
+                 str.indexOf('closed without opened') !== -1 ||
+                 str.indexOf('SendBeforeConnectError') !== -1 ||
+                 str.indexOf('server connection lost') !== -1;
+        }
+
+        ['log', 'info', 'warn', 'error', 'debug'].forEach(function(m) {
+          var orig = console[m];
+          if (typeof orig === 'function') {
+            console[m] = function() {
+              for (var i = 0; i < arguments.length; i++) {
+                var a = arguments[i];
+                var s = typeof a === 'object' && a !== null ? (a.message || a.stack || String(a)) : String(a);
+                if (shouldSuppress(s)) return;
+              }
+              return Function.prototype.apply.call(orig, console, arguments);
+            };
+          }
+        });
+
+        window.addEventListener('error', function(e) {
+          var m = (e && (e.message || (e.error && (e.error.message || e.error.stack)))) || '';
+          if (shouldSuppress(m)) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+          }
+        }, true);
+
+        window.addEventListener('unhandledrejection', function(e) {
+          var r = (e && (e.reason && (e.reason.message || e.reason.stack || String(e.reason)))) || '';
+          if (shouldSuppress(r)) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+          }
+        }, true);
+
+        if (window.WebSocket) {
+          var OrigWS = window.WebSocket;
+          var ProxyWS = new Proxy(OrigWS, {
+            construct: function(target, args, newTarget) {
+              var url = args[0];
+              var proto = args[1];
+              var isVite = (proto === 'vite-hmr' || proto === 'vite-ping') ||
+                           (Array.isArray(proto) && (proto.indexOf('vite-hmr') !== -1 || proto.indexOf('vite-ping') !== -1)) ||
+                           (typeof url === 'string' && (url.indexOf('vite-hmr') !== -1 || url.indexOf('/@vite/client') !== -1 || url.indexOf('token=') !== -1 || url.indexOf(':5173') !== -1));
+              if (isVite) {
+                var ws = new EventTarget();
+                ws.CONNECTING = 0;
+                ws.OPEN = 1;
+                ws.CLOSING = 2;
+                ws.CLOSED = 3;
+                ws.readyState = 1;
+                ws.url = url;
+                ws.bufferedAmount = 0;
+                ws.extensions = '';
+                ws.protocol = typeof proto === 'string' ? proto : 'vite-hmr';
+                ws.binaryType = 'blob';
+                ws.send = function() {};
+                ws.close = function() {
+                  ws.readyState = 3;
+                  var ev = new Event('close');
+                  ev.wasClean = true;
+                  ws.dispatchEvent(ev);
+                  if (typeof ws.onclose === 'function') {
+                    try { ws.onclose(ev); } catch(_) {}
+                  }
+                };
+
+                var origAdd = ws.addEventListener.bind(ws);
+                ws.addEventListener = function(type, listener, options) {
+                  origAdd(type, listener, options);
+                  if (type === 'open' && ws.readyState === 1) {
+                    setTimeout(function() {
+                      try {
+                        if (typeof listener === 'function') listener(new Event('open'));
+                        else if (listener && typeof listener.handleEvent === 'function') listener.handleEvent(new Event('open'));
+                      } catch(_) {}
+                    }, 0);
+                  }
+                };
+
+                setTimeout(function() {
+                  if (ws.readyState === 1) {
+                    var ev = new Event('open');
+                    ws.dispatchEvent(ev);
+                    if (typeof ws.onopen === 'function') {
+                      try { ws.onopen(ev); } catch(_) {}
+                    }
+                  }
+                }, 0);
+                return ws;
+              }
+              return Reflect.construct(target, args, newTarget);
+            }
+          });
+
+          ProxyWS.CONNECTING = 0;
+          ProxyWS.OPEN = 1;
+          ProxyWS.CLOSING = 2;
+          ProxyWS.CLOSED = 3;
+          window.WebSocket = ProxyWS;
+        }
+      })();
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Remix سند المعلم | المنصة الذكية للمعلمين الخصوصيين</title>
@@ -17,115 +135,6 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
-    <script>
-      // Preamble initialization for React Fast Refresh
-      window.$RefreshReg$ = window.$RefreshReg$ || function() {};
-      window.$RefreshSig$ = window.$RefreshSig$ || function() { return function(type) { return type; }; };
-      window.__vite_plugin_react_preamble_installed__ = true;
-
-      // Comply with environment constraint: "HMR: Disabled. Ignore WebSocket errors."
-      (function() {
-        if (typeof window !== 'undefined' && window.WebSocket) {
-          const OrigWebSocket = window.WebSocket;
-          function isViteHmr(url, protocols) {
-            if (protocols === 'vite-hmr' || protocols === 'vite-ping') return true;
-            if (Array.isArray(protocols) && (protocols.includes('vite-hmr') || protocols.includes('vite-ping'))) return true;
-            if (typeof url === 'string' && (url.includes('token=') || url.includes('/@vite/client') || url.includes('vite-hmr'))) return true;
-            return false;
-          }
-
-          try {
-            window.WebSocket = new Proxy(OrigWebSocket, {
-              construct(target, args, newTarget) {
-                const [url, protocols] = args;
-                if (isViteHmr(url, protocols)) {
-                  const mockWs = new EventTarget();
-                  mockWs.url = url;
-                  mockWs.protocols = protocols;
-                  mockWs.readyState = 1; // WebSocket.OPEN
-                  mockWs.bufferedAmount = 0;
-                  mockWs.extensions = '';
-                  mockWs.protocol = typeof protocols === 'string' ? protocols : 'vite-hmr';
-                  mockWs.binaryType = 'blob';
-                  mockWs.send = function() {};
-                  mockWs.close = function() {
-                    mockWs.readyState = 3; // WebSocket.CLOSED
-                    const ev = new Event('close');
-                    mockWs.dispatchEvent(ev);
-                    if (typeof mockWs.onclose === 'function') mockWs.onclose(ev);
-                  };
-                  setTimeout(() => {
-                    if (mockWs.readyState === 1) {
-                      const ev = new Event('open');
-                      mockWs.dispatchEvent(ev);
-                      if (typeof mockWs.onopen === 'function') mockWs.onopen(ev);
-                    }
-                  }, 5);
-                  return mockWs;
-                }
-                return Reflect.construct(target, args, newTarget);
-              }
-            });
-          } catch (_) {}
-        }
-
-        function shouldSuppress(msg) {
-          if (!msg) return false;
-          const str = String(msg);
-          return str.includes('[vite]') ||
-                 str.includes('WebSocket') ||
-                 str.includes('websocket') ||
-                 str.includes('SendBeforeConnectError') ||
-                 str.includes('preamble') ||
-                 str.includes('server connection lost') ||
-                 str.includes('connecting...') ||
-                 str.includes('Illegal invocation');
-        }
-
-        ['log', 'info', 'warn', 'error', 'debug'].forEach(function(method) {
-          const orig = console[method];
-          if (typeof orig === 'function') {
-            console[method] = function(...args) {
-              try {
-                for (let i = 0; i < args.length; i++) {
-                  const arg = args[i];
-                  const str = typeof arg === 'object' && arg !== null
-                    ? (arg.message || arg.stack || JSON.stringify(arg))
-                    : String(arg);
-                  if (shouldSuppress(str)) return;
-                }
-              } catch (_) {}
-              return Function.prototype.apply.call(orig, console, args);
-            };
-          }
-        });
-
-        window.onerror = function(msg, url, line, col, error) {
-          const str = String(msg || (error && (error.message || error.stack)) || '');
-          if (shouldSuppress(str)) {
-            return true;
-          }
-        };
-
-        window.addEventListener('error', function(e) {
-          const msg = (e && (e.message || (e.error && (e.error.message || e.error.stack)))) || '';
-          if (shouldSuppress(msg)) {
-            e.preventDefault();
-            e.stopPropagation();
-            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-          }
-        }, true);
-
-        window.addEventListener('unhandledrejection', function(e) {
-          const reason = (e && (e.reason && (e.reason.message || e.reason.stack || String(e.reason)))) || '';
-          if (shouldSuppress(reason)) {
-            e.preventDefault();
-            e.stopPropagation();
-            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-          }
-        }, true);
-      })();
-    </script>
   </head>
   <body class="bg-slate-950 text-slate-100 font-sans antialiased select-none">
     <div id="root"></div>
