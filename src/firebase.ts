@@ -1500,10 +1500,24 @@ export async function requestAndSaveFCMToken(force = false): Promise<{
       }
 
       const vapidKey =
-        (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_VAPID_KEY) || undefined;
+        (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_VAPID_KEY) || '';
+
+      if (!vapidKey.trim()) {
+        return {
+          success: false,
+          error: 'إشعارات FCM غير مهيأة: VITE_FIREBASE_VAPID_KEY غير موجود في بيئة الإنتاج.',
+        };
+      }
+
+      if (!swReg) {
+        return {
+          success: false,
+          error: 'تعذر تسجيل Service Worker الخاص بإشعارات FCM. لن يتم تعطيل التطبيق بسبب ذلك.',
+        };
+      }
 
       const token = await getToken(messaging, {
-        vapidKey,
+        vapidKey: vapidKey.trim(),
         serviceWorkerRegistration: swReg,
       });
 
@@ -1537,9 +1551,17 @@ export async function requestAndSaveFCMToken(force = false): Promise<{
       return { success: true, token };
     } catch (err: any) {
       console.error('Error enabling phone notifications / FCM:', err);
+      const code = typeof err?.code === 'string' ? err.code : '';
+      const message = typeof err?.message === 'string' ? err.message : '';
+      if (code === 'messaging/token-subscribe-failed' || /fcmregistrations\.googleapis\.com/i.test(message)) {
+        return {
+          success: false,
+          error: 'تعذر تسجيل الجهاز في FCM. تأكد من تفعيل FCM Registration API وربط Web Push (VAPID) بنفس مشروع Firebase المستخدم في التطبيق.',
+        };
+      }
       return {
         success: false,
-        error: err.message || 'حدث خطأ أثناء تفعيل إشعارات الهاتف.',
+        error: message || 'حدث خطأ أثناء تفعيل إشعارات الهاتف.',
       };
     } finally {
       fcmRegistrationPromise = null;
