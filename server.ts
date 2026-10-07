@@ -13,7 +13,13 @@ import crypto from 'crypto';
 import { createRemindersRouter, sendWhatsAppReminderTemplate } from './src/server/remindersCron.js';
 import { createSubscriptionGuard, evaluateSubscription, type TeacherSubscriptionData } from './src/server/subscriptionAccess.js';
 import { createAccountRouter } from './src/server/accountRoutes.js';
+import { installPiiLogInterceptor } from './src/server/piiScrubber.js';
 import { createBillingRouter } from './src/server/billingRoutes.js';
+import { alertsService } from './src/server/alertsService.js';
+import { sentryServer } from './src/server/sentryServer.js';
+
+// Automatically scrub and mask PII (emails, phones, credentials) from all server logs
+installPiiLogInterceptor();
 import { createAdminRouter } from './src/server/adminRoutes.js';
 import { materializeRemindersForTeacher, materializeAllActiveTeachers } from './src/server/reminderMaterializer.js';
 import { dispatchReminderQueue } from './src/server/reminderDispatcher.js';
@@ -143,6 +149,18 @@ app.use((req, res, next) => {
   return express.json({ limit: '2mb' })(req, res, next);
 });
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+
+// 5xx and HTTP response status metrics tracking for uptime & alerts
+app.use((_req, res, next) => {
+  const originalEnd = res.end.bind(res);
+  res.end = function (...args: any[]) {
+    try {
+      alertsService.recordHttpMetric(res.statusCode);
+    } catch (_) {}
+    return (originalEnd as any)(...args);
+  } as any;
+  next();
+});
 
 // Shared Gemini client utility
 const ai = new GoogleGenAI({
@@ -1124,9 +1142,33 @@ app.get('/api/reminders/cron', async (req, res) => {
   }
 });
 
+// Standard Uptime Monitor endpoint
+app.get('/health', async (_req, res) => {
+  const metric = alertsService.get5xxErrorRate();
+  return res.status(200).json({
+    ok: true,
+    status: 'healthy',
+    uptime: Math.round(process.uptime()),
+    errorRate5xx: metric.errorRate,
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // Simple public health check (no external dependency calls per Vercel serverless request cost optimizations)
 app.get('/api/health', async (_req, res) => {
   return res.status(200).json({ ok: true });
+});
+
+// Platform Alerts History endpoint (Protected by verifyCronAuthHeader or admin)
+app.get('/api/monitoring/alerts', async (req, res) => {
+  if (!verifyCronAuthHeader(req)) {
+    return res.status(401).json({ error: 'غير مصرح به: يتطلب رمز تفويض.' });
+  }
+  return res.status(200).json({
+    ok: true,
+    alerts: alertsService.getAlerts(),
+    metrics: alertsService.get5xxErrorRate(),
+  });
 });
 
 // Detailed health check endpoint with real checks (Firebase Admin, Upstash Redis ping, Gemini key presence)
@@ -1177,6 +1219,15 @@ app.get('/api/health/deep', async (req, res) => {
 
 // Automated 15-Minute Class Reminders & WhatsApp/Notifications API Route (Protected)
 app.use('/api/reminders', verifyFirebaseToken, userRateLimiter, createRemindersRouter());
+
+// Account Management (GDPR Data Deletion & Export)
+app.use('/api/account', verifyFirebaseToken, createAccountRouter());
+
+// Billing & Subscriptions API Route
+app.use('/api/billing', verifyFirebaseToken, createBillingRouter());
+
+// Admin Operations & Dashboard API Route
+app.use('/api/admin', verifyFirebaseToken, createAdminRouter());
 
 // Centralized error boundary: never expose internal stack traces or provider details.
 app.use((error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {

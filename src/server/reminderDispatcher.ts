@@ -14,6 +14,7 @@ import {
   utcToLocalParts,
 } from './reminderQueue.js';
 import { buildMobilePushPayload, chunkFcmTokens, resolveDatabaseId } from '../../server.js';
+import { alertsService } from './alertsService.js';
 
 export interface DispatcherOptions {
   now?: Date;
@@ -171,6 +172,14 @@ export async function dispatchReminderQueue(
         const lagSec = Math.max(0, Math.floor((now.getTime() - fireAtDate.getTime()) / 1000));
         if (lagSec > shardMaxLag) {
           shardMaxLag = lagSec;
+        }
+        if (lagSec > 120) {
+          alertsService.checkReminderDelayAlert(fireAtDate.getTime(), now.getTime(), {
+            shard: shardId,
+            reminderId: docRef.id,
+            teacherId: itemData.teacherId,
+            scheduleId: itemData.scheduleId,
+          });
         }
 
         const tokens: string[] = Array.isArray(itemData.tokens) ? itemData.tokens : [];

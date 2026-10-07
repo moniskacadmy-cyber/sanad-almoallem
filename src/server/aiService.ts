@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { FieldValue, getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
 import { getApps } from 'firebase-admin/app';
+import { alertsService } from './alertsService.js';
 
 export function resolveDatabaseId(): string | undefined {
   const effective =
@@ -274,9 +275,14 @@ export async function isCircuitBreakerTripped(): Promise<{ tripped: boolean; cur
   const limit = getDailyCostLimitUsd();
   const today = getTodayDateString();
   const memoryCost = memoryDailyCostMap.get(today) || 0;
+  const tripped = memoryCost >= limit;
+
+  if (tripped) {
+    alertsService.checkGeminiBudgetAlert(memoryCost, limit, { date: today, reason: 'Circuit breaker triggered' });
+  }
 
   return {
-    tripped: memoryCost >= limit,
+    tripped,
     currentEstimatedCost: memoryCost,
     limit,
   };
@@ -285,7 +291,13 @@ export async function isCircuitBreakerTripped(): Promise<{ tripped: boolean; cur
 export function recordMemoryCost(costUsd: number): void {
   const today = getTodayDateString();
   const current = memoryDailyCostMap.get(today) || 0;
-  memoryDailyCostMap.set(today, current + costUsd);
+  const newTotal = current + costUsd;
+  memoryDailyCostMap.set(today, newTotal);
+
+  const limit = getDailyCostLimitUsd();
+  if (newTotal >= limit) {
+    alertsService.checkGeminiBudgetAlert(newTotal, limit, { date: today });
+  }
 }
 
 /**

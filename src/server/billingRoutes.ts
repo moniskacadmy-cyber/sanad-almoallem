@@ -7,6 +7,7 @@ import {
   calculateExtendedSubscriptionDates,
 } from './billing.js';
 import { resolveDatabaseId } from '../../server.js';
+import { alertsService } from './alertsService.js';
 
 export function createBillingRouter() {
   const router = Router();
@@ -87,6 +88,7 @@ export function createBillingRouter() {
         const isValidSignature = verifyBillingHmacSignature(rawBody, signatureHeader, secret);
         if (!isValidSignature) {
           console.warn('Billing webhook HMAC verification failed.');
+          alertsService.recordPaymentWebhookFailure('HMAC signature verification failed', { signatureHeader });
           return res.status(401).json({ error: 'توقيع الـ Webhook غير صحيح.' });
         }
       }
@@ -101,6 +103,7 @@ export function createBillingRouter() {
 
       if (!uid) {
         console.warn('Webhook received without uid metadata:', body);
+        alertsService.recordPaymentWebhookFailure('Missing teacher uid in webhook metadata', { eventId, eventType });
         return res.status(400).json({ error: 'معرّف المعلم (uid) غير موجود في بيانات الدفع.' });
       }
 
@@ -195,6 +198,7 @@ export function createBillingRouter() {
       return res.status(200).json({ success: true, processed: true });
     } catch (err: any) {
       console.error('Error in /api/billing/webhook:', err);
+      alertsService.recordPaymentWebhookFailure('Unhandled exception processing webhook', {}, err);
       return res.status(500).json({ error: 'حدث خطأ أثناء معالجة الـ Webhook.' });
     }
   });

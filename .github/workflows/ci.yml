@@ -27,6 +27,7 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm run lint
       - run: npm test
+      - run: npm run build
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -47,12 +48,17 @@ jobs:
           curl -sf http://127.0.0.1:8080/ > /dev/null
           curl -sf http://127.0.0.1:9099/ > /dev/null
 
-      - name: Run Firebase Rules integration tests
+      - name: Run Firebase Rules and Emulator E2E tests
         env:
           FIRESTORE_EMULATOR_HOST: 127.0.0.1:8080
           FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
           FIREBASE_PROJECT_ID: demo-sanad
-        run: node --import tsx --test tests/firestoreRules.emulator.integration.ts
+        run: |
+          node --import tsx --test tests/firestoreRules.emulator.integration.ts
+          node --import tsx --test tests/emulatorE2EWorkflow.test.ts
+
+      - name: Run Post-Build Smoke Test
+        run: npx tsx scripts/smoke-test.ts
 
       - name: Print emulator logs on failure
         if: failure()

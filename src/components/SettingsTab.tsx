@@ -3,6 +3,7 @@ import { TeacherProfile, Student, ScheduleSlot, LibraryItem, BackupData, Reminde
 import { updateTeacherProfile, auth, fetchAllStudentLessons, importFullTeacherBackup, requestAndSaveFCMToken, signOutTeacher } from '../firebase';
 import { useBackHandler } from '../services/backHandler';
 import { PWAInstallButton } from '../PWAInstallButton';
+import { PrivacyTermsModal } from './PrivacyTermsModal';
 
 const triggerConfetti = (opts: Record<string, any>) => {
   import('canvas-confetti').then((m) => m.default(opts)).catch(() => {});
@@ -24,6 +25,7 @@ import {
 import {
   User,
   Shield,
+  FileText,
   CreditCard,
   Download,
   Upload,
@@ -99,6 +101,16 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [importError, setImportError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Delete Account State (Right to be Forgotten)
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Privacy & Terms State
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  const [privacyModalTab, setPrivacyModalTab] = useState<'privacy' | 'terms'>('privacy');
+
   // Automated Class Reminders State (15-min Cron Job & Web Push FCM)
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(() => getStoredReminderSettings());
   const [browserPermission, setBrowserPermission] = useState<string>(() => {
@@ -152,6 +164,42 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   useBackHandler(showImportModal, () => setShowImportModal(false), 'settings_import_modal');
   useBackHandler(showLogsModal, () => setShowLogsModal(false), 'settings_logs_modal');
   useBackHandler(showTestModal, () => setShowTestModal(false), 'settings_test_modal');
+  useBackHandler(showDeleteAccountModal, () => setShowDeleteAccountModal(false), 'settings_delete_account_modal');
+  useBackHandler(showPrivacyModal, () => setShowPrivacyModal(false), 'settings_privacy_modal');
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmationText.trim() !== 'حذف') {
+      setDeleteError('يرجى كتابة كلمة "حذف" في المربع أدناه لتأكيد رغبتك في الحذف النهائي.');
+      return;
+    }
+
+    setIsDeletingAccount(true);
+    setDeleteError(null);
+    try {
+      const currentUser = auth.currentUser;
+      const token = currentUser ? await currentUser.getIdToken() : '';
+      const response = await fetch('/api/account/delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : '',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'فشل حذف الحساب من السيرفر.');
+      }
+
+      await signOutTeacher(auth);
+      window.location.reload();
+    } catch (err: any) {
+      console.error('Account deletion error:', err);
+      setDeleteError(err.message || 'حدث خطأ أثناء محاولة حذف الحساب.');
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
 
   const handleTestEndOfDaySummary = () => {
     const res = sendEndOfDaySummaryNotification({
@@ -467,28 +515,68 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     }
   };
 
-  // Export Students as CSV
-  const handleExportStudentsCSV = () => {
-    const headers = ['الاسم', 'رقم الواتساب', 'المادة', 'نوع الحصة', 'سعر الساعة (ج.م)', 'حالة الدفع'];
-    const rows = students.map((s) => [
-      `"${s.name}"`,
-      `"${s.whatsapp || ''}"`,
-      `"${s.subject}"`,
-      `"${s.classType === 'online' ? 'أونلاين' : s.classType === 'trial' ? 'حصة تجريبية' : s.classType === 'center' ? 'سنتر' : 'حضور شخصي'}"`,
-      s.hourlyRate || (s.monthlyFee ? Math.round(s.monthlyFee / 4) : 100),
-      `"${s.paymentStatus === 'paid' ? 'دفع' : 'لم يدفع'}"`,
-    ]);
+  // Export Students and Lessons as Excel-compatible CSV (with UTF-8 BOM)
+  const handleExportStudentsCSV = async () => {
+    setIsExporting(true);
+    setExportNotice('جارٍ تجميع بيانات الطلاب وسجل الحصص لملف Excel...');
+    try {
+      const allLessons = await fetchAllStudentLessons(profile.id, students);
+      const studentHeaders = ['اسم الطالب', 'رقم الواتساب', 'المادة', 'المرحلة الدراسية', 'نوع الحصة', 'سعر الحصة (ج.م)', 'حالة الدفع', 'عدد الحصص المسجلة'];
+      const studentRows = students.map((s) => [
+        `"${(s.name || '').replace(/"/g, '""')}"`,
+        `"${(s.whatsapp || '').replace(/"/g, '""')}"`,
+        `"${(s.subject || profile.subject || '').replace(/"/g, '""')}"`,
+        `"${(s.grade || '').replace(/"/g, '""')}"`,
+        `"${s.classType === 'online' ? 'أونلاين' : s.classType === 'trial' ? 'حصة تجريبية' : s.classType === 'center' ? 'سنتر' : 'حضور شخصي'}"`,
+        s.hourlyRate || (s.monthlyFee ? Math.round(s.monthlyFee / 4) : 100),
+        `"${s.paymentStatus === 'paid' ? 'دفع' : 'لم يدفع'}"`,
+        allLessons[s.id]?.length || 0,
+      ]);
 
-    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `sanad_students_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setExportNotice('تم تصدير جدول الطلاب (Excel CSV) بنجاح!');
-    setTimeout(() => setExportNotice(null), 3000);
+      let csvContent = '\uFEFF=== جدول بيانات الطلاب ===\r\n' + studentHeaders.join(',') + '\r\n' + studentRows.join('\r\n') + '\r\n\r\n';
+
+      const lessonHeaders = ['اسم الطالب', 'تاريخ الحصة', 'الموضوع / ما تم شرحه', 'حالة الحضور', 'حالة التصفية', 'قيمة الحصة', 'ملاحظات / واجب'];
+      const lessonRows: string[] = [];
+      for (const s of students) {
+        const studentLessons = allLessons[s.id] || [];
+        for (const l of studentLessons) {
+          const lAny = l as any;
+          const lDate = l.date || (lAny.timestamp ? new Date(lAny.timestamp).toISOString().slice(0, 10) : '');
+          const attText = l.attendance === 'present' ? 'حضر' : l.attendance === 'excused' ? 'غياب بعذر' : 'غائب';
+          const settledText = l.settled ? 'تمت التصفية' : 'معلقة';
+          const costVal = l.cost ?? l.hourlyRate ?? s.hourlyRate ?? 100;
+          lessonRows.push([
+            `"${(s.name || '').replace(/"/g, '""')}"`,
+            `"${lDate}"`,
+            `"${(l.topic || lAny.time || '').replace(/"/g, '""')}"`,
+            `"${attText}"`,
+            `"${settledText}"`,
+            costVal,
+            `"${(l.homework || l.notes || '').replace(/"/g, '""')}"`,
+          ].join(','));
+        }
+      }
+
+      if (lessonRows.length > 0) {
+        csvContent += '=== سجل الحصص والدروس التفصيلي ===\r\n' + lessonHeaders.join(',') + '\r\n' + lessonRows.join('\r\n');
+      }
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sanad_students_and_lessons_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setExportNotice(`تم تصدير ملف Excel الشامل بنجاح! (${students.length} طالب • ${lessonRows.length} حصة)`);
+      triggerConfetti({ particleCount: 50, spread: 60, origin: { y: 0.8 } });
+      setTimeout(() => setExportNotice(null), 4000);
+    } catch (err) {
+      console.error('Error exporting Excel CSV:', err);
+      setExportNotice('حدث خطأ أثناء تصدير ملف Excel، يرجى المحاولة مرة أخرى.');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const getSubscriptionInfo = () => {

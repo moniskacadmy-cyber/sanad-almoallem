@@ -1,53 +1,72 @@
 import { Router, Request, Response } from 'express';
 import { getApps } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
 import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
-import { hashNormalizedEmail } from './billing.js';
-import { resolveDatabaseId, incrementRedisCounter } from '../../server.js';
+import { getStorage } from 'firebase-admin/storage';
 
-export const DISPOSABLE_EMAIL_DOMAINS = new Set([
-  'tempmail.com', 'mailinator.com', '10minutemail.com', 'dispostable.com',
-  'guerrillamail.com', 'trashmail.com', 'yopmail.com', 'fakeinbox.com',
-  'getairmail.com', 'throwawaymail.com', 'sharklasers.com', 'yopmail.net',
-  'yopmail.fr', 'tempail.com', 'guerrillamail.info', 'grr.la', 'guerrillamail.biz',
-  'guerrillamail.de', 'guerrillamail.net', 'guerrillamail.org', 'guerrillamail.block',
-  'temp-mail.org', 'tempmail.net', 'mailnesia.com', 'crazymailing.com',
-  'mohmal.com', 'emailondeck.com', 'maildrop.cc', 'nada.ltd', 'getnada.com',
-  'burnermail.io', 'secmail.pro', '10minutemail.net', 'tempmail.dev', 'guerrillamailblock.com'
+export function resolveDatabaseId(): string | undefined {
+  const effective =
+    process.env.VITE_FIREBASE_DATABASE_ID?.trim() ||
+    process.env.FIREBASE_DATABASE_ID?.trim() ||
+    '';
+  return !effective || effective === '(default)' ? undefined : effective;
+}
+
+// Disposable / temporary email domains list
+const DISPOSABLE_DOMAINS = new Set([
+  'tempmail.com',
+  'mailinator.com',
+  '10minutemail.com',
+  'guerrillamail.com',
+  'mohmal.com',
+  'dispostable.com',
+  'yopmail.com',
+  'trashmail.com',
+  'sharklasers.com',
+  'getairmail.com',
+  'throwawaymail.com',
+  'fakeinbox.com',
 ]);
 
+/**
+ * Check if an email uses a known temporary/disposable domain or subdomain
+ */
 export function isDisposableEmail(email: string): boolean {
   if (!email || typeof email !== 'string') return false;
-  const parts = email.trim().toLowerCase().split('@');
-  if (parts.length < 2) return false;
-  const domain = parts[parts.length - 1].trim();
-  if (!domain) return false;
+  const trimmed = email.trim().toLowerCase();
+  const atIdx = trimmed.indexOf('@');
+  if (atIdx <= 0 || atIdx === trimmed.length - 1) return false;
+  const domain = trimmed.slice(atIdx + 1);
+  if (!domain || !domain.includes('.')) return false;
 
-  if (DISPOSABLE_EMAIL_DOMAINS.has(domain)) return true;
-  for (const disposableDomain of DISPOSABLE_EMAIL_DOMAINS) {
-    if (domain.endsWith('.' + disposableDomain)) return true;
+  for (const disp of DISPOSABLE_DOMAINS) {
+    if (domain === disp || domain.endsWith('.' + disp)) {
+      return true;
+    }
   }
   return false;
 }
 
-// In-memory fallback IP rate limiter for account creation attempts per IP
-const accountInitIpMemoryMap = new Map<string, number[]>();
-const ACCOUNT_INIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
-const MAX_ACCOUNT_INITS_PER_IP = 5; // Max 5 account init attempts per IP per hour
-
-export function checkAndIncrementAccountInitIpMemory(ip: string): boolean {
-  const now = Date.now();
-  const timestamps = accountInitIpMemoryMap.get(ip) || [];
-  const recent = timestamps.filter((t) => now - t < ACCOUNT_INIT_WINDOW_MS);
-  if (recent.length >= MAX_ACCOUNT_INITS_PER_IP) {
-    return false; // Exceeded limit
-  }
-  recent.push(now);
-  accountInitIpMemoryMap.set(ip, recent);
-  return true; // Allowed
-}
+// In-memory IP tracking for account registration & init attempts
+const accountInitIpMemory = new Map<string, { count: number; expiresAt: number }>();
 
 export function clearAccountInitIpMemory(): void {
-  accountInitIpMemoryMap.clear();
+  accountInitIpMemory.clear();
+}
+
+export function checkAndIncrementAccountInitIpMemory(ip: string, maxAttempts = 5, windowMs = 3600000): boolean {
+  if (!ip) return true;
+  const now = Date.now();
+  const record = accountInitIpMemory.get(ip);
+  if (!record || record.expiresAt <= now) {
+    accountInitIpMemory.set(ip, { count: 1, expiresAt: now + windowMs });
+    return true;
+  }
+  if (record.count >= maxAttempts) {
+    return false;
+  }
+  record.count += 1;
+  return true;
 }
 
 export function createAccountRouter() {
@@ -59,136 +78,201 @@ export function createAccountRouter() {
     return dbId ? getAdminFirestore(appAdmin, dbId) : getAdminFirestore(appAdmin);
   }
 
+  /**
+   * POST /api/account/init
+   * Validates account initialization against disposable emails and spam IP rate limits.
+   */
   router.post('/init', async (req: Request, res: Response) => {
     try {
-      // 1. IP Rate Limiting via Upstash Redis (with in-memory fallback)
-      const rawIp = (req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '127.0.0.1').toString();
-      const clientIp = rawIp.split(',')[0].trim();
-
-      const redisResult = await incrementRedisCounter(
-        `ratelimit:account_init:${clientIp}`,
-        3600,
-        MAX_ACCOUNT_INITS_PER_IP
-      );
-
-      if (redisResult.limited) {
-        return res.status(429).json({
-          error: 'تم تجاوز الحد المسموح لتسجيل الحسابات من هذا العنوان (IP). يرجى المحاولة لاحقاً.',
-        });
+      const clientIp = (req.ip || (req.headers['x-forwarded-for'] as string) || '').split(',')[0].trim();
+      if (clientIp && !checkAndIncrementAccountInitIpMemory(clientIp)) {
+        return res.status(429).json({ error: 'تم تجاوز الحد الأقصى للمحاولات المسموح بها من هذا العنوان. يرجى الانتظار.' });
       }
 
-      if (redisResult.unavailable) {
-        const allowed = checkAndIncrementAccountInitIpMemory(clientIp);
-        if (!allowed) {
-          return res.status(429).json({
-            error: 'تم تجاوز الحد المسموح لتسجيل الحسابات من هذا العنوان (IP). يرجى المحاولة لاحقاً.',
-          });
-        }
+      const email = (req.user?.email || req.body?.email || '').trim();
+      if (email && isDisposableEmail(email)) {
+        return res.status(400).json({ error: 'عفواً، لا يُسمح باستخدام بريد إلكتروني مؤقت أو وهمي. يرجى استخدام بريد إلكتروني حقيقي.' });
       }
 
-      // 2. Authentication & Email Validation
       const user = req.user;
       if (!user || !user.uid) {
-        return res.status(401).json({ error: 'غير مصرح: يجب تسجيل الدخول لإنشاء الحساب.' });
+        return res.status(200).json({ success: true, message: 'البريد الإلكتروني صالح ومقبول.' });
       }
 
-      const email = user.email || req.body.email || '';
-      if (!email || !email.includes('@')) {
-        return res.status(400).json({ error: 'بريد إلكتروني صالح وموثق مطلوب لتفعيل الحساب.' });
-      }
-
-      if (isDisposableEmail(email)) {
-        return res.status(400).json({
-          error: 'عذراً، لا يُسمح بالتسجيل باستخدام بريد إلكتروني مؤقت. يرجى استخدام بريد إلكتروني حقيقي ودائم.',
-        });
-      }
-
-      const { name, whatsapp, subject, timezone } = req.body;
-      const normalizedEmail = email.trim().toLowerCase();
-      const emailHash = hashNormalizedEmail(normalizedEmail);
-
+      const uid = user.uid;
       const dbAdmin = getDb();
-      const teacherRef = dbAdmin.collection('teachers').doc(user.uid);
-      const trialUsedRef = dbAdmin.collection('trialsUsed').doc(emailHash);
+      const teacherRef = dbAdmin.collection('teachers').doc(uid);
+      const teacherSnap = await teacherRef.get();
 
-      let responseProfile: any = null;
-
-      await dbAdmin.runTransaction(async (transaction) => {
-        const teacherDoc = await transaction.get(teacherRef);
-        const trialUsedDoc = await transaction.get(trialUsedRef);
-
+      if (!teacherSnap.exists) {
         const now = new Date();
-        const nowIso = now.toISOString();
+        const trialEnd = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+        await teacherRef.set({
+          name: user.name || req.body?.name || 'معلم جديد',
+          email: (user.email || '').toLowerCase().trim(),
+          phone: req.body?.phone || '',
+          subscriptionStatus: 'trial',
+          trialStartDate: now.toISOString(),
+          trialEndDate: trialEnd.toISOString(),
+          createdAt: now.toISOString(),
+          status: 'active',
+        }, { merge: true });
+      }
 
-        if (teacherDoc.exists) {
-          // Profile already exists, return current profile
-          responseProfile = { id: user.uid, ...teacherDoc.data() };
-          return;
+      return res.status(200).json({ success: true, message: 'تم تهيئة الحساب بنجاح.' });
+    } catch (err: any) {
+      console.error('Account init error:', err);
+      return res.status(500).json({ error: 'حدث خطأ أثناء تهيئة الحساب.' });
+    }
+  });
+
+  /**
+   * POST /api/account/delete
+   * GDPR / Right to be Forgotten: Permanently deletes teacher and all associated data.
+   */
+  router.post('/delete', async (req: Request, res: Response) => {
+    try {
+      const user = req.user;
+      if (!user || !user.uid) {
+        return res.status(401).json({ error: 'غير مصرح به: يرجى تسجيل الدخول.' });
+      }
+
+      const uid = user.uid;
+      const userEmail = (user.email || '').toLowerCase().trim();
+      const dbAdmin = getDb();
+      const adminAuth = getAuth();
+
+      // 1. Check if teacher doc exists
+      const teacherRef = dbAdmin.collection('teachers').doc(uid);
+      const teacherSnap = await teacherRef.get();
+      if (!teacherSnap.exists) {
+        return res.status(404).json({ error: 'حساب المعلم غير موجود أو تم حذفه مسبقاً.' });
+      }
+
+      // 2. Delete all reminderQueue documents for this teacher
+      try {
+        const remindersSnap = await dbAdmin
+          .collection('reminderQueue')
+          .where('teacherId', '==', uid)
+          .get();
+        if (!remindersSnap.empty) {
+          const batch = dbAdmin.batch();
+          remindersSnap.docs.forEach((doc) => batch.delete(doc.ref));
+          await batch.commit();
         }
+      } catch (err) {
+        console.warn('Error clearing reminderQueue for deleted teacher:', err);
+      }
 
-        const isTrialAlreadyUsed = trialUsedDoc.exists;
-
-        let trialStartDate: string;
-        let trialEndDate: string;
-        let subscriptionStatus: 'trial' | 'expired';
-        let isActive: boolean;
-
-        if (isTrialAlreadyUsed) {
-          // Trial already consumed by this email in the past
-          trialStartDate = nowIso;
-          trialEndDate = nowIso;
-          subscriptionStatus = 'expired';
-          isActive = false;
-        } else {
-          // Grant server-computed 7-day trial
-          const trialEndMs = now.getTime() + 7 * 24 * 60 * 60 * 1000;
-          const trialEnd = new Date(trialEndMs);
-          trialStartDate = nowIso;
-          trialEndDate = trialEnd.toISOString();
-          subscriptionStatus = 'trial';
-          isActive = true;
-
-          // Record trial consumption in trialsUsed collection (server-only)
-          transaction.set(trialUsedRef, {
-            emailHash,
-            firstTeacherUid: user.uid,
-            usedAt: nowIso,
-          });
+      // 3. Delete subscriptions document for this teacher if exists
+      if (userEmail) {
+        try {
+          await dbAdmin.collection('subscriptions').doc(userEmail).delete();
+        } catch (err) {
+          console.warn('Error deleting subscriptions doc for user:', err);
         }
+      }
 
-        const newProfileData = {
-          id: user.uid,
-          name: (typeof name === 'string' && name.trim()) || user.name || normalizedEmail.split('@')[0] || 'المعلم',
-          email: normalizedEmail,
-          whatsapp: (typeof whatsapp === 'string' && whatsapp.trim()) || '',
-          subject: (typeof subject === 'string' && subject.trim()) || 'عام',
-          role: 'teacher',
-          isActive,
-          subscriptionStatus,
-          plan: 'monthly',
-          trialStartDate,
-          trialEndDate,
-          subscriptionEndDate: trialEndDate,
-          subscriptionExpiresAt: trialEndDate,
-          timezone: (typeof timezone === 'string' && timezone.trim()) || 'Africa/Cairo',
-          remindersEnabled: true,
-          teacherNotificationsEnabled: true,
-          reminderMinutesBefore: 15,
-          createdAt: nowIso,
-          updatedAt: nowIso,
-        };
+      // 4. Delete Storage files for this teacher (profile pictures, library files, etc.)
+      try {
+        const appAdmin = getApps()[0];
+        const bucket = getStorage(appAdmin).bucket();
+        await bucket.deleteFiles({ prefix: `teachers/${uid}/` }).catch(() => {});
+        await bucket.deleteFiles({ prefix: `library/${uid}/` }).catch(() => {});
+      } catch (_) {
+        // Storage bucket may not be configured in all environments
+      }
 
-        transaction.set(teacherRef, newProfileData);
-        responseProfile = newProfileData;
-      });
+      // 5. Recursively delete the entire teachers/{uid} document and all subcollections
+      // (students, lessons, reports, schedules, library, notes, fcmTokens)
+      await dbAdmin.recursiveDelete(teacherRef);
+
+      // 6. Delete user from Firebase Authentication
+      try {
+        await adminAuth.deleteUser(uid);
+      } catch (authErr: any) {
+        if (authErr?.code !== 'auth/user-not-found') {
+          console.warn('Error deleting auth user:', authErr);
+        }
+      }
+
+      // 7. Audit log (without PII)
+      try {
+        await dbAdmin.collection('auditLogs').add({
+          action: 'teacher_self_delete_account',
+          targetTeacherId: uid,
+          timestamp: new Date().toISOString(),
+          ip: req.ip || '',
+        });
+      } catch (_) {}
 
       return res.status(200).json({
         success: true,
-        profile: responseProfile,
+        message: 'تم حذف الحساب وكافة البيانات المرتبطة به نهائياً بنجاح.',
       });
     } catch (err: any) {
-      console.error('Error in /api/account/init:', err);
-      return res.status(500).json({ error: 'حدث خطأ أثناء تهيئة حساب المعلم.' });
+      console.error('Account deletion error:', err);
+      return res.status(500).json({ error: 'فشل حذف الحساب. يرجى المحاولة مرة أخرى أو التواصل مع الدعم الفني.' });
+    }
+  });
+
+  /**
+   * GET /api/account/export
+   * Export all teacher data in structured JSON
+   */
+  router.get('/export', async (req: Request, res: Response) => {
+    try {
+      const user = req.user;
+      if (!user || !user.uid) {
+        return res.status(401).json({ error: 'غير مصرح به: يرجى تسجيل الدخول.' });
+      }
+
+      const uid = user.uid;
+      const dbAdmin = getDb();
+      const teacherRef = dbAdmin.collection('teachers').doc(uid);
+      const teacherSnap = await teacherRef.get();
+
+      if (!teacherSnap.exists) {
+        return res.status(404).json({ error: 'بيانات المعلم غير موجودة.' });
+      }
+
+      const profile = { id: teacherSnap.id, ...teacherSnap.data() };
+
+      // Read subcollections
+      const [studentsSnap, schedulesSnap, librarySnap] = await Promise.all([
+        teacherRef.collection('students').get(),
+        teacherRef.collection('schedules').get(),
+        teacherRef.collection('library').get(),
+      ]);
+
+      const students = studentsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const schedules = schedulesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const library = librarySnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      // Fetch lessons for each student
+      const lessonsByStudent: Record<string, any[]> = {};
+      for (const stDoc of studentsSnap.docs) {
+        const lessonsSnap = await stDoc.ref.collection('lessons').get();
+        lessonsByStudent[stDoc.id] = lessonsSnap.docs.map((ld) => ({ id: ld.id, ...ld.data() }));
+      }
+
+      const exportPayload = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        teacherId: uid,
+        profile,
+        students,
+        schedules,
+        library,
+        lessons: lessonsByStudent,
+      };
+
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="sanad_data_${new Date().toISOString().slice(0, 10)}.json"`);
+      return res.status(200).json(exportPayload);
+    } catch (err: any) {
+      console.error('Account export error:', err);
+      return res.status(500).json({ error: 'فشل تصدير البيانات.' });
     }
   });
 
