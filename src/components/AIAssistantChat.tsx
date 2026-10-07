@@ -1,24 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import {
-  Bot,
-  X,
-  Send,
-  Sparkles,
-  AlertCircle,
-  User,
-  RefreshCw,
-  Lock,
-  Shield,
-  EyeOff,
-  Eye,
-  BookOpen,
-  HelpCircle,
-  FileText,
-  MessageCircle,
-  Calendar,
-  BarChart3,
-  Lightbulb,
-} from 'lucide-react';
+import { Bot, X, Send, Sparkles, AlertCircle, User, RefreshCw, Lock, Shield, EyeOff, Eye } from 'lucide-react';
 import { TeacherProfile, Student, ScheduleSlot } from '../types';
 import { auth, fetchAllStudentLessons } from '../firebase';
 import { VoiceInputButton } from './VoiceInputButton';
@@ -36,11 +17,6 @@ interface AIAssistantChatProps {
   students: Student[];
   schedules: ScheduleSlot[];
   onOpenUpgradeModal: () => void;
-  isOpenControlled?: boolean;
-  onCloseControlled?: () => void;
-  contextStudent?: Student | null;
-  onClearContextStudent?: () => void;
-  initialPrompt?: string;
 }
 
 export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
@@ -48,35 +24,17 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
   students,
   schedules,
   onOpenUpgradeModal,
-  isOpenControlled,
-  onCloseControlled,
-  contextStudent,
-  onClearContextStudent,
-  initialPrompt,
 }) => {
-  const [internalIsOpen, setInternalIsOpen] = useState(false);
-  const isOpen = isOpenControlled !== undefined ? isOpenControlled : internalIsOpen;
-
-  const handleClose = () => {
-    if (onCloseControlled) {
-      onCloseControlled();
-    } else {
-      setInternalIsOpen(false);
-    }
-  };
-
-  const handleOpen = () => {
-    setInternalIsOpen(true);
-  };
+  const [isOpen, setIsOpen] = useState(false);
 
   // Close AI Assistant on Back button press
-  useBackHandler(isOpen, handleClose, 'ai_assistant_chat');
+  useBackHandler(isOpen, () => setIsOpen(false), 'ai_assistant_chat');
   const [inputMessage, setInputMessage] = useState('');
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
       role: 'assistant',
-      text: `أهلاً بك أ. ${profile.name || 'المعلم'} 👋\nأنا مساعدك الذكي في منصة "سند المعلم". اختر أحد الإجراءات السريعة أدناه أو اكتب سؤالك لتحضير الدروس، الاختبارات، وتحليل أداء الطلاب:`,
+      text: `أهلاً بك أ. ${profile.name || 'المعلم'} 👋\nأنا مساعدك الذكي في منصة "سند المعلم". كيف يمكنني مساعدتك اليوم في جدولك، طلابك، أو تحضير الدروس والتقارير؟`,
       timestamp: new Date(),
     },
   ]);
@@ -89,14 +47,8 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
       return false;
     }
   });
+  const [showPrivacyNotice, setShowPrivacyNotice] = useState<boolean>(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  // If initialPrompt provided when opened, populate input or auto-send
-  useEffect(() => {
-    if (initialPrompt && isOpen) {
-      setInputMessage(initialPrompt);
-    }
-  }, [initialPrompt, isOpen]);
 
   const toggleMaskStudentNames = () => {
     setMaskStudentNames((prev) => {
@@ -159,7 +111,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
     }
   }, [messages, isOpen]);
 
-  // Build client summary context (SAFE: student names, schedules, unsettled count ONLY; NO phone numbers / secrets)
+  // Build client summary context (SAFE: student names, schedules, unsettled count ONLY; NO phone numbers / financial details)
   const buildClientSummary = () => {
     const studentNameMap = new Map<string, string>();
     let counter = 1;
@@ -195,159 +147,62 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
       todayClasses: todaySlots.map(formatSlot),
       tomorrowClasses: tomorrowSlots.map(formatSlot),
       unsettledLessonsCount: unsettledCount,
-      focusedStudent: contextStudent
-        ? {
-            name: resolveName(contextStudent.name),
-            subject: contextStudent.subject || profile.subject,
-            learningStyle: contextStudent.learningStyle || '',
-          }
-        : undefined,
     };
   };
 
-  const handleSendMessage = async (customText?: string) => {
-    const trimmed = (customText !== undefined ? customText : inputMessage).trim();
+  const handleSendMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = inputMessage.trim();
     if (!trimmed || isLoading) return;
-    if (trimmed.length > 2000) {
-      alert('الرسالة طويلة جداً. الحد الأقصى 2000 حرف لكل رسالة.');
-      return;
-    }
-    if (!isSubscriptionActive) {
-      alert('المساعد الذكي متاح فقط للأعضاء أصحاب الاشتراكات النشطة.');
-      onOpenUpgradeModal();
-      return;
-    }
+    if (trimmed.length > 2000) { alert('الرسالة طويلة جداً. الحد الأقصى 2000 حرف لكل رسالة.'); return; }
+    if (!isSubscriptionActive) { alert('المساعد الذكي متاح فقط للأعضاء أصحاب الاشتراكات النشطة.'); onOpenUpgradeModal(); return; }
     const userMsg: Message = { id: Date.now().toString(), role: 'user', text: trimmed, timestamp: new Date() };
-    setMessages((prev) => [...prev, userMsg]);
-    setInputMessage('');
-    setIsLoading(true);
+    setMessages((prev) => [...prev, userMsg]); setInputMessage(''); setIsLoading(true);
     try {
-      const recentHistory = messages.slice(-6).map((m) => ({
-        role: m.role === 'user' ? 'user' : 'model',
-        text: m.text.slice(0, 1000),
-      }));
-      const currentUser = auth.currentUser;
-      const token = currentUser ? await currentUser.getIdToken() : '';
+      const recentHistory = messages.slice(-6).map((m) => ({ role: m.role === 'user' ? 'user' : 'model', text: m.text.slice(0, 1000) }));
+      const currentUser = auth.currentUser; const token = currentUser ? await currentUser.getIdToken() : '';
       const summary = buildClientSummary();
       const response = await fetch('/api/ai/assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
         body: JSON.stringify({ message: trimmed, messagesHistory: recentHistory, summary, maskStudentNames }),
       });
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error || 'فشل الاتصال بالمساعد الذكي.');
-      }
+      if (!response.ok) { const errData = await response.json().catch(() => ({})); throw new Error(errData.error || 'فشل الاتصال بالمساعد الذكي.'); }
       if (!response.body) throw new Error('لم يتم استلام بث من المساعد الذكي.');
       const assistantId = (Date.now() + 1).toString();
       setMessages((prev) => [...prev, { id: assistantId, role: 'assistant', text: '', timestamp: new Date() }]);
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
+      const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
       while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
+        const { value, done } = await reader.read(); if (done) break;
         buffer += decoder.decode(value, { stream: true });
-        const events = buffer.split('\n\n');
-        buffer = events.pop() || '';
+        const events = buffer.split('\n\n'); buffer = events.pop() || '';
         for (const event of events) {
-          const line = event.split('\n').find((item) => item.startsWith('data: '));
-          if (!line) continue;
-          const payload = line.slice(6);
-          if (payload === '[DONE]') continue;
-          const chunk = JSON.parse(payload);
-          if (chunk.error) throw new Error(chunk.error);
-          if (chunk.text)
-            setMessages((prev) =>
-              prev.map((m) => (m.id === assistantId ? { ...m, text: m.text + chunk.text } : m))
-            );
+          const line = event.split('\n').find((item) => item.startsWith('data: ')); if (!line) continue;
+          const payload = line.slice(6); if (payload === '[DONE]') continue;
+          const chunk = JSON.parse(payload); if (chunk.error) throw new Error(chunk.error);
+          if (chunk.text) setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, text: m.text + chunk.text } : m));
         }
       }
       if (buffer.trim()) {
         const line = buffer.split('\n').find((item) => item.startsWith('data: '));
-        if (line) {
-          const payload = line.slice(6);
-          if (payload !== '[DONE]') {
-            const chunk = JSON.parse(payload);
-            if (chunk.error) throw new Error(chunk.error);
-            if (chunk.text)
-              setMessages((prev) =>
-                prev.map((m) => (m.id === assistantId ? { ...m, text: m.text + chunk.text } : m))
-              );
-          }
-        }
+        if (line) { const payload = line.slice(6); if (payload !== '[DONE]') { const chunk = JSON.parse(payload); if (chunk.error) throw new Error(chunk.error); if (chunk.text) setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, text: m.text + chunk.text } : m)); } }
       }
     } catch (err: any) {
       console.error('AI Assistant Error:', err);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          text: err.message || 'حدث خطأ غير متوقع أثناء التواصل مع المساعد الذكي.',
-          timestamp: new Date(),
-        },
-      ]);
-    } finally {
-      setIsLoading(false);
-    }
+      setMessages((prev) => [...prev, { id: (Date.now() + 1).toString(), role: 'assistant', text: err.message || 'حدث خطأ غير متوقع أثناء التواصل مع المساعد الذكي.', timestamp: new Date() }]);
+    } finally { setIsLoading(false); }
   };
-
-  const handlePresetClick = (presetType: string) => {
-    const studentPart = contextStudent ? `للطالب/ـة (${contextStudent.name})` : '';
-    const subjectPart = `في مادة ${contextStudent?.subject || profile.subject || 'المادة'}`;
-
-    let prompt = '';
-    switch (presetType) {
-      case 'plan':
-        prompt = `أريد خطة درس تعليمية نموذجية واضحة ومبتكرة ${studentPart} ${subjectPart}. وزّع الخطة إلى: الأهداف التعليمية، التمهيد المشوق، الشرح المبسط مع أمثلة، والتطبيق العملي.`;
-        break;
-      case 'quiz':
-        prompt = `أنشئ 5 أسئلة تدريبية واختباراً قصيراً متنوعاً (اختيار من متعدد + أسئلة تفكير) ${studentPart} ${subjectPart} مع الإجابات النموذجية.`;
-        break;
-      case 'explain':
-        prompt = `اشرح لي مفهوماً تعليمياً معقداً بأسلوب تربوي ممتع وقصصي ومبسط ${studentPart} ${subjectPart} يناسب الفهم السريع.`;
-        break;
-      case 'analysis':
-        prompt = `قدّم لي تحليلاً تربوياً لأداء ومستوى الطالب ${studentPart} ${subjectPart}، مع تقديم نصائح لتطوير استيعابه وزيادة تحصيله الدراسي.`;
-        break;
-      case 'parent_message':
-        prompt = `صِغ لي رسالة لطيفة ومهنية لولي أمر الطالب ${studentPart} تطلعه على تقدمه الإيجابي في مادة ${profile.subject} وتلخص النقاط المطلوب متابعتها في المنزل.`;
-        break;
-      case 'homework':
-        prompt = `اقترح واجباً منزلياً متدرج الصعوبة (أساسي ومتقدم) ${studentPart} ${subjectPart} لترسيخ المفاهيم المشروحة اليوم.`;
-        break;
-      case 'weekly':
-        prompt = `ضع لي خطة أسبوعية لتوزيع الدروس والمراجعات لمادة ${profile.subject} تراعي التطبيق والتقييم المستمر.`;
-        break;
-      default:
-        prompt = `ساعدني في تحضير الدرس ${studentPart} ${subjectPart}`;
-    }
-
-    handleSendMessage(prompt);
-  };
-
   const handleVoiceTranscript = (text: string) => {
     setInputMessage((prev) => (prev ? `${prev} ${text}` : text));
   };
 
-  const aiPresets = [
-    { id: 'plan', label: '📝 خطة درس', icon: BookOpen },
-    { id: 'quiz', label: '❓ أسئلة واختبار', icon: HelpCircle },
-    { id: 'explain', label: '📚 شرح مبسط', icon: Lightbulb },
-    { id: 'analysis', label: '📊 تحليل الطالب', icon: BarChart3 },
-    { id: 'parent_message', label: '✉️ رسالة لولي الأمر', icon: MessageCircle },
-    { id: 'homework', label: '📝 واجب منزلي', icon: FileText },
-    { id: 'weekly', label: '📅 خطة أسبوعية', icon: Calendar },
-  ];
-
   return (
     <>
-      {/* Floating Trigger Button (when not externally controlled) */}
-      {!isOpen && isOpenControlled === undefined && (
+      {/* Floating Trigger Button */}
+      {!isOpen && (
         <button
           type="button"
-          onClick={handleOpen}
+          onClick={() => setIsOpen(true)}
           className="fixed bottom-20 left-4 z-40 flex items-center gap-2 px-4 py-3 rounded-full bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 text-white font-bold shadow-2xl hover:scale-105 active:scale-95 transition cursor-pointer border border-purple-400/40 group"
           title="المساعد الذكي"
         >
@@ -362,65 +217,44 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
 
       {/* Floating Chat Window (RTL) */}
       {isOpen && (
-        <div className="fixed bottom-4 left-4 z-50 w-[calc(100vw-2rem)] sm:w-[440px] max-h-[85vh] h-[600px] bg-slate-900 border border-purple-500/40 rounded-3xl shadow-2xl flex flex-col overflow-hidden text-right animate-in fade-in slide-in-from-bottom-5">
+        <div className="fixed bottom-4 left-4 z-50 w-[calc(100vw-2rem)] sm:w-[420px] max-h-[82vh] h-[580px] bg-slate-900 border border-purple-500/40 rounded-3xl shadow-2xl flex flex-col overflow-hidden text-right animate-in fade-in slide-in-from-bottom-5">
           {/* Header */}
-          <div className="bg-gradient-to-r from-purple-950 via-slate-900 to-indigo-950 p-3.5 border-b border-purple-500/30 flex items-center justify-between">
+          <div className="bg-gradient-to-r from-purple-950 via-slate-900 to-indigo-950 p-4 border-b border-purple-500/30 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-2xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-amber-300 shadow-inner">
                 <Bot className="w-5 h-5" />
               </div>
               <div>
                 <div className="flex items-center gap-1.5">
-                  <h3 className="text-sm font-black text-white">المساعد الذكي للمعلم</h3>
-                  <span className="px-1.5 py-0.5 rounded-md text-[9px] font-extrabold bg-purple-500/30 text-purple-200 border border-purple-400/30">
-                    سياق تدريسي 🧠
+                  <h3 className="text-sm font-black text-white">المساعد الذكي</h3>
+                  <span className="px-1.5 py-0.5 rounded-md text-[10px] font-extrabold bg-purple-500/30 text-purple-200 border border-purple-400/30">
+                    Gemini 🤖
                   </span>
                 </div>
-                <p className="text-[10px] text-purple-300/80">
-                  {contextStudent ? `مرتبط بالطالب: ${contextStudent.name}` : `مادة: ${profile.subject || 'عام'}`}
-                </p>
+                <p className="text-[10px] text-purple-300/80">مساعدك في الجدول والدروس والتقارير</p>
               </div>
             </div>
 
             <button
               type="button"
-              onClick={handleClose}
+              onClick={() => setIsOpen(false)}
               className="p-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
-          {/* Context Badge (if student is focused) */}
-          {contextStudent && (
-            <div className="bg-purple-950/80 border-b border-purple-500/30 px-3 py-1.5 flex items-center justify-between text-[11px]">
-              <div className="flex items-center gap-1.5 text-amber-300 font-bold">
-                <User className="w-3.5 h-3.5" />
-                <span>سياق الطالب: {contextStudent.name}</span>
-              </div>
-              {onClearContextStudent && (
-                <button
-                  type="button"
-                  onClick={onClearContextStudent}
-                  className="text-[10px] text-slate-400 hover:text-white underline cursor-pointer"
-                >
-                  إلغاء التركيز
-                </button>
-              )}
-            </div>
-          )}
-
           {/* Privacy & Masking Banner */}
-          <div className="bg-slate-950 border-b border-purple-500/20 px-3 py-1.5 flex items-center justify-between text-[11px]">
+          <div className="bg-slate-950 border-b border-purple-500/20 px-3 py-2 flex items-center justify-between text-[11px]">
             <div className="flex items-center gap-1.5 text-slate-300">
               <Shield className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span className="text-[10px] text-slate-300">حماية الخصوصية:</span>
+              <span className="text-[10px] text-slate-300">خصوصية الطلاب:</span>
             </div>
 
             <button
               type="button"
               onClick={toggleMaskStudentNames}
-              className={`flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer border ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer border ${
                 maskStudentNames
                   ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                   : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
@@ -428,27 +262,18 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
               title={maskStudentNames ? 'الأسماء الحقيقية مخفية ومستبدلة برموز' : 'اضغط لإخفاء الأسماء الحقيقية'}
             >
               {maskStudentNames ? <EyeOff className="w-3 h-3 text-emerald-400" /> : <Eye className="w-3 h-3 text-slate-400" />}
-              <span>{maskStudentNames ? 'الأسماء مشفرة' : 'إخفاء أسماء الطلاب'}</span>
+              <span>{maskStudentNames ? 'الأسماء مشفرة (طالب 1...)' : 'إخفاء أسماء الطلاب'}</span>
             </button>
           </div>
 
-          {/* Preset Actions Horizontal Bar */}
-          <div className="bg-slate-950/80 border-b border-purple-900/40 p-2 overflow-x-auto flex items-center gap-1.5 no-scrollbar flex-shrink-0">
-            {aiPresets.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                disabled={isLoading || !isSubscriptionActive}
-                onClick={() => handlePresetClick(p.id)}
-                className="whitespace-nowrap px-2.5 py-1 rounded-xl bg-purple-950/70 hover:bg-purple-900/80 border border-purple-500/30 text-purple-200 hover:text-white text-[10px] font-bold transition cursor-pointer flex items-center gap-1 active:scale-95 disabled:opacity-50"
-              >
-                <span>{p.label}</span>
-              </button>
-            ))}
+          {/* Disclaimer Note */}
+          <div className="bg-amber-500/10 border-b border-amber-500/20 px-3.5 py-1.5 flex items-center justify-center gap-1.5 text-[11px] text-amber-300/90 font-medium">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+            <span>إجابات الذكاء الاصطناعي قد تحتاج مراجعة</span>
           </div>
 
           {/* Messages Container */}
-          <div className="flex-1 p-3.5 overflow-y-auto space-y-3 bg-slate-950/60">
+          <div className="flex-1 p-4 overflow-y-auto space-y-3.5 bg-slate-950/60">
             {!isSubscriptionActive && (
               <div className="p-4 rounded-2xl bg-rose-950/40 border border-rose-500/40 text-center space-y-2">
                 <div className="w-10 h-10 rounded-2xl bg-rose-500/20 text-rose-300 mx-auto flex items-center justify-center">
@@ -456,7 +281,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
                 </div>
                 <h4 className="text-xs font-bold text-white">اشتراكك منتهي أو غير نشط</h4>
                 <p className="text-[11px] text-rose-200/80 leading-relaxed">
-                  المساعد الذكي متاح حصرياً للمعلمين أصحاب الاشتراكات السارية.
+                  المساعد الذكي متاح حصرياً للمعلمين أصحاب الاشتراكات السارية. يرجى تجديد أو ترقية خطتك للوصول.
                 </p>
                 <button
                   type="button"
@@ -484,7 +309,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
                 </div>
 
                 <div
-                  className={`max-w-[84%] rounded-2xl p-3 text-xs leading-relaxed whitespace-pre-wrap ${
+                  className={`max-w-[82%] rounded-2xl p-3 text-xs leading-relaxed whitespace-pre-wrap ${
                     m.role === 'user'
                       ? 'bg-purple-600 text-white rounded-tr-none'
                       : 'bg-slate-900 border border-purple-500/20 text-slate-100 rounded-tl-none shadow-sm'
@@ -508,7 +333,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
             {isLoading && (
               <div className="flex items-center gap-2 text-xs text-purple-300 bg-slate-900/80 p-3 rounded-2xl border border-purple-500/20 w-fit">
                 <RefreshCw className="w-4 h-4 animate-spin text-purple-400" />
-                <span>جارٍ تجهيز الإجابة بالذكاء الاصطناعي...</span>
+                <span>جارٍ التفكير ومعالجة سؤالك...</span>
               </div>
             )}
 
@@ -517,11 +342,8 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
 
           {/* Input Footer */}
           <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleSendMessage();
-            }}
-            className="p-2.5 bg-slate-900 border-t border-purple-500/30 flex items-center gap-2"
+            onSubmit={handleSendMessage}
+            className="p-3 bg-slate-900 border-t border-purple-500/30 flex items-center gap-2"
           >
             <VoiceInputButton onTranscript={handleVoiceTranscript} compact />
 
@@ -538,7 +360,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
             <button
               type="submit"
               disabled={isLoading || !inputMessage.trim() || !isSubscriptionActive}
-              className="p-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-40 disabled:hover:bg-purple-600 transition cursor-pointer shrink-0 shadow"
+              className="p-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-40 disabled:hover:bg-purple-600 transition cursor-pointer shrink-0"
               title="إرسال"
             >
               <Send className="w-4 h-4 rotate-180" />
@@ -549,3 +371,4 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
     </>
   );
 };
+
