@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { onAuthStateChanged, User, signOut } from 'firebase/auth';
+import { getRedirectResult, onAuthStateChanged, User, signOut } from 'firebase/auth';
 import {
   auth,
   checkIsAdmin,
@@ -239,29 +239,35 @@ export default function App() {
 
   // Listen to Auth State
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      try {
-        setCurrentUser(user);
-        if (user) {
-          try {
-            const adminStatus = await checkIsAdmin(user);
-            setIsAdmin(adminStatus);
-          } catch (e) {
+    // Resolve the result of a Google redirect after the browser returns to the app.
+    // onAuthStateChanged remains the source of truth for the signed-in user.
+    getRedirectResult(auth).catch((err) => {
+      console.error('Google redirect sign-in error:', err);
+    });
+
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+
+      if (user) {
+        // Do not block the initial app render on this Firestore lookup.
+        // A slow admin check should not make Google sign-in appear stuck.
+        setIsAdmin(false);
+        checkIsAdmin(user)
+          .then((adminStatus) => setIsAdmin(adminStatus))
+          .catch((e) => {
             console.warn('checkIsAdmin error:', e);
             setIsAdmin(false);
-          }
-          requestAndSaveFCMToken().then((result) => {
-            if (!result.success) console.warn('FCM notification registration:', result.error);
-          }).catch((e) => console.warn('FCM token error:', e));
-        } else {
-          setProfile(null);
-          setIsAdmin(false);
-        }
-      } catch (err) {
-        console.error('Error in onAuthStateChanged listener:', err);
-      } finally {
-        setLoadingAuth(false);
+          });
+
+        requestAndSaveFCMToken().then((result) => {
+          if (!result.success) console.warn('FCM notification registration:', result.error);
+        }).catch((e) => console.warn('FCM token error:', e));
+      } else {
+        setProfile(null);
+        setIsAdmin(false);
       }
+
+      setLoadingAuth(false);
     });
     return () => unsub();
   }, []);
