@@ -1479,13 +1479,9 @@ export async function requestAndSaveFCMToken(force = false): Promise<{
         try {
           const swUrl = `/firebase-messaging-sw.js?apiKey=${encodeURIComponent(firebaseConfig.apiKey || '')}&projectId=${encodeURIComponent(firebaseConfig.projectId || '')}&messagingSenderId=${encodeURIComponent(firebaseConfig.messagingSenderId || '')}&appId=${encodeURIComponent(firebaseConfig.appId || '')}&authDomain=${encodeURIComponent(firebaseConfig.authDomain || '')}&storageBucket=${encodeURIComponent(firebaseConfig.storageBucket || '')}`;
 
-          // Check if already registered for this scope first
-          const existingReg = await navigator.serviceWorker.getRegistration(FCM_SW_SCOPE);
-          if (existingReg) {
-            swReg = existingReg;
-          } else {
-            swReg = await navigator.serviceWorker.register(swUrl, { scope: FCM_SW_SCOPE });
-          }
+          // Always register the current URL. Reusing an existing registration without
+          // updating it can keep an old service worker/config after Firebase settings change.
+          swReg = await navigator.serviceWorker.register(swUrl, { scope: FCM_SW_SCOPE });
         } catch (swErr) {
           console.warn('Could not register firebase-messaging-sw.js directly:', swErr);
         }
