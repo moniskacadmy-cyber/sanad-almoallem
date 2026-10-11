@@ -27,8 +27,12 @@ test('security regression: active writes require isActive and an unexpired subsc
 test('security regression: pre-provisioned active subscriptions must match the admin record and require verified email', () => {
   assert.match(rules, /hasPreprovisionedSubscription/);
   assert.match(rules, /request\.auth\.token\.email_verified == true/);
-  assert.match(rules, /data\.subscriptionEndDate == get\(/);
-  assert.match(rules, /data\.plan == get\(/);
+  // The rule selects the exact-case or normalized-email admin record with a conditional expression.
+  // Assert both fields are sourced from the subscriptions collection without coupling to formatting.
+  assert.match(rules, /data\.subscriptionEndDate == \([\s\S]*?get\(\/databases\/\$\(database\)\/documents\/subscriptions\/\$\(request\.auth\.token\.email\)\)\.data\.subscriptionEndDate/);
+  assert.match(rules, /data\.plan == \([\s\S]*?get\(\/databases\/\$\(database\)\/documents\/subscriptions\/\$\(request\.auth\.token\.email\)\)\.data\.plan/);
+  assert.match(rules, /get\(\/databases\/\$\(database\)\/documents\/subscriptions\/\$\(normalizedEmail\)\)\.data\.subscriptionEndDate/);
+  assert.match(rules, /get\(\/databases\/\$\(database\)\/documents\/subscriptions\/\$\(normalizedEmail\)\)\.data\.plan/);
 });
 
 test('security regression: teacher profile update allowlist includes reminder settings and timezone', () => {
