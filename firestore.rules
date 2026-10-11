@@ -43,7 +43,7 @@ service cloud.firestore {
     function isValidNewTeacher(teacherId) {
       let data = incoming();
       let email = request.auth.token.email;
-      let normalizedEmail = request.auth.token.email.lower();
+      let normalizedEmail = request.auth.token.email != null ? request.auth.token.email.lower() : '';
       let hasExactSubscription = email != null &&
         exists(/databases/$(database)/documents/subscriptions/$(email));
       let hasNormalizedSubscription = email != null &&
