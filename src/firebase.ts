@@ -5,7 +5,7 @@ import {
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
-  signInWithPopup,
+  signInWithRedirect,
   GoogleAuthProvider,
   sendPasswordResetEmail,
   User,
@@ -252,15 +252,11 @@ export async function registerTeacher(params: {
 }
 
 // Google Sign-in helper
-export async function signInWithGoogle(): Promise<{ user: User; isNew: boolean }> {
+// Redirect flow avoids popup window polling issues caused by cross-origin opener policies.
+export async function signInWithGoogle(): Promise<void> {
   const provider = new GoogleAuthProvider();
-  const result = await signInWithPopup(auth, provider);
-  const user = result.user;
-  const teacherDoc = await getDoc(doc(db, 'teachers', user.uid));
-  return {
-    user,
-    isNew: !teacherDoc.exists(),
-  };
+  provider.setCustomParameters({ prompt: 'select_account' });
+  await signInWithRedirect(auth, provider);
 }
 
 // Teacher Profile Fetch / Realtime Listener
