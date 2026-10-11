@@ -42,10 +42,16 @@ service cloud.firestore {
     // Validation for new teacher profile registration
     function isValidNewTeacher(teacherId) {
       let data = incoming();
+      let email = request.auth.token.email;
+      let normalizedEmail = request.auth.token.email.lower();
+      let hasExactSubscription = email != null &&
+        exists(/databases/$(database)/documents/subscriptions/$(email));
+      let hasNormalizedSubscription = email != null &&
+        exists(/databases/$(database)/documents/subscriptions/$(normalizedEmail));
       let hasPreprovisionedSubscription =
-        request.auth.token.email != null &&
+        email != null &&
         request.auth.token.email_verified == true &&
-        exists(/databases/$(database)/documents/subscriptions/$(request.auth.token.email));
+        (hasExactSubscription || hasNormalizedSubscription);
 
       return isValidId(teacherId) &&
         data.keys().hasOnly([
@@ -55,9 +61,12 @@ service cloud.firestore {
           'createdAt', 'updatedAt'
         ]) &&
         data.id == teacherId &&
-        data.email == request.auth.token.email &&
+        request.auth.token.email != null &&
+        data.email is string &&
+        data.email.lower() == request.auth.token.email.lower() &&
         data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
-        data.whatsapp is string && data.whatsapp.size() >= 8 && data.whatsapp.size() <= 30 &&
+        data.whatsapp is string &&
+        (data.whatsapp.size() == 0 || (data.whatsapp.size() >= 8 && data.whatsapp.size() <= 30)) &&
         data.subject is string && data.subject.size() >= 2 && data.subject.size() <= 100 &&
         data.role in ['teacher', 'admin'] &&
         (data.role == 'teacher' || isAdmin()) &&
@@ -78,11 +87,19 @@ service cloud.firestore {
             hasPreprovisionedSubscription &&
             data.subscriptionStatus == 'active' &&
             data.isActive == true &&
-            data.subscriptionEndDate == get(/databases/$(database)/documents/subscriptions/$(request.auth.token.email)).data.subscriptionEndDate &&
+            data.subscriptionEndDate == (
+              hasExactSubscription
+                ? get(/databases/$(database)/documents/subscriptions/$(request.auth.token.email)).data.subscriptionEndDate
+                : get(/databases/$(database)/documents/subscriptions/$(normalizedEmail)).data.subscriptionEndDate
+            ) &&
             data.subscriptionExpiresAt == data.subscriptionEndDate &&
             data.trialEndDate >= request.time + duration.value(6, 'd') &&
             data.trialEndDate <= request.time + duration.value(8, 'd') &&
-            data.plan == get(/databases/$(database)/documents/subscriptions/$(request.auth.token.email)).data.plan
+            data.plan == (
+              hasExactSubscription
+                ? get(/databases/$(database)/documents/subscriptions/$(request.auth.token.email)).data.plan
+                : get(/databases/$(database)/documents/subscriptions/$(normalizedEmail)).data.plan
+            )
           )
         );
     }
@@ -98,7 +115,8 @@ service cloud.firestore {
       ]) &&
         data.updatedAt == request.time &&
         data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
-        data.whatsapp is string && data.whatsapp.size() >= 8 && data.whatsapp.size() <= 30 &&
+        data.whatsapp is string &&
+        (data.whatsapp.size() == 0 || (data.whatsapp.size() >= 8 && data.whatsapp.size() <= 30)) &&
         data.subject is string && data.subject.size() >= 2 && data.subject.size() <= 100 &&
         (!('currency' in data) || (data.currency is string && data.currency.size() <= 30)) &&
         (!('remindersEnabled' in data) || data.remindersEnabled is bool) &&
