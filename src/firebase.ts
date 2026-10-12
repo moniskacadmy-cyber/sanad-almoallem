@@ -6,6 +6,7 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged,
   signInWithRedirect,
+  signInWithPopup,
   GoogleAuthProvider,
   sendPasswordResetEmail,
   User,
@@ -252,11 +253,26 @@ export async function registerTeacher(params: {
 }
 
 // Google Sign-in helper
-// Redirect flow avoids popup window polling issues caused by cross-origin opener policies.
+// Prefer popup auth so the credential is returned directly to this page and is not
+// dependent on cross-site redirect storage. Fall back to redirect only when popups
+// are blocked or unsupported by the current browser environment.
 export async function signInWithGoogle(): Promise<void> {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
-  await signInWithRedirect(auth, provider);
+
+  try {
+    await signInWithPopup(auth, provider);
+  } catch (error: any) {
+    const code = typeof error?.code === 'string' ? error.code : '';
+    if (
+      code === 'auth/popup-blocked' ||
+      code === 'auth/operation-not-supported-in-this-environment'
+    ) {
+      await signInWithRedirect(auth, provider);
+      return;
+    }
+    throw error;
+  }
 }
 
 // Teacher Profile Fetch / Realtime Listener
