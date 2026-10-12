@@ -316,6 +316,9 @@ export default function App() {
       },
       (err) => {
         console.error('Error in teacher profile subscription', err);
+        if (isMounted) {
+          setProfileLoadError(err?.message || 'تعذر قراءة ملف المعلم من Firestore.');
+        }
       }
     );
 
