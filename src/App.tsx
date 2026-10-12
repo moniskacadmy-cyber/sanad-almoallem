@@ -82,6 +82,7 @@ export default function App() {
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [loadingTimeout, setLoadingTimeout] = useState(false);
   const [profileLoadingTimeout, setProfileLoadingTimeout] = useState(false);
+  const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
 
   // Safety net timer: Ensure loadingAuth never hangs indefinitely
   useEffect(() => {
@@ -276,6 +277,7 @@ export default function App() {
   useEffect(() => {
     if (!currentUser) {
       setProfile(null);
+      setProfileLoadError(null);
       return;
     }
 
@@ -287,6 +289,7 @@ export default function App() {
         if (!isMounted) return;
         if (p) {
           setProfile(p);
+          setProfileLoadError(null);
         } else {
           // If profile doc does not exist yet for signed-in user, auto-provision
           try {
@@ -298,10 +301,16 @@ export default function App() {
               subject: 'عام',
               existingUser: currentUser,
             });
-            if (isMounted) setProfile(newP);
-          } catch (createErr) {
+            if (isMounted) {
+              setProfile(newP);
+              setProfileLoadError(null);
+            }
+          } catch (createErr: any) {
             console.warn('Auto profile creation error:', createErr);
-            if (isMounted) setProfile(null);
+            if (isMounted) {
+              setProfile(null);
+              setProfileLoadError(createErr?.message || 'تعذر إنشاء ملف المعلم في Firestore.');
+            }
           }
         }
       },
@@ -486,8 +495,35 @@ export default function App() {
             timeoutMs={4000}
           />
         ) : (
-          <div className="w-full max-w-sm space-y-4">
-            <AuthModal onSuccess={() => {}} />
+          <div className="w-full max-w-sm space-y-4 rounded-2xl border border-amber-500/30 bg-slate-900/90 p-5">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/10 text-amber-300">
+              <AlertCircle className="h-6 w-6" />
+            </div>
+            <h2 className="text-base font-bold text-white">تم تسجيل الدخول، لكن تعذر تحميل بيانات المعلم</h2>
+            <p className="text-sm leading-6 text-slate-300">
+              لن نعيدك إلى شاشة تسجيل الدخول لأن حساب Google قد يكون متصلًا بالفعل. تعذر تحميل ملف المعلم من قاعدة البيانات.
+            </p>
+            {profileLoadError && (
+              <p className="break-words rounded-xl bg-slate-950 p-3 text-left text-xs text-amber-200" dir="ltr">
+                {profileLoadError}
+              </p>
+            )}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="flex-1 rounded-xl bg-purple-600 px-3 py-2.5 text-sm font-bold text-white hover:bg-purple-500"
+              >
+                إعادة المحاولة
+              </button>
+              <button
+                type="button"
+                onClick={() => signOut(auth)}
+                className="flex-1 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm font-bold text-slate-200 hover:bg-slate-700"
+              >
+                تسجيل الخروج
+              </button>
+            </div>
           </div>
         )}
       </div>
