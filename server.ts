@@ -652,7 +652,7 @@ app.post('/api/ai/transcribe', verifyFirebaseToken, (req, res, next) => aiRateLi
       return res.status(500).json({ error: 'خدمة الذكاء الاصطناعي غير مهيأة.' });
     }
 
-    const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    const modelName = 'gemini-3.5-transcribe';
     const audioPart = {
       inlineData: {
         mimeType: mimeType || 'audio/webm',
@@ -686,10 +686,15 @@ app.post('/api/ai/transcribe', verifyFirebaseToken, (req, res, next) => aiRateLi
 app.post('/api/ai/assistant', verifyFirebaseToken, (req, res, next) => aiRateLimiter('assistant', req, res, next), requireActiveSubscription, async (req, res) => {
   let streamStarted = false;
   try {
-    const { message, messagesHistory, summary } = req.body;
+    const { message, messagesHistory, summary, model } = req.body;
     if (!message || typeof message !== 'string') return res.status(400).json({ error: 'الرسالة مطلوبة.' });
     if (message.length > 2000) return res.status(400).json({ error: 'الرسالة طويلة جداً. الحد الأقصى 2000 حرف.' });
     if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: 'خدمة الذكاء الاصطناعي غير مهيأة حالياً.' });
+    
+    // Model selection
+    const allowedModels = ['gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.1-flash-lite'];
+    const selectedModel = allowedModels.includes(model) ? model : (process.env.GEMINI_MODEL || 'gemini-2.5-flash');
+
     const systemInstruction = 'أنت المساعد الذكي التربوي لمنصة سند المعلم. ساعد المعلم بإجابات عملية ومباشرة. اعتمد فقط على المعلومات المتاحة. إذا لم تتوفر المعلومة وضح ذلك ولا تبتكر بيانات. اجعل الإجابة مختصرة ومنظمة.';
     let formattedContext = '';
     if (summary && typeof summary === 'object') {
@@ -706,7 +711,7 @@ app.post('/api/ai/assistant', verifyFirebaseToken, (req, res, next) => aiRateLim
     if (Array.isArray(messagesHistory) && messagesHistory.length) { const recent = messagesHistory.slice(-6); historyText = 'سجل المحادثة السابقة:\n' + recent.map((m: any) => `${m.role === 'user' ? 'المعلم' : 'المساعد'}: ${typeof m.text === 'string' ? m.text.slice(0, 1000) : ''}`).join('\n') + '\n===============================\n'; }
     const fullPrompt = `${formattedContext}\n${historyText}سؤال المعلم الحالي:\n${message.slice(0, 2000).trim()}`;
     if (fullPrompt.length > 12000) return res.status(400).json({ error: 'حجم الطلب النهائي كبير جداً.' });
-    const stream = streamGeminiTextWithFreeFallback({ model: process.env.GEMINI_MODEL || 'gemini-2.5-flash', contents: fullPrompt, config: { systemInstruction, maxOutputTokens: 700 } });
+    const stream = streamGeminiTextWithFreeFallback({ model: selectedModel, contents: fullPrompt, config: { systemInstruction, maxOutputTokens: 700 } });
     res.status(200); res.setHeader('Content-Type', 'text/event-stream; charset=utf-8'); res.setHeader('Cache-Control', 'no-cache, no-transform'); res.setHeader('Connection', 'keep-alive'); res.setHeader('X-Accel-Buffering', 'no'); res.flushHeaders?.(); streamStarted = true;
     for await (const chunkText of stream) res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
     res.write('data: [DONE]\n\n'); return res.end();

@@ -7,7 +7,7 @@ import {
   renderTemplate,
   DEFAULT_WHATSAPP_TEMPLATES,
 } from '../types';
-import { auth, getAuthenticatedHeaders } from '../firebase';
+import { getAuthenticatedHeaders } from './authHelper';
 
 const REMINDER_SETTINGS_KEY = 'sanad_reminder_settings';
 const DEFAULT_SETTINGS: ReminderSettings = {
@@ -130,13 +130,14 @@ export async function checkRemindersApi(params: {
   matchedReminders: ReminderLog[];
 }> {
   try {
-    const idToken = await auth.currentUser?.getIdToken();
+    const headers = await getAuthenticatedHeaders();
+    if (!headers) {
+       console.warn('No auth token available in checkRemindersApi');
+       return { success: false, checkedCount: 0, remindersSent: 0, matchedReminders: [] };
+    }
     const response = await fetch('/api/reminders/check', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
-      },
+      headers,
       body: JSON.stringify({
         teacherId: params.teacher.id,
         teacherName: params.teacher.name,
@@ -149,14 +150,14 @@ export async function checkRemindersApi(params: {
     });
 
     if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.error || 'فشل فحص جدول التذكيرات.');
+       console.warn(`Auth token issue in checkRemindersApi: ${response.status}`);
+       return { success: false, checkedCount: 0, remindersSent: 0, matchedReminders: [] };
     }
 
     const data = await response.json();
     return data;
   } catch (err: any) {
-    console.error('checkRemindersApi error:', err);
+    console.warn('checkRemindersApi error (network/other):', err.message);
     return {
       success: false,
       checkedCount: 0,
@@ -213,13 +214,10 @@ export async function triggerTestReminderApi(params: {
   teacherWhatsapp: string;
   locationOrLink?: string;
 }) {
-  const idToken = await auth.currentUser?.getIdToken();
+  const headers = await getAuthenticatedHeaders();
   const res = await fetch('/api/reminders/trigger-test', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
-    },
+    headers,
     body: JSON.stringify(params),
   });
   if (!res.ok) {

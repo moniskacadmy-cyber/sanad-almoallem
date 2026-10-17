@@ -281,15 +281,6 @@ export async function signInWithGoogle(): Promise<{ user: User; isNew: boolean }
   };
 }
 
-// Auth Helper
-export async function getAuthenticatedHeaders(): Promise<HeadersInit> {
-  const token = auth.currentUser ? await auth.currentUser.getIdToken(true) : '';
-  return {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`
-  };
-}
-
 // Teacher Profile Fetch / Realtime Listener
 export function subscribeToTeacherProfile(
   teacherId: string,

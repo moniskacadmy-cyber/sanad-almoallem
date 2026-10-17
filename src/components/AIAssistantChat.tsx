@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Bot, X, Send, Sparkles, AlertCircle, User, RefreshCw, Lock } from 'lucide-react';
 import { TeacherProfile, Student, ScheduleSlot } from '../types';
 import { auth, fetchAllStudentLessons } from '../firebase';
+import { getAuthenticatedHeaders } from '../services/authHelper';
 import { VoiceInputButton } from './VoiceInputButton';
 import { useBackHandler } from '../services/backHandler';
 
@@ -72,6 +73,10 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
     return profile.subscriptionStatus === 'active' || profile.subscriptionStatus === 'trial';
   })();
 
+  const [selectedModel, setSelectedModel] = useState('gemini-3.1-flash-lite');
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+
   // Fetch unsettled lessons count for context summary
   useEffect(() => {
     if (isOpen && profile.id && students.length > 0) {
@@ -130,13 +135,20 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
     setMessages((prev) => [...prev, userMsg]); setInputMessage(''); setIsLoading(true);
     try {
       const recentHistory = messages.slice(-6).map((m) => ({ role: m.role === 'user' ? 'user' : 'model', text: m.text.slice(0, 1000) }));
-      const currentUser = auth.currentUser; const token = currentUser ? await currentUser.getIdToken(true) : '';
+      const headers = await getAuthenticatedHeaders();
       const summary = buildClientSummary();
       const response = await fetch('/api/ai/assistant', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
-        body: JSON.stringify({ message: trimmed, messagesHistory: recentHistory, summary }),
+        headers,
+        body: JSON.stringify({ message: trimmed, messagesHistory: recentHistory, summary, model: selectedModel }),
       });
+      
+      if (response.status === 401) {
+          // Token expired, handle silently or trigger re-auth
+          console.warn('Auth token expired in AIAssistantChat');
+          throw new Error('رمز الدخول غير صالح أو انتهت صلاحيته.');
+      }
+      
       if (!response.ok) { const errData = await response.json().catch(() => ({})); throw new Error(errData.error || 'فشل الاتصال بالمساعد الذكي.'); }
       if (!response.body) throw new Error('لم يتم استلام بث من المساعد الذكي.');
       const assistantId = (Date.now() + 1).toString();

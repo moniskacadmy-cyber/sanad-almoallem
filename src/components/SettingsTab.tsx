@@ -156,7 +156,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   };
 
   // WhatsApp Template Customization States
-  const [selectedTemplateKey, setSelectedTemplateKey] = useState<'welcome' | 'payment' | 'report' | 'lessonPrep'>('welcome');
+  const [selectedTemplateKey, setSelectedTemplateKey] = useState<'welcome' | 'payment' | 'report' | 'lessonPrep' | 'absenceReminder'>('welcome');
   const [templateText, setTemplateText] = useState('');
   const [savingTemplate, setSavingProfileTemplate] = useState(false);
   const [templateNotice, setTemplateNotice] = useState<string | null>(null);
@@ -164,6 +164,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   useEffect(() => {
     const t = profile.whatsappTemplates || {};
     const fallback = DEFAULT_WHATSAPP_TEMPLATES;
+    // @ts-ignore
     setTemplateText(t[selectedTemplateKey] || fallback[selectedTemplateKey] || '');
   }, [selectedTemplateKey, profile.whatsappTemplates]);
 
@@ -581,6 +582,17 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             >
               📋 تحضير الدرس
             </button>
+            <button
+              type="button"
+              onClick={() => setSelectedTemplateKey('absenceReminder')}
+              className={`py-2 px-1 rounded-xl border transition cursor-pointer text-center whitespace-nowrap truncate ${
+                selectedTemplateKey === 'absenceReminder'
+                  ? 'bg-purple-600 border-purple-400 text-white shadow-md'
+                  : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              ⚠️ تذكير الغياب
+            </button>
           </div>
 
           {/* Placeholders Guide Box */}
@@ -590,6 +602,14 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <p>يمكنك استخدام العلامات التالية ليقوم التطبيق بتعويضها تلقائياً عند الإرسال: <br />
                 <code className="text-purple-300 font-bold font-mono">{"{studentName}"}</code> لاسم الطالب •{' '}
                 <code className="text-purple-300 font-bold font-mono">{"{subject}"}</code> للمادة الدراسية.
+              </p>
+            )}
+            {selectedTemplateKey === 'absenceReminder' && (
+              <p>يمكنك استخدام العلامات التالية ليقوم التطبيق بتعويضها تلقائياً: <br />
+                <code className="text-purple-300 font-bold font-mono">{"{studentName}"}</code> اسم الطالب •{' '}
+                <code className="text-purple-300 font-bold font-mono">{"{subject}"}</code> المادة •{' '}
+                <code className="text-purple-300 font-bold font-mono">{"{date}"}</code> التاريخ •{' '}
+                <code className="text-purple-300 font-bold font-mono">{"{teacherName}"}</code> اسم المعلم.
               </p>
             )}
             {selectedTemplateKey === 'payment' && (
