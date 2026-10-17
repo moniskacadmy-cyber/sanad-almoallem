@@ -149,9 +149,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
     setError(null);
     setLoading(true);
     try {
-      // The redirect returns to the app and the global Firebase auth listener
-      // completes sign-in. Do not wait on a Firestore read inside the popup flow.
-      await signInWithGoogle();
+      const { user, isNew } = await signInWithGoogle();
+      if (isNew) {
+        // Needs WhatsApp and Subject
+        setGooglePendingUser(user);
+        setName(user.displayName || '');
+        setEmail(user.email || '');
+      } else {
+        onSuccess();
+      }
     } catch (err: any) {
       console.error('Google sign-in error', err);
       setError('تعذر تسجيل الدخول عبر Google. يرجى المحاولة مجدداً أو التسجيل بالبريد.');

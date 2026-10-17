@@ -30,20 +30,15 @@ import {
   AlertTriangle,
   UserCheck,
   UserX,
-  MessageCircle,
   Copy,
   Check,
   Search,
   Sparkles,
   Bell,
   BellRing,
-  RotateCcw,
   Send,
-  Filter,
   Users,
   Info,
-  ChevronRight,
-  ExternalLink,
 } from 'lucide-react';
 
 interface DailyAttendanceModalProps {
@@ -78,7 +73,6 @@ export const DailyAttendanceModal: React.FC<DailyAttendanceModalProps> = ({
   const [selectedDate, setSelectedDate] = useState<string>(todayIso);
   const [filterMode, setFilterMode] = useState<'scheduled' | 'all'>('scheduled');
   const [searchQuery, setSearchQuery] = useState('');
-  const [isLoadingLessons, setIsLoadingLessons] = useState(false);
   const [allLessons, setAllLessons] = useState<Record<string, LessonLog[]>>({});
   const [processingStudentId, setProcessingStudentId] = useState<string | null>(null);
   const [copiedStudentId, setCopiedStudentId] = useState<string | null>(null);
@@ -100,14 +94,11 @@ export const DailyAttendanceModal: React.FC<DailyAttendanceModalProps> = ({
   // Load existing lessons to know who is already marked for the selected date
   const loadLessons = async () => {
     if (!profile.id || students.length === 0) return;
-    setIsLoadingLessons(true);
     try {
       const logs = await fetchAllStudentLessons(profile.id, students);
       setAllLessons(logs);
     } catch (err) {
       console.warn('Failed to load lessons for daily attendance:', err);
-    } finally {
-      setIsLoadingLessons(false);
     }
   };
 

@@ -11,7 +11,7 @@ import {
 import { VoiceInputButton } from './VoiceInputButton';
 import { CalendarView } from './CalendarView';
 import { useBackHandler } from '../services/backHandler';
-import { hasConflict, formatMinutesToArabicTime, getMinutesFromTime } from '../services/conflictService';
+import { hasConflict, getMinutesFromTime } from '../services/conflictService';
 import {
   Calendar,
   Clock,
@@ -21,7 +21,6 @@ import {
   X,
   Bell,
   Video,
-  Building,
   UserCheck,
   User,
   UserPlus,
@@ -29,21 +28,10 @@ import {
   CheckCircle,
   LayoutGrid,
   List,
-  Palette,
   Sparkles,
-  ChevronLeft,
-  ChevronRight,
-  Info,
-  ExternalLink,
-  MessageCircle,
-  Play,
-  AlertTriangle,
   AlertCircle,
   Star,
   Search,
-  BookOpen,
-  DollarSign,
-  Phone,
   Layers,
 } from 'lucide-react';
 

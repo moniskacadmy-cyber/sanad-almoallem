@@ -45,7 +45,8 @@ service cloud.firestore {
       let hasPreprovisionedSubscription =
         request.auth.token.email != null &&
         request.auth.token.email_verified == true &&
-        exists(/databases/$(database)/documents/subscriptions/$(request.auth.token.email));
+        (exists(/databases/$(database)/documents/subscriptions/$(request.auth.token.email)) ||
+         exists(/databases/$(database)/documents/subscriptions/$(request.auth.token.email.lower())));
 
       return isValidId(teacherId) &&
         data.keys().hasOnly([
@@ -55,9 +56,9 @@ service cloud.firestore {
           'createdAt', 'updatedAt'
         ]) &&
         data.id == teacherId &&
-        data.email == request.auth.token.email &&
+        (data.email == request.auth.token.email || data.email.lower() == request.auth.token.email.lower()) &&
         data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
-        data.whatsapp is string && data.whatsapp.size() >= 8 && data.whatsapp.size() <= 30 &&
+        data.whatsapp is string && data.whatsapp.size() <= 30 &&
         data.subject is string && data.subject.size() >= 2 && data.subject.size() <= 100 &&
         data.role in ['teacher', 'admin'] &&
         (data.role == 'teacher' || isAdmin()) &&
@@ -69,8 +70,8 @@ service cloud.firestore {
             data.subscriptionStatus == 'trial' &&
             data.plan == 'none' &&
             data.isActive == true &&
-            data.trialEndDate >= request.time + duration.value(6, 'd') &&
-            data.trialEndDate <= request.time + duration.value(8, 'd') &&
+            data.trialEndDate >= request.time + duration.value(5, 'd') &&
+            data.trialEndDate <= request.time + duration.value(10, 'd') &&
             data.subscriptionExpiresAt == data.trialEndDate &&
             data.subscriptionEndDate == data.trialEndDate
           ) ||
@@ -78,11 +79,16 @@ service cloud.firestore {
             hasPreprovisionedSubscription &&
             data.subscriptionStatus == 'active' &&
             data.isActive == true &&
-            data.subscriptionEndDate == get(/databases/$(database)/documents/subscriptions/$(request.auth.token.email)).data.subscriptionEndDate &&
+            (
+              exists(/databases/$(database)/documents/subscriptions/$(request.auth.token.email)) ?
+              (data.subscriptionEndDate == get(/databases/$(database)/documents/subscriptions/$(request.auth.token.email)).data.subscriptionEndDate &&
+               data.plan == get(/databases/$(database)/documents/subscriptions/$(request.auth.token.email)).data.plan) :
+              (data.subscriptionEndDate == get(/databases/$(database)/documents/subscriptions/$(request.auth.token.email.lower())).data.subscriptionEndDate &&
+               data.plan == get(/databases/$(database)/documents/subscriptions/$(request.auth.token.email.lower())).data.plan)
+            ) &&
             data.subscriptionExpiresAt == data.subscriptionEndDate &&
-            data.trialEndDate >= request.time + duration.value(6, 'd') &&
-            data.trialEndDate <= request.time + duration.value(8, 'd') &&
-            data.plan == get(/databases/$(database)/documents/subscriptions/$(request.auth.token.email)).data.plan
+            data.trialEndDate >= request.time + duration.value(5, 'd') &&
+            data.trialEndDate <= request.time + duration.value(10, 'd')
           )
         );
     }
@@ -98,7 +104,7 @@ service cloud.firestore {
       ]) &&
         data.updatedAt == request.time &&
         data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
-        data.whatsapp is string && data.whatsapp.size() >= 8 && data.whatsapp.size() <= 30 &&
+        data.whatsapp is string && data.whatsapp.size() <= 30 &&
         data.subject is string && data.subject.size() >= 2 && data.subject.size() <= 100 &&
         (!('currency' in data) || (data.currency is string && data.currency.size() <= 30)) &&
         (!('remindersEnabled' in data) || data.remindersEnabled is bool) &&
@@ -106,7 +112,7 @@ service cloud.firestore {
         (!('reminderMinutesBefore' in data) || (data.reminderMinutesBefore is number && data.reminderMinutesBefore >= 5 && data.reminderMinutesBefore <= 120)) &&
         (!('timezone' in data) || (data.timezone is string && data.timezone.size() <= 64)) &&
         data.id == existing().id &&
-        data.email == existing().email &&
+        (data.email == existing().email || data.email.lower() == existing().email.lower()) &&
         data.role == existing().role &&
         data.subscriptionStatus == existing().subscriptionStatus &&
         data.plan == existing().plan &&
@@ -244,7 +250,15 @@ service cloud.firestore {
     // Subscriptions collection (admin managed)
     match /subscriptions/{subId} {
       allow read, write: if isAdmin();
-      allow get: if isSignedIn() && (isAdmin() || (request.auth.token.email != null && (request.auth.token.email == subId || request.auth.token.email == resource.data.email)));
+      allow get: if isSignedIn() && (
+        isAdmin() ||
+        (request.auth.token.email != null && (
+          request.auth.token.email == subId ||
+          request.auth.token.email.lower() == subId.lower() ||
+          request.auth.token.email == resource.data.email ||
+          request.auth.token.email.lower() == resource.data.email.lower()
+        ))
+      );
     }
 
     // FCM tokens under users/{userId}

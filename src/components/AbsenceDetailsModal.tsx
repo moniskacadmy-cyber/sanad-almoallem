@@ -5,17 +5,13 @@ import {
   X,
   AlertTriangle,
   DollarSign,
-  Calendar,
   CheckCircle2,
   XCircle,
-  Clock,
   MessageCircle,
   Copy,
   Check,
   Send,
-  HelpCircle,
   RotateCcw,
-  Sparkles,
   Info,
 } from 'lucide-react';
 

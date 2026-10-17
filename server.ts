@@ -414,12 +414,22 @@ export async function aiRateLimiter(
 // Helper to get Admin Firestore DB.
 // MUST resolve the same database as the client (src/firebase.ts): VITE_FIREBASE_DATABASE_ID or FIREBASE_DATABASE_ID. '(default)' / empty -> default DB.
 export function resolveDatabaseId(): string | undefined {
-  const effective =
+  const currentProjectId =
+    process.env.FIREBASE_PROJECT_ID?.trim() ||
+    process.env.VITE_FIREBASE_PROJECT_ID?.trim() ||
+    fallbackConfig.projectId;
+  const isAiStudioProject =
+    Boolean(fallbackConfig.projectId) && currentProjectId === fallbackConfig.projectId;
+
+  const explicit =
     process.env.VITE_FIREBASE_DATABASE_ID?.trim() ||
-    process.env.FIREBASE_DATABASE_ID?.trim() ||
-    fallbackConfig.firestoreDatabaseId ||
-    '(default)';
-  return effective === '(default)' || !effective ? undefined : effective;
+    process.env.FIREBASE_DATABASE_ID?.trim();
+
+  if (explicit && explicit !== '(default)') return explicit;
+  if (!explicit && isAiStudioProject && fallbackConfig.firestoreDatabaseId && fallbackConfig.firestoreDatabaseId !== '(default)') {
+    return fallbackConfig.firestoreDatabaseId;
+  }
+  return undefined;
 }
 
 function getAdminDb() {

@@ -17,11 +17,8 @@ import {
   Trash2,
   Edit2,
   Copy,
-  CheckCircle2,
   Clock,
-  Sparkles,
   X,
-  AlertCircle,
   Lightbulb,
 } from 'lucide-react';
 

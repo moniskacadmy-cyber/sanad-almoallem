@@ -60,20 +60,11 @@ export function buildReportHtml(
   const excusedLessons = filteredLessons.filter((l) => l.attendance === 'excused').length;
   const attendanceRate = totalLessons > 0 ? Math.round((presentLessons / totalLessons) * 100) : 100;
 
-  const totalMinutes = filteredLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
-  const totalHours = (totalMinutes / 60).toFixed(1);
-
   const hourlyRate =
     student.hourlyRate ||
     (student.monthlyFee ? Math.round(student.monthlyFee / 4) : 100);
 
-  const financiallyCountedLessons = filteredLessons.filter((l) => isLessonFinanciallyCounted(l));
-
-  const totalAmount = financiallyCountedLessons.reduce((acc, l) => {
-    const dur = l.duration || 60;
-    const rate = l.hourlyRate || hourlyRate;
-    return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
-  }, 0);
+  // حساب المبالغ المحصلة والمتبقية فقط دون حسابات مكررة غير مستخدمة
 
   const collectedAmount = filteredLessons.filter((l) => l.settled).reduce((acc, l) => {
     const dur = l.duration || 60;

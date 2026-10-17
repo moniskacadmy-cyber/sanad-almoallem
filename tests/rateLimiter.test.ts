@@ -4,7 +4,6 @@ import {
   incrementRedisCounter,
   checkAndIncrementMemoryAiBucket,
   aiRateLimiter,
-  AI_LIMITS,
 } from '../server.js';
 
 test('rate limiter: incrementRedisCounter includes window index in key and sets expire', async () => {

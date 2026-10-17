@@ -24,24 +24,15 @@ import {
   Clock,
   Sparkles,
   MessageCircle,
-  X,
-  CreditCard,
   Check,
-  DollarSign,
   TrendingUp,
   BookOpen,
   UserPlus,
   Settings,
   FileText,
   Crown,
-  ChevronLeft,
   ArrowLeft,
-  Video,
-  Building,
-  User,
   Copy,
-  CheckCircle2,
-  AlertTriangle,
   UserCheck,
 } from 'lucide-react';
 
@@ -71,7 +62,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   const [classTopic, setClassTopic] = useState('');
   const [classHomework, setClassHomework] = useState('');
   const [attendance, setAttendance] = useState<'present' | 'absent' | 'excused'>('present');
-  const [rating, setRating] = useState<number>(5);
+  const rating = 5; // تقييم الحصة الافتراضي الكامل
   const [savingClass, setSavingClass] = useState(false);
 
   // Edit Before Send Modal for Class Report
@@ -106,7 +97,6 @@ export const HomeTab: React.FC<HomeTabProps> = ({
     year: 'numeric',
   }).format(now);
 
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
   // Minute ticker for next scheduled class lookup (updates every 60s instead of every second)
   const [minuteNow, setMinuteNow] = useState(() => new Date());
   useEffect(() => {

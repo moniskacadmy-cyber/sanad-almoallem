@@ -5,7 +5,6 @@ import { useBackHandler } from '../services/backHandler';
 import {
   auth,
   addLibraryItem,
-  updateLibraryItem,
   deleteLibraryItem,
   seedDefaultLibraryItems,
 } from '../firebase';
@@ -14,13 +13,9 @@ import {
   Plus,
   Copy,
   Check,
-  Share2,
   Trash2,
-  Edit2,
   X,
   FileText,
-  HelpCircle,
-  Award,
   Sparkles,
   MessageCircle,
   Upload,
@@ -30,10 +25,8 @@ import {
   Eye,
   RefreshCw,
   Send,
-  Lightbulb,
   CheckCircle2,
   AlertCircle,
-  ExternalLink,
   Loader2,
 } from 'lucide-react';
 
@@ -155,7 +148,6 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
 
   // Templates Management State
   const [showAddTemplateModal, setShowAddTemplateModal] = useState(false);
-  const [editingItem, setEditingItem] = useState<LibraryItem | null>(null);
   const [viewingItem, setViewingItem] = useState<LibraryItem | null>(null);
   const [templateFilter, setTemplateFilter] = useState<'all' | 'lesson_plan' | 'quiz' | 'summary'>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);

@@ -13,7 +13,6 @@ import {
   addStudent,
   updateStudent,
   deleteStudent,
-  toggleStudentPaymentStatus,
   subscribeToStudentLessons,
   addLessonLog,
   deleteLessonLog,
@@ -35,11 +34,9 @@ import { hasConflict } from '../services/conflictService';
 import {
   UserPlus,
   Search,
-  Phone,
   MessageCircle,
   CreditCard,
   CheckCircle2,
-  XCircle,
   Calendar,
   BookOpen,
   Star,
@@ -49,25 +46,19 @@ import {
   Filter,
   Check,
   Video,
-  Building,
   UserCheck,
   Sparkles,
-  Share2,
   Copy,
-  Lightbulb,
   FileText,
   AlertCircle,
   Brain,
   Send,
-  HelpCircle,
   Clock,
   Palette,
   Plus,
   ChevronDown,
   DollarSign,
-  TrendingUp,
   Download,
-  Printer,
 } from 'lucide-react';
 
 interface FormScheduleRow {
@@ -100,7 +91,6 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
   // Lessons map for calculating dynamic dues and hours for all students
   const [allLessonsMap, setAllLessonsMap] = useState<Record<string, LessonLog[]>>({});
-  const [loadingAllLessons, setLoadingAllLessons] = useState(false);
   const [showConfirmSettleStudent, setShowConfirmSettleStudent] = useState<Student | null>(null);
   const [isSettling, setIsSettling] = useState(false);
 
@@ -207,16 +197,6 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     );
   };
 
-  const formatSlotTime = (timeStr: string) => {
-    const slot = TIME_SLOTS.find((t) => t.time24 === timeStr);
-    return slot ? slot.label : timeStr;
-  };
-
-  const getDayName = (dayIndex: number) => {
-    const d = WEEK_DAYS.find((w) => w.dayIndex === dayIndex);
-    return d ? d.name : '';
-  };
-
   // Helper to format schedule display in exact Arabic format
   // Example: السبت الساعة 04:00 مساءً (60 دقيقة) - أونلاين
   const formatScheduleDisplayArabic = (slot: {
@@ -241,11 +221,6 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
         ? 'سنتر'
         : 'برايفيت';
     return `${dayName} الساعة ${timeFormatted} (${dur} دقيقة) - ${classTypeStr}`;
-  };
-
-  const getMinutesFromTime = (timeStr: string) => {
-    const [h, m] = timeStr.split(':').map(Number);
-    return (h || 0) * 60 + (m || 0);
   };
 
   // Toast and validation errors state
@@ -380,14 +355,11 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
       setAllLessonsMap({});
       return;
     }
-    setLoadingAllLessons(true);
     try {
       const data = await fetchAllStudentLessons(profile.id, students);
       setAllLessonsMap(data);
     } catch (err) {
       console.error('Error fetching all lessons for students tab:', err);
-    } finally {
-      setLoadingAllLessons(false);
     }
   };
 

@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   AlertCircle,
   TrendingUp,
-  CreditCard,
   MessageCircle,
   RefreshCw,
   Search,
@@ -16,8 +15,6 @@ import {
   Calendar,
   X,
   Send,
-  Copy,
-  Check,
   FileText,
 } from 'lucide-react';
 
@@ -43,7 +40,6 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
   const [showConfirmSettle, setShowConfirmSettle] = useState<Student | null>(null);
   const [showInvoiceModal, setShowInvoiceModal] = useState<Student | null>(null);
   const [editableInvoiceText, setEditableInvoiceText] = useState('');
-  const [copiedInvoice, setCopiedInvoice] = useState(false);
 
   // Register modals on back handler stack
   useBackHandler(!!showConfirmSettle, () => setShowConfirmSettle(null), 'financial_confirm_settle');

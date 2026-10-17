@@ -4,9 +4,7 @@ import { useBackHandler } from '../services/backHandler';
 import {
   ReportType,
   ReportOptions,
-  buildReportHtml,
   exportReportToPdf,
-  formatArabicDate,
 } from '../services/pdfReportService';
 import {
   FileText,
@@ -16,13 +14,8 @@ import {
   Download,
   Printer,
   X,
-  Check,
   Sparkles,
-  Share2,
-  Copy,
   MessageCircle,
-  Eye,
-  Filter,
 } from 'lucide-react';
 
 interface StudentPdfExportModalProps {
@@ -50,7 +43,6 @@ export const StudentPdfExportModal: React.FC<StudentPdfExportModalProps> = ({
   const [customEndDate, setCustomEndDate] = useState('');
   const [teacherNote, setTeacherNote] = useState('');
   const [includeHomework, setIncludeHomework] = useState(true);
-  const [copiedLink, setCopiedLink] = useState(false);
 
   // Compute actual start & end date for the selected filter
   const { startDate, endDate } = useMemo(() => {

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   BookOpen,
-  Loader2,
   RefreshCw,
   Trash2,
   AlertCircle,
@@ -9,7 +8,6 @@ import {
   Sparkles,
   CheckCircle2,
   Wifi,
-  Calendar,
   Users,
 } from 'lucide-react';
 
