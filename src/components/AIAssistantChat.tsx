@@ -130,7 +130,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
     setMessages((prev) => [...prev, userMsg]); setInputMessage(''); setIsLoading(true);
     try {
       const recentHistory = messages.slice(-6).map((m) => ({ role: m.role === 'user' ? 'user' : 'model', text: m.text.slice(0, 1000) }));
-      const currentUser = auth.currentUser; const token = currentUser ? await currentUser.getIdToken() : '';
+      const currentUser = auth.currentUser; const token = currentUser ? await currentUser.getIdToken(true) : '';
       const summary = buildClientSummary();
       const response = await fetch('/api/ai/assistant', {
         method: 'POST',

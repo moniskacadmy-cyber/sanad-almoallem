@@ -253,15 +253,13 @@ export async function registerTeacher(params: {
 }
 
 // Google Sign-in helper
-// Prefer popup auth so the credential is returned directly to this page and is not
-// dependent on cross-site redirect storage. Fall back to redirect only when popups
-// are blocked or unsupported by the current browser environment.
-export async function signInWithGoogle(): Promise<void> {
+export async function signInWithGoogle(): Promise<{ user: User; isNew: boolean }> {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
 
+  let result;
   try {
-    await signInWithPopup(auth, provider);
+    result = await signInWithPopup(auth, provider);
   } catch (error: any) {
     const code = typeof error?.code === 'string' ? error.code : '';
     if (
@@ -269,10 +267,27 @@ export async function signInWithGoogle(): Promise<void> {
       code === 'auth/operation-not-supported-in-this-environment'
     ) {
       await signInWithRedirect(auth, provider);
-      return;
+      // signInWithRedirect navigates away, but TypeScript needs a return
+      throw new Error('redirecting');
     }
     throw error;
   }
+
+  const user = result.user;
+  const teacherDoc = await getDoc(doc(db, 'teachers', user.uid));
+  return {
+    user,
+    isNew: !teacherDoc.exists(),
+  };
+}
+
+// Auth Helper
+export async function getAuthenticatedHeaders(): Promise<HeadersInit> {
+  const token = auth.currentUser ? await auth.currentUser.getIdToken(true) : '';
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+  };
 }
 
 // Teacher Profile Fetch / Realtime Listener

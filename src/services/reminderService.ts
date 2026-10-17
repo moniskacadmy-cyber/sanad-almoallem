@@ -7,7 +7,7 @@ import {
   renderTemplate,
   DEFAULT_WHATSAPP_TEMPLATES,
 } from '../types';
-import { auth } from '../firebase';
+import { auth, getAuthenticatedHeaders } from '../firebase';
 
 const REMINDER_SETTINGS_KEY = 'sanad_reminder_settings';
 const DEFAULT_SETTINGS: ReminderSettings = {
@@ -176,12 +176,19 @@ export async function fetchCronStatusApi(): Promise<{
   recentLogs: ReminderLog[];
 }> {
   try {
-    const idToken = await auth.currentUser?.getIdToken();
-    const res = await fetch('/api/reminders/status', {
-      headers: {
-        ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
-      },
-    });
+    const headers = await getAuthenticatedHeaders();
+    const res = await fetch('/api/reminders/status', { headers });
+    if (res.status === 401) {
+       // Token probably expired, try silent refresh
+       return {
+         isRunning: true,
+         intervalMinutes: 15,
+         lastRun: null,
+         nextRun: null,
+         totalDispatched: 0,
+         recentLogs: []
+       };
+    }
     if (!res.ok) throw new Error('فشل جلب حالة Cron Job.');
     return await res.json();
   } catch (e) {
