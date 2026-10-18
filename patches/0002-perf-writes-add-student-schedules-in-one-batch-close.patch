@@ -1,0 +1,582 @@
+From 12645a0001a816237546dcb173c9e048783cdb82 Mon Sep 17 00:00:00 2001
+From: Claude <dev@local>
+Date: Sun, 18 Oct 2026 07:11:47 +0000
+Subject: [PATCH 2/4] perf(writes): add student+schedules in one batch; close
+ modals without waiting for server ack
+
+---
+ package.json                          |   2 +-
+ src/components/ScheduleTab.tsx        |  85 ++++++++++++-------
+ src/components/StudentsTab.tsx        |  63 +++++++++------
+ src/firebase.ts                       |  77 ++++++++++++++++++
+ src/services/studentSchedulesBatch.ts |  78 ++++++++++++++++++
+ tests/studentSchedulesBatch.test.ts   | 112 ++++++++++++++++++++++++++
+ 6 files changed, 359 insertions(+), 58 deletions(-)
+ create mode 100644 src/services/studentSchedulesBatch.ts
+ create mode 100644 tests/studentSchedulesBatch.test.ts
+
+diff --git a/package.json b/package.json
+index c08d59a..f5d8fe7 100644
+--- a/package.json
++++ b/package.json
+@@ -13,7 +13,7 @@
+     "preview": "vite preview",
+     "clean": "rm -rf dist server.js",
+     "lint": "tsc --noEmit",
+-    "test": "NODE_ENV=test tsx --test tests/subscriptionAccess.test.ts tests/firestoreSecurityRegression.test.ts tests/vercelSecurityHeaders.test.ts tests/rateLimiter.test.ts tests/cronReminderRetry.test.ts tests/health.test.ts"
++    "test": "NODE_ENV=test tsx --test tests/subscriptionAccess.test.ts tests/firestoreSecurityRegression.test.ts tests/vercelSecurityHeaders.test.ts tests/rateLimiter.test.ts tests/cronReminderRetry.test.ts tests/health.test.ts tests/studentSchedulesBatch.test.ts"
+   },
+   "dependencies": {
+     "@google/genai": "^2.4.0",
+diff --git a/src/components/ScheduleTab.tsx b/src/components/ScheduleTab.tsx
+index dc7e7f5..63cabb9 100644
+--- a/src/components/ScheduleTab.tsx
++++ b/src/components/ScheduleTab.tsx
+@@ -6,8 +6,10 @@ import {
+   deleteSchedule,
+   toggleScheduleCompletedToday,
+   saveScheduleEvaluation,
+-  addStudent,
++  addStudentWithSchedules,
++  addSchedulesBatch,
+ } from '../firebase';
++import type { NewScheduleForStudent } from '../services/studentSchedulesBatch';
+ import { VoiceInputButton } from './VoiceInputButton';
+ import { CalendarView } from './CalendarView';
+ import { useBackHandler } from '../services/backHandler';
+@@ -506,6 +508,14 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
+     e.preventDefault();
+     setConflictError(null);
+ 
++    // Writes hit the local cache instantly (persistentLocalCache), so the modal closes without
++    // waiting for the server. Server-side rejections are surfaced here (Firestore rolls the local
++    // write back automatically).
++    const reportSaveError = (err: any) => {
++      console.error('Error saving schedule', err);
++      alert(err?.message || 'حدث خطأ أثناء حفظ المواعيد. يرجى المحاولة مرة أخرى.');
++    };
++
+     try {
+       if (editingSchedule) {
+         // Conflict check for editing against all other schedules
+@@ -527,7 +537,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
+         }
+ 
+         setIsSubmitting(true);
+-        await updateSchedule(profile.id, editingSchedule.id, {
++        updateSchedule(profile.id, editingSchedule.id, {
+           dayOfWeek: Number(editingSlotData.dayOfWeek),
+           time: editingSlotData.time,
+           duration: Number(editingSlotData.duration) || 60,
+@@ -536,7 +546,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
+           color: editingSlotData.color,
+           locationOrLink: editingSlotData.locationOrLink?.trim() || '',
+           notes: editingSlotData.notes?.trim() || '',
+-        });
++        }).catch(reportSaveError);
+       } else {
+         // Multi-slot addition or direct student add
+         let targetStudentId = formStudentId;
+@@ -548,20 +558,6 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
+             return;
+           }
+           targetStudentName = newStudentName.trim();
+-          const rate = Number(newStudentHourlyRate) || 100;
+-          const createdId = await addStudent(profile.id, {
+-            name: targetStudentName,
+-            whatsapp: newStudentWhatsapp.trim() || '',
+-            subject: newStudentSubject.trim() || profile.subject || 'رياضيات',
+-            classType: newStudentClassType,
+-            hourlyRate: rate,
+-            monthlyFee: rate * 4,
+-            paymentStatus: 'unpaid',
+-            color: formSlotsList[0]?.color || 'emerald',
+-            notes: '',
+-          });
+-          if (!createdId) throw new Error('فشل إنشاء الطالب في السجل');
+-          targetStudentId = createdId;
+         } else {
+           const found = students.find((s) => s.id === formStudentId);
+           if (!found) {
+@@ -621,20 +617,47 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
+         }
+ 
+         setIsSubmitting(true);
+-        // Save each slot as an independent document in Firestore (One-to-Many student-to-slots relationship)
+-        for (const slot of formSlotsList) {
+-          await addSchedule(profile.id, {
+-            studentId: targetStudentId,
+-            studentName: targetStudentName,
+-            dayOfWeek: Number(slot.dayOfWeek),
+-            time: slot.time,
+-            duration: Number(slot.duration) || 60,
+-            recurrence: slot.recurrence || 'weekly',
+-            classType: slot.classType || 'in_person',
+-            color: slot.color || getClassTypeMeta(slot.classType).colorId,
+-            locationOrLink: slot.locationOrLink?.trim() || '',
+-            notes: slot.notes?.trim() || '',
+-          });
++        // Every slot is an independent document (one-to-many student-to-slots relationship), but all
++        // of them (and the new student, if any) are written in ONE atomic batch.
++        const slotsToSave = formSlotsList.map((slot): NewScheduleForStudent => ({
++          dayOfWeek: Number(slot.dayOfWeek),
++          time: slot.time,
++          duration: Number(slot.duration) || 60,
++          recurrence: slot.recurrence || 'weekly',
++          classType: slot.classType || 'in_person',
++          color: slot.color || getClassTypeMeta(slot.classType).colorId,
++          locationOrLink: slot.locationOrLink?.trim() || '',
++          notes: slot.notes?.trim() || '',
++        }));
++
++        if (studentSelectionMode === 'new') {
++          const rate = Number(newStudentHourlyRate) || 100;
++          const { commitPromise } = addStudentWithSchedules(
++            profile.id,
++            {
++              name: targetStudentName,
++              whatsapp: newStudentWhatsapp.trim() || '',
++              subject: newStudentSubject.trim() || profile.subject || 'رياضيات',
++              classType: newStudentClassType,
++              hourlyRate: rate,
++              monthlyFee: rate * 4,
++              paymentStatus: 'unpaid',
++              color: formSlotsList[0]?.color || 'emerald',
++              notes: '',
++            },
++            slotsToSave
++          );
++          commitPromise.catch(reportSaveError);
++        } else {
++          const { commitPromise } = addSchedulesBatch(
++            profile.id,
++            slotsToSave.map((slot) => ({
++              ...slot,
++              studentId: targetStudentId,
++              studentName: targetStudentName,
++            }))
++          );
++          commitPromise.catch(reportSaveError);
+         }
+       }
+ 
+diff --git a/src/components/StudentsTab.tsx b/src/components/StudentsTab.tsx
+index b419361..1542d0f 100644
+--- a/src/components/StudentsTab.tsx
++++ b/src/components/StudentsTab.tsx
+@@ -11,6 +11,7 @@ import {
+ import { useBackHandler } from '../services/backHandler';
+ import {
+   addStudent,
++  addStudentWithSchedules,
+   updateStudent,
+   deleteStudent,
+   subscribeToStudentLessons,
+@@ -258,7 +259,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
+ 
+     setSavingSchedInProfile(true);
+     try {
+-      await addSchedule(profile.id, {
++      // Local cache is updated instantly; do not block the UI on the server acknowledgement.
++      addSchedule(profile.id, {
+         studentId: selectedProfileStudent.id,
+         studentName: selectedProfileStudent.name,
+         dayOfWeek: Number(newSchedDay),
+@@ -267,7 +269,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
+         recurrence: 'weekly',
+         classType: newSchedClassType,
+         color: newSchedColor || selectedProfileStudent.color || 'purple',
+-      });
++      }).catch((err) => console.error('Error adding schedule in profile', err));
+       setShowAddScheduleInsideProfile(false);
+       // Reset default values
+       setNewSchedDay(6);
+@@ -302,13 +304,14 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
+ 
+     setSavingSchedInProfile(true);
+     try {
+-      await updateSchedule(profile.id, editingScheduleSlot.id, {
++      // Local cache is updated instantly; do not block the UI on the server acknowledgement.
++      updateSchedule(profile.id, editingScheduleSlot.id, {
+         dayOfWeek: Number(editSchedDay),
+         time: editSchedTime,
+         duration: Number(editSchedDuration) || 60,
+         classType: editSchedClassType,
+         color: editSchedColor,
+-      });
++      }).catch((err) => console.error('Error updating schedule slot', err));
+       setEditingScheduleSlot(null);
+     } catch (err) {
+       console.error('Error updating schedule slot', err);
+@@ -537,34 +540,42 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
+         color: formColor || 'emerald',
+       };
+ 
++      // Firestore applies writes to the local cache immediately (persistentLocalCache), so the UI
++      // must not wait for the server acknowledgement. Server-side rejections are reported through
++      // reportSaveError (Firestore rolls the local write back automatically).
++      const reportSaveError = (err: any) => {
++        console.error('Error saving student to Firestore:', err);
++        const errText = err?.message || 'حدث خطأ أثناء حفظ بيانات الطالب. يرجى المحاولة مرة أخرى.';
++        setToastMessage({ type: 'error', text: errText });
++        alert(errText);
++      };
++
+       if (editingStudent) {
+-        await updateStudent(profile.id, editingStudent.id, studentData);
++        updateStudent(profile.id, editingStudent.id, studentData).catch(reportSaveError);
+         setToastMessage({ type: 'success', text: 'تم تعديل بيانات الطالب بنجاح! 🎉' });
++        // Refresh lessons in the background (do not block closing the modal).
++        void loadAllLessons();
+       } else {
+-        const newStudentId = await addStudent(profile.id, {
+-          ...studentData,
+-          paymentStatus: 'unpaid',
+-        });
+-
+-        // Automatically save weekly schedules to timetable
+-        if (newStudentId && formSchedules.length > 0) {
+-          for (const s of formSchedules) {
+-            await addSchedule(profile.id, {
+-              studentId: newStudentId,
+-              studentName: formName.trim(),
+-              dayOfWeek: Number(s.dayOfWeek),
+-              time: s.time,
+-              duration: Number(s.duration) || 60,
+-              recurrence: 'weekly',
+-              classType: formClassType,
+-              color: formColor || 'emerald',
+-            });
+-          }
+-        }
++        // Student + all weekly schedules are written in ONE atomic batch.
++        const { commitPromise } = addStudentWithSchedules(
++          profile.id,
++          {
++            ...studentData,
++            paymentStatus: 'unpaid',
++          },
++          formSchedules.map((s) => ({
++            dayOfWeek: Number(s.dayOfWeek),
++            time: s.time,
++            duration: Number(s.duration) || 60,
++            recurrence: 'weekly' as const,
++            classType: formClassType,
++            color: formColor || 'emerald',
++          }))
++        );
++        commitPromise.catch(reportSaveError);
+         setToastMessage({ type: 'success', text: 'تم إضافة الطالب الجديد بنجاح! 🎉' });
+       }
+ 
+-      await loadAllLessons();
+       setShowAddModal(false);
+       // Auto hide toast after 3s
+       setTimeout(() => setToastMessage(null), 3500);
+diff --git a/src/firebase.ts b/src/firebase.ts
+index ba33bc6..83b6783 100644
+--- a/src/firebase.ts
++++ b/src/firebase.ts
+@@ -22,6 +22,7 @@ import {
+   setDoc,
+   updateDoc,
+   deleteDoc,
++  writeBatch,
+   collection,
+   query,
+   orderBy,
+@@ -46,6 +47,13 @@ import {
+ } from './types';
+ 
+ import rawFirebaseConfig from '../firebase-applet-config.json';
++import {
++  stageSchedules,
++  stageStudentWithSchedules,
++  type NewStudentInput,
++  type NewScheduleInput,
++  type NewScheduleForStudent,
++} from './services/studentSchedulesBatch';
+ 
+ const env = import.meta.env;
+ 
+@@ -766,6 +774,75 @@ export async function addStudent(
+   }
+ }
+ 
++/**
++ * Creates a student together with its schedule slots in ONE atomic write batch.
++ * The local cache is updated immediately (persistentLocalCache), so snapshot listeners fire right
++ * away; the returned `commitPromise` resolves only when the server acknowledges the write.
++ * The caller should NOT block the UI on `commitPromise`; attach a `.catch` to surface rejections
++ * (Firestore rolls the local write back automatically if the server rejects it).
++ */
++export function addStudentWithSchedules(
++  teacherId: string,
++  student: NewStudentInput,
++  schedules: NewScheduleForStudent[]
++): { studentId: string; scheduleIds: string[]; commitPromise: Promise<void> } {
++  const path = `teachers/${teacherId}/students`;
++  try {
++    const batch = writeBatch(db);
++    const studentsCol = collection(db, 'teachers', teacherId, 'students');
++    const schedulesCol = collection(db, 'teachers', teacherId, 'schedules');
++    const refs = {
++      student: doc(studentsCol),
++      schedules: schedules.map(() => doc(schedulesCol)),
++    };
++    const { studentId, scheduleIds } = stageStudentWithSchedules(
++      batch,
++      refs,
++      teacherId,
++      student,
++      schedules,
++      serverTimestamp()
++    );
++    const commitPromise = batch
++      .commit()
++      .catch((error) => {
++        handleFirestoreError(error, OperationType.CREATE, path);
++        throw error;
++      });
++    return { studentId, scheduleIds, commitPromise };
++  } catch (error) {
++    handleFirestoreError(error, OperationType.CREATE, path);
++    throw error;
++  }
++}
++
++/**
++ * Adds several schedule slots in ONE atomic write batch (same non-blocking contract as
++ * addStudentWithSchedules).
++ */
++export function addSchedulesBatch(
++  teacherId: string,
++  schedules: NewScheduleInput[]
++): { scheduleIds: string[]; commitPromise: Promise<void> } {
++  const path = `teachers/${teacherId}/schedules`;
++  try {
++    const batch = writeBatch(db);
++    const schedulesCol = collection(db, 'teachers', teacherId, 'schedules');
++    const refs = schedules.map(() => doc(schedulesCol));
++    const scheduleIds = stageSchedules(batch, refs, teacherId, schedules, serverTimestamp());
++    const commitPromise = batch
++      .commit()
++      .catch((error) => {
++        handleFirestoreError(error, OperationType.CREATE, path);
++        throw error;
++      });
++    return { scheduleIds, commitPromise };
++  } catch (error) {
++    handleFirestoreError(error, OperationType.CREATE, path);
++    throw error;
++  }
++}
++
+ export async function updateStudent(
+   teacherId: string,
+   studentId: string,
+diff --git a/src/services/studentSchedulesBatch.ts b/src/services/studentSchedulesBatch.ts
+new file mode 100644
+index 0000000..4958f50
+--- /dev/null
++++ b/src/services/studentSchedulesBatch.ts
+@@ -0,0 +1,78 @@
++import type { Student, ScheduleSlot } from '../types';
++
++/**
++ * Pure helpers that stage a new student + its weekly schedule slots into ONE Firestore write batch.
++ * They only call `batch.set(...)`; they never call `commit()`, so the caller decides when/how to
++ * commit and the UI can avoid waiting for the server acknowledgement.
++ * Kept free of any firebase imports so it can be unit tested without the SDK.
++ */
++
++export interface BatchLike<R = unknown> {
++  set(ref: R, data: Record<string, unknown>): unknown;
++}
++
++export interface DocRefLike {
++  id: string;
++}
++
++export type NewStudentInput = Omit<Student, 'id' | 'teacherId' | 'createdAt' | 'updatedAt'>;
++
++/** A schedule slot as supplied by the UI (ids/timestamps are added here). */
++export type NewScheduleInput = Omit<ScheduleSlot, 'id' | 'teacherId' | 'createdAt' | 'updatedAt'>;
++
++/** Schedule slot whose studentId / studentName are filled from the student being created. */
++export type NewScheduleForStudent = Omit<NewScheduleInput, 'studentId' | 'studentName'>;
++
++export function stageSchedules<R extends DocRefLike>(
++  batch: BatchLike<R>,
++  scheduleRefs: R[],
++  teacherId: string,
++  schedules: NewScheduleInput[],
++  timestamp: unknown
++): string[] {
++  if (scheduleRefs.length !== schedules.length) {
++    throw new Error('stageSchedules: refs and schedules length mismatch');
++  }
++  return schedules.map((schedule, i) => {
++    const ref = scheduleRefs[i];
++    batch.set(ref, {
++      ...schedule,
++      id: ref.id,
++      teacherId,
++      createdAt: timestamp,
++      updatedAt: timestamp,
++    });
++    return ref.id;
++  });
++}
++
++export function stageStudentWithSchedules<R extends DocRefLike>(
++  batch: BatchLike<R>,
++  refs: { student: R; schedules: R[] },
++  teacherId: string,
++  student: NewStudentInput,
++  schedules: NewScheduleForStudent[],
++  timestamp: unknown
++): { studentId: string; scheduleIds: string[] } {
++  batch.set(refs.student, {
++    ...student,
++    id: refs.student.id,
++    teacherId,
++    createdAt: timestamp,
++    updatedAt: timestamp,
++  });
++
++  const scheduleIds = stageSchedules(
++    batch,
++    refs.schedules,
++    teacherId,
++    schedules.map((s) => ({
++      ...s,
++      studentId: refs.student.id,
++      studentName: student.name,
++    })),
++    timestamp
++  );
++
++  return { studentId: refs.student.id, scheduleIds };
++}
+diff --git a/tests/studentSchedulesBatch.test.ts b/tests/studentSchedulesBatch.test.ts
+new file mode 100644
+index 0000000..6dea3e7
+--- /dev/null
++++ b/tests/studentSchedulesBatch.test.ts
+@@ -0,0 +1,112 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import {
++  stageSchedules,
++  stageStudentWithSchedules,
++  type NewStudentInput,
++  type NewScheduleForStudent,
++} from '../src/services/studentSchedulesBatch';
++
++type Ref = { id: string };
++
++function makeFakeBatch() {
++  const sets: Array<{ ref: Ref; data: Record<string, unknown> }> = [];
++  let commits = 0;
++  return {
++    sets,
++    get commits() {
++      return commits;
++    },
++    set(ref: Ref, data: Record<string, unknown>) {
++      sets.push({ ref, data });
++    },
++    commit() {
++      commits++;
++      return Promise.resolve();
++    },
++  };
++}
++
++const TS = { __ts: 'serverTimestamp' };
++
++const student = {
++  name: 'أحمد',
++  whatsapp: '0100',
++  subject: 'رياضيات',
++  classType: 'online',
++  hourlyRate: 100,
++  monthlyFee: 400,
++  paymentStatus: 'unpaid',
++  color: 'emerald',
++  notes: '',
++} as unknown as NewStudentInput;
++
++const slots: NewScheduleForStudent[] = [
++  { dayOfWeek: 0, time: '16:00', duration: 60, recurrence: 'weekly', classType: 'online', color: 'emerald' },
++  { dayOfWeek: 2, time: '17:30', duration: 90, recurrence: 'weekly', classType: 'online', color: 'emerald' },
++  { dayOfWeek: 4, time: '18:00', duration: 60, recurrence: 'weekly', classType: 'online', color: 'emerald' },
++];
++
++test('stageStudentWithSchedules stages exactly 1 student + N schedules and never commits', () => {
++  const batch = makeFakeBatch();
++  const refs = { student: { id: 'stu1' }, schedules: [{ id: 's1' }, { id: 's2' }, { id: 's3' }] };
++
++  const out = stageStudentWithSchedules(batch, refs, 'teacherA', student, slots, TS);
++
++  assert.equal(batch.sets.length, 4, 'one student + three schedules');
++  assert.equal(batch.commits, 0, 'staging must not commit (the caller commits without awaiting)');
++  assert.equal(out.studentId, 'stu1');
++  assert.deepEqual(out.scheduleIds, ['s1', 's2', 's3']);
++
++  const [studentWrite, ...scheduleWrites] = batch.sets;
++  assert.equal(studentWrite.ref.id, 'stu1');
++  assert.equal(studentWrite.data.id, 'stu1');
++  assert.equal(studentWrite.data.teacherId, 'teacherA');
++  assert.equal(studentWrite.data.name, 'أحمد');
++  assert.equal(studentWrite.data.createdAt, TS);
++  assert.equal(studentWrite.data.updatedAt, TS);
++
++  scheduleWrites.forEach((w, i) => {
++    assert.equal(w.data.id, refs.schedules[i].id);
++    assert.equal(w.data.teacherId, 'teacherA');
++    assert.equal(w.data.studentId, 'stu1', 'schedule is linked to the new student');
++    assert.equal(w.data.studentName, 'أحمد');
++    assert.equal(w.data.dayOfWeek, slots[i].dayOfWeek);
++    assert.equal(w.data.time, slots[i].time);
++    assert.equal(w.data.duration, slots[i].duration);
++    assert.equal(w.data.recurrence, 'weekly');
++    assert.equal(w.data.createdAt, TS);
++    assert.equal(w.data.updatedAt, TS);
++  });
++});
++
++test('stageStudentWithSchedules works with zero schedules', () => {
++  const batch = makeFakeBatch();
++  const out = stageStudentWithSchedules(batch, { student: { id: 'x' }, schedules: [] }, 't', student, [], TS);
++  assert.equal(batch.sets.length, 1);
++  assert.deepEqual(out.scheduleIds, []);
++});
++
++test('stageSchedules stages one write per slot and keeps the supplied studentId', () => {
++  const batch = makeFakeBatch();
++  const ids = stageSchedules(
++    batch,
++    [{ id: 'a' }, { id: 'b' }],
++    'teacherB',
++    [
++      { studentId: 'stuX', studentName: 'سارة', ...slots[0] },
++      { studentId: 'stuX', studentName: 'سارة', ...slots[1] },
++    ],
++    TS
++  );
++  assert.deepEqual(ids, ['a', 'b']);
++  assert.equal(batch.sets.length, 2);
++  assert.equal(batch.commits, 0);
++  assert.ok(batch.sets.every((w) => w.data.studentId === 'stuX' && w.data.teacherId === 'teacherB'));
++});
++
++test('stageSchedules rejects mismatched refs/schedules', () => {
++  const batch = makeFakeBatch();
++  assert.throws(() => stageSchedules(batch, [{ id: 'a' }], 't', [], TS), /mismatch/);
++  assert.equal(batch.sets.length, 0);
++});
+-- 
+2.43.0
+

@@ -1,0 +1,1412 @@
+diff --git a/firestore.rules b/firestore.rules
+index c7b6e95..175841a 100644
+--- a/firestore.rules
++++ b/firestore.rules
+@@ -31,11 +31,17 @@ service cloud.firestore {
+       return isSignedIn() && request.auth.uid == teacherId;
+     }
+ 
+-    // Enforce active subscription or admin status for write operations
++    // Subscription state of an already-fetched teacher document.
++    function isSubscriptionDataActive(data) {
++      return data.isActive != false && data.subscriptionExpiresAt > request.time;
++    }
++
++    // Enforce active subscription or admin status for write operations.
++    // The teacher document is read ONCE, and only when the caller is not an admin
++    // (|| short-circuits), so admins are never blocked by a missing teacher document.
+     function isTeacherSubscriptionActive(teacherId) {
+-      return isAdmin() || (
+-        get(/databases/$(database)/documents/teachers/$(teacherId)).data.isActive != false &&
+-        get(/databases/$(database)/documents/teachers/$(teacherId)).data.subscriptionExpiresAt > request.time
++      return isAdmin() || isSubscriptionDataActive(
++        get(/databases/$(database)/documents/teachers/$(teacherId)).data
+       );
+     }
+ 
+diff --git a/index.html b/index.html
+index eb544b3..9e1bb95 100644
+--- a/index.html
++++ b/index.html
+@@ -14,6 +14,8 @@
+     <meta name="apple-mobile-web-app-capable" content="yes" />
+     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+     <meta name="apple-mobile-web-app-title" content="سند المعلم" />
++    <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
++    <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
+     <link rel="preconnect" href="https://fonts.googleapis.com">
+     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+diff --git a/package.json b/package.json
+index c08d59a..d0d016e 100644
+--- a/package.json
++++ b/package.json
+@@ -13,7 +13,7 @@
+     "preview": "vite preview",
+     "clean": "rm -rf dist server.js",
+     "lint": "tsc --noEmit",
+-    "test": "NODE_ENV=test tsx --test tests/subscriptionAccess.test.ts tests/firestoreSecurityRegression.test.ts tests/vercelSecurityHeaders.test.ts tests/rateLimiter.test.ts tests/cronReminderRetry.test.ts tests/health.test.ts"
++    "test": "NODE_ENV=test tsx --test tests/subscriptionAccess.test.ts tests/firestoreSecurityRegression.test.ts tests/vercelSecurityHeaders.test.ts tests/rateLimiter.test.ts tests/cronReminderRetry.test.ts tests/health.test.ts tests/studentSchedulesBatch.test.ts tests/geminiConfig.test.ts"
+   },
+   "dependencies": {
+     "@google/genai": "^2.4.0",
+diff --git a/server.ts b/server.ts
+index 23bb51b..3e90ee2 100644
+--- a/server.ts
++++ b/server.ts
+@@ -9,7 +9,13 @@ import { getMessaging as getAdminMessaging } from 'firebase-admin/messaging';
+ import { GoogleGenAI } from '@google/genai';
+ import fs from 'fs';
+ import { createRemindersRouter, sendWhatsAppReminderTemplate } from './src/server/remindersCron.js';
+-import { createSubscriptionGuard, evaluateSubscription, type TeacherSubscriptionData } from './src/server/subscriptionAccess.js';
++import { createSubscriptionGuard, evaluateSubscription, withAccessCache, type TeacherSubscriptionData } from './src/server/subscriptionAccess.js';
++import {
++  applyModelThinking,
++  isFallbackEligibleError,
++  resolveFallbackModel,
++  ASSISTANT_ALLOWED_MODELS,
++} from './src/server/geminiConfig.js';
+ dotenv.config();
+ 
+ const __filename = fileURLToPath(import.meta.url);
+@@ -170,49 +176,52 @@ async function generateGeminiContentWithRetry(request: Parameters<typeof ai.mode
+ }
+ 
+ 
+-// Free Gemini/Gemma fallback: when the primary Gemini model exhausts quota or is
+-// temporarily unavailable, try Gemma 4 using the same API key.
++// Free Gemini fallback: when the primary Gemini model exhausts quota, is temporarily unavailable,
++// or its name is wrong/retired (404 / NOT_FOUND), try the fallback model with the same API key.
++// thinkingConfig is (re)computed for whichever model is actually called, so the fastest valid
++// thinking level is used and a fallback model never receives a level it may not support.
++function logGeminiFallback(kind: 'generate' | 'stream', primaryModel: unknown, fallbackModel: string, error: any) {
++  console.warn(
++    `Primary Gemini ${kind} failed; trying fallback model.`,
++    JSON.stringify({
++      primaryModel: String(primaryModel ?? ''),
++      fallbackModel,
++      status: error?.status ?? error?.code ?? error?.error?.code ?? null,
++      message: String(error?.message ?? '').slice(0, 200),
++    })
++  );
++}
++
+ async function generateGeminiTextWithFreeFallback(
+   request: Parameters<typeof ai.models.generateContent>[0],
+ ) {
+   try {
+-    const response = await generateGeminiContentWithRetry(request);
+-    return response;
++    return await generateGeminiContentWithRetry(applyModelThinking(request as any) as typeof request);
+   } catch (error: any) {
+-    const status = Number(error?.status ?? error?.code ?? error?.error?.code);
+-    const message = String(error?.message ?? '').toLowerCase();
+-    const fallbackEligible =
+-      status === 429 ||
+-      status === 500 ||
+-      status === 502 ||
+-      status === 503 ||
+-      status === 504 ||
+-      message.includes('unavailable') ||
+-      message.includes('high demand');
+-
+-    if (!fallbackEligible) throw error;
+-
+-    const fallbackModel = process.env.GEMINI_FREE_FALLBACK_MODEL || 'gemma-4-26b-a4b-it';
+-    console.warn('Primary Gemini model unavailable/quota exhausted; trying free Gemma fallback.', fallbackModel);
+-
+-    return await ai.models.generateContent({
+-      ...request,
+-      model: fallbackModel,
+-    });
++    if (!isFallbackEligibleError(error)) throw error;
++
++    const fallbackModel = resolveFallbackModel();
++    if (fallbackModel === request.model) throw error;
++    logGeminiFallback('generate', request.model, fallbackModel, error);
++
++    return await ai.models.generateContent(
++      applyModelThinking({ ...request, model: fallbackModel } as any) as typeof request
++    );
+   }
+ }
+ 
+ async function* streamGeminiTextWithFreeFallback(request: Parameters<typeof ai.models.generateContentStream>[0]) {
+   let stream;
+-  try { stream = await ai.models.generateContentStream(request); }
+-  catch (error: any) {
+-    const status = Number(error?.status ?? error?.code ?? error?.error?.code);
+-    const message = String(error?.message ?? '').toLowerCase();
+-    const eligible = status === 429 || status === 500 || status === 502 || status === 503 || status === 504 || message.includes('unavailable') || message.includes('high demand');
+-    if (!eligible) throw error;
+-    const fallbackModel = process.env.GEMINI_FREE_FALLBACK_MODEL || 'gemma-4-26b-a4b-it';
+-    console.warn('Primary Gemini stream unavailable/quota exhausted; trying free Gemma fallback.', fallbackModel);
+-    stream = await ai.models.generateContentStream({ ...request, model: fallbackModel });
++  try {
++    stream = await ai.models.generateContentStream(applyModelThinking(request as any) as typeof request);
++  } catch (error: any) {
++    if (!isFallbackEligibleError(error)) throw error;
++    const fallbackModel = resolveFallbackModel();
++    if (fallbackModel === request.model) throw error;
++    logGeminiFallback('stream', request.model, fallbackModel, error);
++    stream = await ai.models.generateContentStream(
++      applyModelThinking({ ...request, model: fallbackModel } as any) as typeof request
++    );
+   }
+   for await (const chunk of stream) { const chunkText = chunk.text || ''; if (chunkText) yield chunkText; }
+ }
+@@ -441,7 +450,7 @@ function getAdminDb() {
+ // Fail-closed subscription guard for every paid feature. The uid comes ONLY from the
+ // verified ID token (req.user set by verifyFirebaseToken), never from the request body.
+ // Admin policy follows security_spec.md / firestore.rules: admins/{uid} document exists.
+-const requireActiveSubscription = createSubscriptionGuard({
++const requireActiveSubscription = createSubscriptionGuard(withAccessCache({
+   async readTeacher(uid) {
+     const snap = await getAdminDb().collection('teachers').doc(uid).get();
+     return snap.exists ? (snap.data() as TeacherSubscriptionData) : null;
+@@ -463,7 +472,7 @@ const requireActiveSubscription = createSubscriptionGuard({
+       })
+     );
+   },
+-});
++}, { ttlMs: 30_000, maxEntries: 500 }));
+ 
+ // Simple LRU/TTL Cache for AI questions to reduce latency & API costs
+ const aiAskCache = new Map<string, { answer: string; timestamp: number }>();
+@@ -652,7 +661,9 @@ app.post('/api/ai/transcribe', verifyFirebaseToken, (req, res, next) => aiRateLi
+       return res.status(500).json({ error: 'خدمة الذكاء الاصطناعي غير مهيأة.' });
+     }
+ 
+-    const modelName = 'gemini-3.5-transcribe';
++    // 'gemini-3.5-transcribe' is not in Google's published model list; use a regular Gemini model
++    // (they accept inline audio) unless overridden.
++    const modelName = process.env.GEMINI_TRANSCRIBE_MODEL?.trim() || 'gemini-3.5-flash';
+     const audioPart = {
+       inlineData: {
+         mimeType: mimeType || 'audio/webm',
+@@ -682,8 +693,20 @@ app.post('/api/ai/transcribe', verifyFirebaseToken, (req, res, next) => aiRateLi
+   }
+ });
+ 
++// Records how many ms a middleware step took on req.aiTimings (used for the assistant timing log).
++function timedStep(label: string, middleware: (req: any, res: any, next: any) => unknown) {
++  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
++    const startedAt = Date.now();
++    const timings: Record<string, number> = ((req as any).aiTimings ??= { start: startedAt });
++    return middleware(req, res, (err?: unknown) => {
++      timings[label] = Date.now() - startedAt;
++      next(err as any);
++    });
++  };
++}
++
+ // AI Assistant Chat Endpoint
+-app.post('/api/ai/assistant', verifyFirebaseToken, (req, res, next) => aiRateLimiter('assistant', req, res, next), requireActiveSubscription, async (req, res) => {
++app.post('/api/ai/assistant', timedStep('verifyMs', verifyFirebaseToken), timedStep('rateLimitMs', (req, res, next) => aiRateLimiter('assistant', req, res, next)), timedStep('subscriptionMs', requireActiveSubscription), async (req, res) => {
+   let streamStarted = false;
+   try {
+     const { message, messagesHistory, summary, model } = req.body;
+@@ -692,7 +715,7 @@ app.post('/api/ai/assistant', verifyFirebaseToken, (req, res, next) => aiRateLim
+     if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: 'خدمة الذكاء الاصطناعي غير مهيأة حالياً.' });
+     
+     // Model selection
+-    const allowedModels = ['gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.1-flash-lite'];
++    const allowedModels: readonly string[] = ASSISTANT_ALLOWED_MODELS;
+     const selectedModel = allowedModels.includes(model) ? model : (process.env.GEMINI_MODEL || 'gemini-2.5-flash');
+ 
+     const systemInstruction = 'أنت المساعد الذكي التربوي لمنصة سند المعلم. ساعد المعلم بإجابات عملية ومباشرة. اعتمد فقط على المعلومات المتاحة. إذا لم تتوفر المعلومة وضح ذلك ولا تبتكر بيانات. اجعل الإجابة مختصرة ومنظمة.';
+@@ -711,10 +734,29 @@ app.post('/api/ai/assistant', verifyFirebaseToken, (req, res, next) => aiRateLim
+     if (Array.isArray(messagesHistory) && messagesHistory.length) { const recent = messagesHistory.slice(-6); historyText = 'سجل المحادثة السابقة:\n' + recent.map((m: any) => `${m.role === 'user' ? 'المعلم' : 'المساعد'}: ${typeof m.text === 'string' ? m.text.slice(0, 1000) : ''}`).join('\n') + '\n===============================\n'; }
+     const fullPrompt = `${formattedContext}\n${historyText}سؤال المعلم الحالي:\n${message.slice(0, 2000).trim()}`;
+     if (fullPrompt.length > 12000) return res.status(400).json({ error: 'حجم الطلب النهائي كبير جداً.' });
+-    const stream = streamGeminiTextWithFreeFallback({ model: selectedModel, contents: fullPrompt, config: { systemInstruction, maxOutputTokens: 700 } });
++    // maxOutputTokens also covers thinking tokens, so it is higher than the visible answer length.
++    const geminiStartedAt = Date.now();
++    const stream = streamGeminiTextWithFreeFallback({ model: selectedModel, contents: fullPrompt, config: { systemInstruction, maxOutputTokens: 1024 } });
+     res.status(200); res.setHeader('Content-Type', 'text/event-stream; charset=utf-8'); res.setHeader('Cache-Control', 'no-cache, no-transform'); res.setHeader('Connection', 'keep-alive'); res.setHeader('X-Accel-Buffering', 'no'); res.flushHeaders?.(); streamStarted = true;
+-    for await (const chunkText of stream) res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
+-    res.write('data: [DONE]\n\n'); return res.end();
++    let firstChunkMs: number | null = null;
++    for await (const chunkText of stream) {
++      if (firstChunkMs === null) firstChunkMs = Date.now() - geminiStartedAt;
++      res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
++    }
++    res.write('data: [DONE]\n\n');
++    const timings: Record<string, number> = (req as any).aiTimings || {};
++    // One-line timing log (no user data) to see where the time goes in Vercel Logs.
++    console.log(JSON.stringify({
++      evt: 'ai_assistant_timing',
++      model: selectedModel,
++      verifyMs: timings.verifyMs ?? null,
++      rateLimitMs: timings.rateLimitMs ?? null,
++      subscriptionMs: timings.subscriptionMs ?? null,
++      preGeminiMs: timings.start ? geminiStartedAt - timings.start : null,
++      firstChunkMs,
++      totalMs: timings.start ? Date.now() - timings.start : null,
++    }));
++    return res.end();
+   } catch (error) {
+     console.error('Gemini Assistant API Error:', error);
+     const status = Number((error as any)?.status);
+diff --git a/src/App.tsx b/src/App.tsx
+index 454583b..4d88332 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -79,6 +79,8 @@ export default function App() {
+   const [currentUser, setCurrentUser] = useState<User | null>(null);
+   const [profile, setProfile] = useState<TeacherProfile | null>(null);
+   const [isAdmin, setIsAdmin] = useState(false);
++  // False until the (background) admin check finishes; true immediately when signed out.
++  const [adminChecked, setAdminChecked] = useState(false);
+   const [loadingAuth, setLoadingAuth] = useState(true);
+   const [profileLoadingTimeout, setProfileLoadingTimeout] = useState(false);
+   const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
+@@ -238,31 +240,40 @@ export default function App() {
+ 
+   // Listen to Auth State
+   useEffect(() => {
+-    const unsub = onAuthStateChanged(auth, async (user) => {
+-      try {
+-        setCurrentUser(user);
+-        if (user) {
+-          try {
+-            const adminStatus = await checkIsAdmin(user);
++    let isMounted = true;
++    const unsub = onAuthStateChanged(auth, (user) => {
++      // Never block the first paint on extra network round trips.
++      setCurrentUser(user);
++      setLoadingAuth(false);
++
++      if (user) {
++        setAdminChecked(false);
++        // Admin check runs in the background; the UI updates when it resolves.
++        checkIsAdmin(user)
++          .then((adminStatus) => {
++            if (!isMounted) return;
+             setIsAdmin(adminStatus);
+-          } catch (e) {
++            setAdminChecked(true);
++          })
++          .catch((e) => {
+             console.warn('checkIsAdmin error:', e);
++            if (!isMounted) return;
+             setIsAdmin(false);
+-          }
+-          requestAndSaveFCMToken().then((result) => {
+-            if (!result.success) console.warn('FCM notification registration:', result.error);
+-          }).catch((e) => console.warn('FCM token error:', e));
+-        } else {
+-          setProfile(null);
+-          setIsAdmin(false);
+-        }
+-      } catch (err) {
+-        console.error('Error in onAuthStateChanged listener:', err);
+-      } finally {
+-        setLoadingAuth(false);
++            setAdminChecked(true);
++          });
++        requestAndSaveFCMToken().then((result) => {
++          if (!result.success) console.warn('FCM notification registration:', result.error);
++        }).catch((e) => console.warn('FCM token error:', e));
++      } else {
++        setProfile(null);
++        setIsAdmin(false);
++        setAdminChecked(true);
+       }
+     });
+-    return () => unsub();
++    return () => {
++      isMounted = false;
++      unsub();
++    };
+   }, []);
+ 
+   // Listen to Teacher Profile (with auto-provision fallback)
+@@ -322,7 +333,9 @@ export default function App() {
+ 
+   // Listen to Students, Schedules, and Library
+   useEffect(() => {
+-    if (!currentUser || !profile) {
++    // Teacher document id === auth uid (see firestore.rules isTeacherOwner), and read access to
++    // these subcollections only depends on the uid, so we do not need to wait for `profile`.
++    if (!currentUser) {
+       setStudents([]);
+       setSchedules([]);
+       setLibraryItems([]);
+@@ -338,7 +351,7 @@ export default function App() {
+       unsubSchedules();
+       unsubLibrary();
+     };
+-  }, [currentUser, profile?.id]);
++  }, [currentUser?.uid]);
+ 
+   // Run database automatic cleanup script for orphaned schedules and lessons (IIFE triggered)
+   useEffect(() => {
+@@ -438,6 +451,7 @@ export default function App() {
+           <AdminSecretGate
+             currentUser={currentUser}
+             isAdmin={isAdmin}
++            adminChecked={adminChecked}
+             onBackToApp={() => navigateTo('/')}
+           />
+         </div>
+diff --git a/src/components/AIAssistantChat.tsx b/src/components/AIAssistantChat.tsx
+index 5883380..d9f085f 100644
+--- a/src/components/AIAssistantChat.tsx
++++ b/src/components/AIAssistantChat.tsx
+@@ -98,6 +98,14 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
+     }
+   }, [messages, isOpen]);
+ 
++  // Warm up when the chat window opens so the first message does not pay for a cold serverless
++  // function or a token refresh. Both calls are best-effort and their results are ignored.
++  useEffect(() => {
++    if (!isOpen) return;
++    fetch('/api/health').catch(() => undefined);
++    getAuthenticatedHeaders(false).catch(() => undefined);
++  }, [isOpen]);
++
+   // Build client summary context (SAFE: student names, schedules, unsettled count ONLY; NO phone numbers / financial details)
+   const buildClientSummary = () => {
+     const studentNames = students.map((s) => s.name);
+@@ -135,13 +143,26 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
+     setMessages((prev) => [...prev, userMsg]); setInputMessage(''); setIsLoading(true);
+     try {
+       const recentHistory = messages.slice(-6).map((m) => ({ role: m.role === 'user' ? 'user' : 'model', text: m.text.slice(0, 1000) }));
+-      const headers = await getAuthenticatedHeaders();
++      // Use the cached ID token (Firebase refreshes it automatically before it expires) instead of
++      // forcing a network refresh on every message; retry once with a forced refresh on a 401.
++      const headers = await getAuthenticatedHeaders(false);
+       const summary = buildClientSummary();
+-      const response = await fetch('/api/ai/assistant', {
++      const requestBody = JSON.stringify({ message: trimmed, messagesHistory: recentHistory, summary, model: selectedModel });
++      let response = await fetch('/api/ai/assistant', {
+         method: 'POST',
+         headers,
+-        body: JSON.stringify({ message: trimmed, messagesHistory: recentHistory, summary, model: selectedModel }),
++        body: requestBody,
+       });
++      if (response.status === 401) {
++        const freshHeaders = await getAuthenticatedHeaders(true);
++        if (freshHeaders) {
++          response = await fetch('/api/ai/assistant', {
++            method: 'POST',
++            headers: freshHeaders,
++            body: requestBody,
++          });
++        }
++      }
+       
+       if (response.status === 401) {
+           // Token expired, handle silently or trigger re-auth
+diff --git a/src/components/AdminSecretGate.tsx b/src/components/AdminSecretGate.tsx
+index d0df662..3b26934 100644
+--- a/src/components/AdminSecretGate.tsx
++++ b/src/components/AdminSecretGate.tsx
+@@ -17,12 +17,15 @@ interface AdminSecretGateProps {
+   onBackToApp: () => void;
+   currentUser: User | null;
+   isAdmin: boolean;
++  /** False while the background admin check is still running. */
++  adminChecked?: boolean;
+ }
+ 
+ export const AdminSecretGate: React.FC<AdminSecretGateProps> = ({
+   onBackToApp,
+   currentUser,
+   isAdmin,
++  adminChecked = true,
+ }) => {
+   const [adminEmail, setAdminEmail] = useState('');
+   const [adminPassword, setAdminPassword] = useState('');
+@@ -61,6 +64,15 @@ export const AdminSecretGate: React.FC<AdminSecretGateProps> = ({
+     );
+   }
+ 
++  // 1b. Signed in but the admin check has not finished yet: never show "unauthorized" prematurely.
++  if (currentUser && !isAdmin && !adminChecked) {
++    return (
++      <div className="min-h-[85vh] flex items-center justify-center text-xs text-purple-200/80">
++        جاري التحقق من الصلاحيات...
++      </div>
++    );
++  }
++
+   // 2. If user is signed in but does not have admin permissions in the admins collection
+   if (currentUser && !isAdmin) {
+     return (
+diff --git a/src/components/ScheduleTab.tsx b/src/components/ScheduleTab.tsx
+index dc7e7f5..63cabb9 100644
+--- a/src/components/ScheduleTab.tsx
++++ b/src/components/ScheduleTab.tsx
+@@ -6,8 +6,10 @@ import {
+   deleteSchedule,
+   toggleScheduleCompletedToday,
+   saveScheduleEvaluation,
+-  addStudent,
++  addStudentWithSchedules,
++  addSchedulesBatch,
+ } from '../firebase';
++import type { NewScheduleForStudent } from '../services/studentSchedulesBatch';
+ import { VoiceInputButton } from './VoiceInputButton';
+ import { CalendarView } from './CalendarView';
+ import { useBackHandler } from '../services/backHandler';
+@@ -506,6 +508,14 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
+     e.preventDefault();
+     setConflictError(null);
+ 
++    // Writes hit the local cache instantly (persistentLocalCache), so the modal closes without
++    // waiting for the server. Server-side rejections are surfaced here (Firestore rolls the local
++    // write back automatically).
++    const reportSaveError = (err: any) => {
++      console.error('Error saving schedule', err);
++      alert(err?.message || 'حدث خطأ أثناء حفظ المواعيد. يرجى المحاولة مرة أخرى.');
++    };
++
+     try {
+       if (editingSchedule) {
+         // Conflict check for editing against all other schedules
+@@ -527,7 +537,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
+         }
+ 
+         setIsSubmitting(true);
+-        await updateSchedule(profile.id, editingSchedule.id, {
++        updateSchedule(profile.id, editingSchedule.id, {
+           dayOfWeek: Number(editingSlotData.dayOfWeek),
+           time: editingSlotData.time,
+           duration: Number(editingSlotData.duration) || 60,
+@@ -536,7 +546,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
+           color: editingSlotData.color,
+           locationOrLink: editingSlotData.locationOrLink?.trim() || '',
+           notes: editingSlotData.notes?.trim() || '',
+-        });
++        }).catch(reportSaveError);
+       } else {
+         // Multi-slot addition or direct student add
+         let targetStudentId = formStudentId;
+@@ -548,20 +558,6 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
+             return;
+           }
+           targetStudentName = newStudentName.trim();
+-          const rate = Number(newStudentHourlyRate) || 100;
+-          const createdId = await addStudent(profile.id, {
+-            name: targetStudentName,
+-            whatsapp: newStudentWhatsapp.trim() || '',
+-            subject: newStudentSubject.trim() || profile.subject || 'رياضيات',
+-            classType: newStudentClassType,
+-            hourlyRate: rate,
+-            monthlyFee: rate * 4,
+-            paymentStatus: 'unpaid',
+-            color: formSlotsList[0]?.color || 'emerald',
+-            notes: '',
+-          });
+-          if (!createdId) throw new Error('فشل إنشاء الطالب في السجل');
+-          targetStudentId = createdId;
+         } else {
+           const found = students.find((s) => s.id === formStudentId);
+           if (!found) {
+@@ -621,20 +617,47 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
+         }
+ 
+         setIsSubmitting(true);
+-        // Save each slot as an independent document in Firestore (One-to-Many student-to-slots relationship)
+-        for (const slot of formSlotsList) {
+-          await addSchedule(profile.id, {
+-            studentId: targetStudentId,
+-            studentName: targetStudentName,
+-            dayOfWeek: Number(slot.dayOfWeek),
+-            time: slot.time,
+-            duration: Number(slot.duration) || 60,
+-            recurrence: slot.recurrence || 'weekly',
+-            classType: slot.classType || 'in_person',
+-            color: slot.color || getClassTypeMeta(slot.classType).colorId,
+-            locationOrLink: slot.locationOrLink?.trim() || '',
+-            notes: slot.notes?.trim() || '',
+-          });
++        // Every slot is an independent document (one-to-many student-to-slots relationship), but all
++        // of them (and the new student, if any) are written in ONE atomic batch.
++        const slotsToSave = formSlotsList.map((slot): NewScheduleForStudent => ({
++          dayOfWeek: Number(slot.dayOfWeek),
++          time: slot.time,
++          duration: Number(slot.duration) || 60,
++          recurrence: slot.recurrence || 'weekly',
++          classType: slot.classType || 'in_person',
++          color: slot.color || getClassTypeMeta(slot.classType).colorId,
++          locationOrLink: slot.locationOrLink?.trim() || '',
++          notes: slot.notes?.trim() || '',
++        }));
++
++        if (studentSelectionMode === 'new') {
++          const rate = Number(newStudentHourlyRate) || 100;
++          const { commitPromise } = addStudentWithSchedules(
++            profile.id,
++            {
++              name: targetStudentName,
++              whatsapp: newStudentWhatsapp.trim() || '',
++              subject: newStudentSubject.trim() || profile.subject || 'رياضيات',
++              classType: newStudentClassType,
++              hourlyRate: rate,
++              monthlyFee: rate * 4,
++              paymentStatus: 'unpaid',
++              color: formSlotsList[0]?.color || 'emerald',
++              notes: '',
++            },
++            slotsToSave
++          );
++          commitPromise.catch(reportSaveError);
++        } else {
++          const { commitPromise } = addSchedulesBatch(
++            profile.id,
++            slotsToSave.map((slot) => ({
++              ...slot,
++              studentId: targetStudentId,
++              studentName: targetStudentName,
++            }))
++          );
++          commitPromise.catch(reportSaveError);
+         }
+       }
+ 
+diff --git a/src/components/StudentsTab.tsx b/src/components/StudentsTab.tsx
+index b419361..1542d0f 100644
+--- a/src/components/StudentsTab.tsx
++++ b/src/components/StudentsTab.tsx
+@@ -11,6 +11,7 @@ import {
+ import { useBackHandler } from '../services/backHandler';
+ import {
+   addStudent,
++  addStudentWithSchedules,
+   updateStudent,
+   deleteStudent,
+   subscribeToStudentLessons,
+@@ -258,7 +259,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
+ 
+     setSavingSchedInProfile(true);
+     try {
+-      await addSchedule(profile.id, {
++      // Local cache is updated instantly; do not block the UI on the server acknowledgement.
++      addSchedule(profile.id, {
+         studentId: selectedProfileStudent.id,
+         studentName: selectedProfileStudent.name,
+         dayOfWeek: Number(newSchedDay),
+@@ -267,7 +269,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
+         recurrence: 'weekly',
+         classType: newSchedClassType,
+         color: newSchedColor || selectedProfileStudent.color || 'purple',
+-      });
++      }).catch((err) => console.error('Error adding schedule in profile', err));
+       setShowAddScheduleInsideProfile(false);
+       // Reset default values
+       setNewSchedDay(6);
+@@ -302,13 +304,14 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
+ 
+     setSavingSchedInProfile(true);
+     try {
+-      await updateSchedule(profile.id, editingScheduleSlot.id, {
++      // Local cache is updated instantly; do not block the UI on the server acknowledgement.
++      updateSchedule(profile.id, editingScheduleSlot.id, {
+         dayOfWeek: Number(editSchedDay),
+         time: editSchedTime,
+         duration: Number(editSchedDuration) || 60,
+         classType: editSchedClassType,
+         color: editSchedColor,
+-      });
++      }).catch((err) => console.error('Error updating schedule slot', err));
+       setEditingScheduleSlot(null);
+     } catch (err) {
+       console.error('Error updating schedule slot', err);
+@@ -537,34 +540,42 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
+         color: formColor || 'emerald',
+       };
+ 
++      // Firestore applies writes to the local cache immediately (persistentLocalCache), so the UI
++      // must not wait for the server acknowledgement. Server-side rejections are reported through
++      // reportSaveError (Firestore rolls the local write back automatically).
++      const reportSaveError = (err: any) => {
++        console.error('Error saving student to Firestore:', err);
++        const errText = err?.message || 'حدث خطأ أثناء حفظ بيانات الطالب. يرجى المحاولة مرة أخرى.';
++        setToastMessage({ type: 'error', text: errText });
++        alert(errText);
++      };
++
+       if (editingStudent) {
+-        await updateStudent(profile.id, editingStudent.id, studentData);
++        updateStudent(profile.id, editingStudent.id, studentData).catch(reportSaveError);
+         setToastMessage({ type: 'success', text: 'تم تعديل بيانات الطالب بنجاح! 🎉' });
++        // Refresh lessons in the background (do not block closing the modal).
++        void loadAllLessons();
+       } else {
+-        const newStudentId = await addStudent(profile.id, {
+-          ...studentData,
+-          paymentStatus: 'unpaid',
+-        });
+-
+-        // Automatically save weekly schedules to timetable
+-        if (newStudentId && formSchedules.length > 0) {
+-          for (const s of formSchedules) {
+-            await addSchedule(profile.id, {
+-              studentId: newStudentId,
+-              studentName: formName.trim(),
+-              dayOfWeek: Number(s.dayOfWeek),
+-              time: s.time,
+-              duration: Number(s.duration) || 60,
+-              recurrence: 'weekly',
+-              classType: formClassType,
+-              color: formColor || 'emerald',
+-            });
+-          }
+-        }
++        // Student + all weekly schedules are written in ONE atomic batch.
++        const { commitPromise } = addStudentWithSchedules(
++          profile.id,
++          {
++            ...studentData,
++            paymentStatus: 'unpaid',
++          },
++          formSchedules.map((s) => ({
++            dayOfWeek: Number(s.dayOfWeek),
++            time: s.time,
++            duration: Number(s.duration) || 60,
++            recurrence: 'weekly' as const,
++            classType: formClassType,
++            color: formColor || 'emerald',
++          }))
++        );
++        commitPromise.catch(reportSaveError);
+         setToastMessage({ type: 'success', text: 'تم إضافة الطالب الجديد بنجاح! 🎉' });
+       }
+ 
+-      await loadAllLessons();
+       setShowAddModal(false);
+       // Auto hide toast after 3s
+       setTimeout(() => setToastMessage(null), 3500);
+diff --git a/src/firebase.ts b/src/firebase.ts
+index ba33bc6..83b6783 100644
+--- a/src/firebase.ts
++++ b/src/firebase.ts
+@@ -22,6 +22,7 @@ import {
+   setDoc,
+   updateDoc,
+   deleteDoc,
++  writeBatch,
+   collection,
+   query,
+   orderBy,
+@@ -46,6 +47,13 @@ import {
+ } from './types';
+ 
+ import rawFirebaseConfig from '../firebase-applet-config.json';
++import {
++  stageSchedules,
++  stageStudentWithSchedules,
++  type NewStudentInput,
++  type NewScheduleInput,
++  type NewScheduleForStudent,
++} from './services/studentSchedulesBatch';
+ 
+ const env = import.meta.env;
+ 
+@@ -766,6 +774,75 @@ export async function addStudent(
+   }
+ }
+ 
++/**
++ * Creates a student together with its schedule slots in ONE atomic write batch.
++ * The local cache is updated immediately (persistentLocalCache), so snapshot listeners fire right
++ * away; the returned `commitPromise` resolves only when the server acknowledges the write.
++ * The caller should NOT block the UI on `commitPromise`; attach a `.catch` to surface rejections
++ * (Firestore rolls the local write back automatically if the server rejects it).
++ */
++export function addStudentWithSchedules(
++  teacherId: string,
++  student: NewStudentInput,
++  schedules: NewScheduleForStudent[]
++): { studentId: string; scheduleIds: string[]; commitPromise: Promise<void> } {
++  const path = `teachers/${teacherId}/students`;
++  try {
++    const batch = writeBatch(db);
++    const studentsCol = collection(db, 'teachers', teacherId, 'students');
++    const schedulesCol = collection(db, 'teachers', teacherId, 'schedules');
++    const refs = {
++      student: doc(studentsCol),
++      schedules: schedules.map(() => doc(schedulesCol)),
++    };
++    const { studentId, scheduleIds } = stageStudentWithSchedules(
++      batch,
++      refs,
++      teacherId,
++      student,
++      schedules,
++      serverTimestamp()
++    );
++    const commitPromise = batch
++      .commit()
++      .catch((error) => {
++        handleFirestoreError(error, OperationType.CREATE, path);
++        throw error;
++      });
++    return { studentId, scheduleIds, commitPromise };
++  } catch (error) {
++    handleFirestoreError(error, OperationType.CREATE, path);
++    throw error;
++  }
++}
++
++/**
++ * Adds several schedule slots in ONE atomic write batch (same non-blocking contract as
++ * addStudentWithSchedules).
++ */
++export function addSchedulesBatch(
++  teacherId: string,
++  schedules: NewScheduleInput[]
++): { scheduleIds: string[]; commitPromise: Promise<void> } {
++  const path = `teachers/${teacherId}/schedules`;
++  try {
++    const batch = writeBatch(db);
++    const schedulesCol = collection(db, 'teachers', teacherId, 'schedules');
++    const refs = schedules.map(() => doc(schedulesCol));
++    const scheduleIds = stageSchedules(batch, refs, teacherId, schedules, serverTimestamp());
++    const commitPromise = batch
++      .commit()
++      .catch((error) => {
++        handleFirestoreError(error, OperationType.CREATE, path);
++        throw error;
++      });
++    return { scheduleIds, commitPromise };
++  } catch (error) {
++    handleFirestoreError(error, OperationType.CREATE, path);
++    throw error;
++  }
++}
++
+ export async function updateStudent(
+   teacherId: string,
+   studentId: string,
+diff --git a/src/server/geminiConfig.ts b/src/server/geminiConfig.ts
+new file mode 100644
+index 0000000..5b2f8e7
+--- /dev/null
++++ b/src/server/geminiConfig.ts
+@@ -0,0 +1,71 @@
++/**
++ * Pure Gemini helpers (no SDK / express imports so they are unit-testable offline).
++ *
++ * thinkingConfigForModel: per Google's Gemini docs
++ *   - gemini-3.1-flash-lite, gemini-3.5-flash (and 3.6): support MINIMAL thinking (fastest).
++ *   - gemini-3.7-flash, gemini-3.8-flash: default to MEDIUM and do NOT support MINIMAL
++ *     (MINIMAL is rejected by the API), so LOW is the fastest valid level.
++ *   - any other model (Gemma, 2.5, unknown): do not send thinkingConfig at all.
++ * The string values are identical to the `ThinkingLevel` enum values of @google/genai.
++ */
++export type ThinkingLevelName = 'MINIMAL' | 'LOW';
++
++export function thinkingConfigForModel(
++  model: string | undefined | null
++): { thinkingLevel: ThinkingLevelName } | undefined {
++  const m = String(model ?? '').trim().toLowerCase();
++  if (m === 'gemini-3.1-flash-lite' || m === 'gemini-3.5-flash' || m === 'gemini-3.6-flash') {
++    return { thinkingLevel: 'MINIMAL' };
++  }
++  if (m === 'gemini-3.8-flash' || m === 'gemini-3.7-flash') {
++    return { thinkingLevel: 'LOW' };
++  }
++  return undefined;
++}
++
++/**
++ * Returns a copy of a generateContent request whose `config.thinkingConfig` matches the request's
++ * model. Any thinkingConfig supplied for another model is removed first, so a fallback model never
++ * receives a thinking level it may not support.
++ */
++export function applyModelThinking<T extends { model?: string; config?: Record<string, any> | undefined }>(
++  request: T
++): T {
++  const { thinkingConfig: _ignored, ...restConfig } = (request.config ?? {}) as Record<string, any>;
++  const thinking = thinkingConfigForModel(request.model);
++  return {
++    ...request,
++    config: thinking ? { ...restConfig, thinkingConfig: thinking } : restConfig,
++  };
++}
++
++/**
++ * True when an error from the Gemini API should trigger the fallback model:
++ * quota (429), temporary server errors (500/502/503/504), "unavailable"/"high demand" messages,
++ * and 404 / NOT_FOUND / "model not found" (a wrong or retired model name must never break the app).
++ */
++export function isFallbackEligibleError(error: any): boolean {
++  const status = Number(error?.status ?? error?.code ?? error?.error?.code);
++  const message = String(error?.message ?? '').toLowerCase();
++  return (
++    status === 429 ||
++    status === 500 ||
++    status === 502 ||
++    status === 503 ||
++    status === 504 ||
++    status === 404 ||
++    message.includes('unavailable') ||
++    message.includes('high demand') ||
++    message.includes('not_found') ||
++    message.includes('not found') ||
++    message.includes('model not found')
++  );
++}
++
++export const DEFAULT_FREE_FALLBACK_MODEL = 'gemini-3.5-flash-lite';
++
++export function resolveFallbackModel(env: Record<string, string | undefined> = process.env): string {
++  return env.GEMINI_FREE_FALLBACK_MODEL?.trim() || DEFAULT_FREE_FALLBACK_MODEL;
++}
++
++export const ASSISTANT_ALLOWED_MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'] as const;
+diff --git a/src/server/subscriptionAccess.ts b/src/server/subscriptionAccess.ts
+index 6a4d0a8..424bfa7 100644
+--- a/src/server/subscriptionAccess.ts
++++ b/src/server/subscriptionAccess.ts
+@@ -194,3 +194,91 @@ export function createSubscriptionGuard(deps: AccessDeps) {
+     next();
+   };
+ }
++
++/* ------------------------------------------------------------------ */
++/* Short-lived in-memory cache for the two Firestore reads             */
++/* ------------------------------------------------------------------ */
++
++export interface AccessCacheOptions {
++  /** Maximum age of a cached value in ms (default 30s). */
++  ttlMs?: number;
++  /** Maximum number of cached entries per cache (default 500). Oldest entry is evicted first. */
++  maxEntries?: number;
++  /** Clock in ms (injectable for tests). */
++  nowMs?: () => number;
++}
++
++class TtlCache<V> {
++  private store = new Map<string, { value: V; expiresAt: number }>();
++  constructor(
++    private ttlMs: number,
++    private maxEntries: number,
++    private nowMs: () => number
++  ) {}
++
++  get(key: string): { hit: true; value: V } | { hit: false } {
++    const entry = this.store.get(key);
++    if (!entry) return { hit: false };
++    if (entry.expiresAt <= this.nowMs()) {
++      this.store.delete(key);
++      return { hit: false };
++    }
++    return { hit: true, value: entry.value };
++  }
++
++  set(key: string, value: V): void {
++    this.store.delete(key);
++    while (this.store.size >= this.maxEntries) {
++      const oldest = this.store.keys().next().value;
++      if (oldest === undefined) break;
++      this.store.delete(oldest);
++    }
++    this.store.set(key, { value, expiresAt: this.nowMs() + this.ttlMs });
++  }
++
++  get size(): number {
++    return this.store.size;
++  }
++}
++
++/**
++ * Wraps AccessDeps with a short TTL cache (default 30s, 500 entries) to avoid two Firestore round
++ * trips on every paid request.
++ *
++ * Safety rules (fail-closed behaviour is unchanged):
++ *  - errors are never cached (they propagate, so the guard still answers 503);
++ *  - a missing teacher document (null) is never cached, so a just-registered teacher is not blocked;
++ *  - a teacher document is cached ONLY while its subscription evaluates to 'active'. The expiry is
++ *    re-evaluated against the current time on every request, so an expiry is honoured exactly and a
++ *    renewal by an admin takes effect immediately (expired/deactivated states are never cached);
++ *  - an admin status is cached for at most ttlMs, so a deactivation/admin change is visible within
++ *    ttlMs (30s by default) - never longer.
++ */
++export function withAccessCache(deps: AccessDeps, options: AccessCacheOptions = {}): AccessDeps {
++  const ttlMs = options.ttlMs ?? 30_000;
++  const maxEntries = options.maxEntries ?? 500;
++  const nowMs = options.nowMs ?? (() => Date.now());
++  const teacherCache = new TtlCache<TeacherSubscriptionData>(ttlMs, maxEntries, nowMs);
++  const adminCache = new TtlCache<boolean>(ttlMs, maxEntries, nowMs);
++
++  return {
++    ...deps,
++    async readTeacher(uid) {
++      const cached = teacherCache.get(uid);
++      if (cached.hit) return cached.value;
++      const teacher = await deps.readTeacher(uid);
++      const now = (deps.now ?? (() => new Date()))();
++      if (teacher && evaluateSubscription(teacher, now) === 'active') {
++        teacherCache.set(uid, teacher);
++      }
++      return teacher;
++    },
++    async isAdmin(uid) {
++      const cached = adminCache.get(uid);
++      if (cached.hit) return cached.value;
++      const admin = await deps.isAdmin(uid);
++      adminCache.set(uid, admin);
++      return admin;
++    },
++  };
++}
+diff --git a/src/services/authHelper.ts b/src/services/authHelper.ts
+index 993eaf3..2f51f3c 100644
+--- a/src/services/authHelper.ts
++++ b/src/services/authHelper.ts
+@@ -4,13 +4,14 @@ import { auth } from '../firebase';
+  * دالة موحدة لجلب توكن هوية صالح مع منطق إعادة محاولة (retry) 
+  * وتأخير زمني (exponential backoff) عند فشل الاتصال.
+  */
+-export async function getValidIdToken(retries = 3): Promise<string | null> {
++export async function getValidIdToken(retries = 3, forceRefresh = true): Promise<string | null> {
+   if (!auth.currentUser) return null;
+   
+   for (let i = 0; i < retries; i++) {
+     try {
+-      // جلب توكن جديد بقوة (forceRefresh = true)
+-      return await auth.currentUser.getIdToken(true);
++      // forceRefresh = true (الافتراضي) يجلب توكن جديد من الشبكة. عند false يُستخدم التوكن المخزّن
++      // (ويقوم Firebase بتجديده تلقائياً قبل انتهاء صلاحيته بخمس دقائق). المحاولات اللاحقة تُجدَّد دائماً.
++      return await auth.currentUser.getIdToken(forceRefresh || i > 0);
+     } catch (err) {
+       console.warn(`محاولة ${i + 1} فشلت في تحديث التوكن، جاري إعادة المحاولة...`);
+       
+@@ -30,8 +31,8 @@ export async function getValidIdToken(retries = 3): Promise<string | null> {
+ /**
+  * دالة مساعدة لجلب الترويسات المطلوبة للطلب (Headers)
+  */
+-export async function getAuthenticatedHeaders(): Promise<HeadersInit | null> {
+-  const token = await getValidIdToken();
++export async function getAuthenticatedHeaders(forceRefresh = true): Promise<HeadersInit | null> {
++  const token = await getValidIdToken(3, forceRefresh);
+   if (!token) return null;
+   
+   return {
+diff --git a/src/services/studentSchedulesBatch.ts b/src/services/studentSchedulesBatch.ts
+new file mode 100644
+index 0000000..4958f50
+--- /dev/null
++++ b/src/services/studentSchedulesBatch.ts
+@@ -0,0 +1,78 @@
++import type { Student, ScheduleSlot } from '../types';
++
++/**
++ * Pure helpers that stage a new student + its weekly schedule slots into ONE Firestore write batch.
++ * They only call `batch.set(...)`; they never call `commit()`, so the caller decides when/how to
++ * commit and the UI can avoid waiting for the server acknowledgement.
++ * Kept free of any firebase imports so it can be unit tested without the SDK.
++ */
++
++export interface BatchLike<R = unknown> {
++  set(ref: R, data: Record<string, unknown>): unknown;
++}
++
++export interface DocRefLike {
++  id: string;
++}
++
++export type NewStudentInput = Omit<Student, 'id' | 'teacherId' | 'createdAt' | 'updatedAt'>;
++
++/** A schedule slot as supplied by the UI (ids/timestamps are added here). */
++export type NewScheduleInput = Omit<ScheduleSlot, 'id' | 'teacherId' | 'createdAt' | 'updatedAt'>;
++
++/** Schedule slot whose studentId / studentName are filled from the student being created. */
++export type NewScheduleForStudent = Omit<NewScheduleInput, 'studentId' | 'studentName'>;
++
++export function stageSchedules<R extends DocRefLike>(
++  batch: BatchLike<R>,
++  scheduleRefs: R[],
++  teacherId: string,
++  schedules: NewScheduleInput[],
++  timestamp: unknown
++): string[] {
++  if (scheduleRefs.length !== schedules.length) {
++    throw new Error('stageSchedules: refs and schedules length mismatch');
++  }
++  return schedules.map((schedule, i) => {
++    const ref = scheduleRefs[i];
++    batch.set(ref, {
++      ...schedule,
++      id: ref.id,
++      teacherId,
++      createdAt: timestamp,
++      updatedAt: timestamp,
++    });
++    return ref.id;
++  });
++}
++
++export function stageStudentWithSchedules<R extends DocRefLike>(
++  batch: BatchLike<R>,
++  refs: { student: R; schedules: R[] },
++  teacherId: string,
++  student: NewStudentInput,
++  schedules: NewScheduleForStudent[],
++  timestamp: unknown
++): { studentId: string; scheduleIds: string[] } {
++  batch.set(refs.student, {
++    ...student,
++    id: refs.student.id,
++    teacherId,
++    createdAt: timestamp,
++    updatedAt: timestamp,
++  });
++
++  const scheduleIds = stageSchedules(
++    batch,
++    refs.schedules,
++    teacherId,
++    schedules.map((s) => ({
++      ...s,
++      studentId: refs.student.id,
++      studentName: student.name,
++    })),
++    timestamp
++  );
++
++  return { studentId: refs.student.id, scheduleIds };
++}
+diff --git a/tests/geminiConfig.test.ts b/tests/geminiConfig.test.ts
+new file mode 100644
+index 0000000..6ec2572
+--- /dev/null
++++ b/tests/geminiConfig.test.ts
+@@ -0,0 +1,82 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import {
++  thinkingConfigForModel,
++  applyModelThinking,
++  isFallbackEligibleError,
++  resolveFallbackModel,
++  ASSISTANT_ALLOWED_MODELS,
++} from '../src/server/geminiConfig';
++
++test('thinkingConfigForModel: MINIMAL for 3.1-flash-lite / 3.5-flash / 3.6-flash', () => {
++  for (const m of ['gemini-3.1-flash-lite', 'gemini-3.5-flash', 'gemini-3.6-flash']) {
++    assert.deepEqual(thinkingConfigForModel(m), { thinkingLevel: 'MINIMAL' }, m);
++  }
++});
++
++test('thinkingConfigForModel: LOW (never MINIMAL) for 3.7 / 3.8 flash', () => {
++  for (const m of ['gemini-3.8-flash', 'gemini-3.7-flash']) {
++    assert.deepEqual(thinkingConfigForModel(m), { thinkingLevel: 'LOW' }, m);
++  }
++});
++
++test('thinkingConfigForModel: nothing for other / unknown / empty models', () => {
++  for (const m of ['gemini-2.5-flash', 'gemma-4-26b-a4b-it', 'gemini-3.5-flash-lite', 'whatever', '', undefined, null]) {
++    assert.equal(thinkingConfigForModel(m as any), undefined, String(m));
++  }
++});
++
++test('every allowed assistant model has a thinking config (so none runs at the slow default)', () => {
++  for (const m of ASSISTANT_ALLOWED_MODELS) assert.ok(thinkingConfigForModel(m), m);
++  assert.ok(!(ASSISTANT_ALLOWED_MODELS as readonly string[]).includes('gemini-4-argon'));
++});
++
++test('applyModelThinking sets the level for the request model and keeps other config', () => {
++  const out = applyModelThinking({
++    model: 'gemini-3.8-flash',
++    contents: 'x',
++    config: { systemInstruction: 'sys', maxOutputTokens: 1024 },
++  } as any);
++  assert.deepEqual((out as any).config, {
++    systemInstruction: 'sys',
++    maxOutputTokens: 1024,
++    thinkingConfig: { thinkingLevel: 'LOW' },
++  });
++  assert.equal((out as any).contents, 'x');
++});
++
++test('applyModelThinking drops a stale thinkingConfig when the model has no mapping (fallback safety)', () => {
++  const out = applyModelThinking({
++    model: 'gemma-4-26b-a4b-it',
++    config: { systemInstruction: 'sys', thinkingConfig: { thinkingLevel: 'MINIMAL' } },
++  } as any);
++  assert.deepEqual((out as any).config, { systemInstruction: 'sys' });
++});
++
++test('applyModelThinking works when no config was supplied and does not mutate its input', () => {
++  const input: any = { model: 'gemini-3.1-flash-lite', contents: 'x' };
++  const out: any = applyModelThinking(input);
++  assert.deepEqual(out.config, { thinkingConfig: { thinkingLevel: 'MINIMAL' } });
++  assert.equal(input.config, undefined);
++});
++
++test('isFallbackEligibleError: 404 / NOT_FOUND / model not found / quota / 5xx -> fallback', () => {
++  assert.equal(isFallbackEligibleError({ status: 404 }), true);
++  assert.equal(isFallbackEligibleError({ code: 404 }), true);
++  assert.equal(isFallbackEligibleError({ message: 'models/foo is not found for API version v1beta' }), true);
++  assert.equal(isFallbackEligibleError({ message: '{"error":{"status":"NOT_FOUND"}}' }), true);
++  for (const status of [429, 500, 502, 503, 504]) assert.equal(isFallbackEligibleError({ status }), true, String(status));
++  assert.equal(isFallbackEligibleError({ message: 'The model is overloaded. high demand' }), true);
++});
++
++test('isFallbackEligibleError: 400 / 401 / 403 / plain errors -> NO fallback', () => {
++  for (const status of [400, 401, 403]) assert.equal(isFallbackEligibleError({ status }), false, String(status));
++  assert.equal(isFallbackEligibleError(new Error('invalid argument')), false);
++  assert.equal(isFallbackEligibleError(undefined), false);
++});
++
++test('resolveFallbackModel: env override, otherwise gemini-3.5-flash-lite (not Gemma)', () => {
++  assert.equal(resolveFallbackModel({}), 'gemini-3.5-flash-lite');
++  assert.equal(resolveFallbackModel({ GEMINI_FREE_FALLBACK_MODEL: '  ' }), 'gemini-3.5-flash-lite');
++  assert.equal(resolveFallbackModel({ GEMINI_FREE_FALLBACK_MODEL: 'my-model' }), 'my-model');
++});
+diff --git a/tests/studentSchedulesBatch.test.ts b/tests/studentSchedulesBatch.test.ts
+new file mode 100644
+index 0000000..6dea3e7
+--- /dev/null
++++ b/tests/studentSchedulesBatch.test.ts
+@@ -0,0 +1,112 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import {
++  stageSchedules,
++  stageStudentWithSchedules,
++  type NewStudentInput,
++  type NewScheduleForStudent,
++} from '../src/services/studentSchedulesBatch';
++
++type Ref = { id: string };
++
++function makeFakeBatch() {
++  const sets: Array<{ ref: Ref; data: Record<string, unknown> }> = [];
++  let commits = 0;
++  return {
++    sets,
++    get commits() {
++      return commits;
++    },
++    set(ref: Ref, data: Record<string, unknown>) {
++      sets.push({ ref, data });
++    },
++    commit() {
++      commits++;
++      return Promise.resolve();
++    },
++  };
++}
++
++const TS = { __ts: 'serverTimestamp' };
++
++const student = {
++  name: 'أحمد',
++  whatsapp: '0100',
++  subject: 'رياضيات',
++  classType: 'online',
++  hourlyRate: 100,
++  monthlyFee: 400,
++  paymentStatus: 'unpaid',
++  color: 'emerald',
++  notes: '',
++} as unknown as NewStudentInput;
++
++const slots: NewScheduleForStudent[] = [
++  { dayOfWeek: 0, time: '16:00', duration: 60, recurrence: 'weekly', classType: 'online', color: 'emerald' },
++  { dayOfWeek: 2, time: '17:30', duration: 90, recurrence: 'weekly', classType: 'online', color: 'emerald' },
++  { dayOfWeek: 4, time: '18:00', duration: 60, recurrence: 'weekly', classType: 'online', color: 'emerald' },
++];
++
++test('stageStudentWithSchedules stages exactly 1 student + N schedules and never commits', () => {
++  const batch = makeFakeBatch();
++  const refs = { student: { id: 'stu1' }, schedules: [{ id: 's1' }, { id: 's2' }, { id: 's3' }] };
++
++  const out = stageStudentWithSchedules(batch, refs, 'teacherA', student, slots, TS);
++
++  assert.equal(batch.sets.length, 4, 'one student + three schedules');
++  assert.equal(batch.commits, 0, 'staging must not commit (the caller commits without awaiting)');
++  assert.equal(out.studentId, 'stu1');
++  assert.deepEqual(out.scheduleIds, ['s1', 's2', 's3']);
++
++  const [studentWrite, ...scheduleWrites] = batch.sets;
++  assert.equal(studentWrite.ref.id, 'stu1');
++  assert.equal(studentWrite.data.id, 'stu1');
++  assert.equal(studentWrite.data.teacherId, 'teacherA');
++  assert.equal(studentWrite.data.name, 'أحمد');
++  assert.equal(studentWrite.data.createdAt, TS);
++  assert.equal(studentWrite.data.updatedAt, TS);
++
++  scheduleWrites.forEach((w, i) => {
++    assert.equal(w.data.id, refs.schedules[i].id);
++    assert.equal(w.data.teacherId, 'teacherA');
++    assert.equal(w.data.studentId, 'stu1', 'schedule is linked to the new student');
++    assert.equal(w.data.studentName, 'أحمد');
++    assert.equal(w.data.dayOfWeek, slots[i].dayOfWeek);
++    assert.equal(w.data.time, slots[i].time);
++    assert.equal(w.data.duration, slots[i].duration);
++    assert.equal(w.data.recurrence, 'weekly');
++    assert.equal(w.data.createdAt, TS);
++    assert.equal(w.data.updatedAt, TS);
++  });
++});
++
++test('stageStudentWithSchedules works with zero schedules', () => {
++  const batch = makeFakeBatch();
++  const out = stageStudentWithSchedules(batch, { student: { id: 'x' }, schedules: [] }, 't', student, [], TS);
++  assert.equal(batch.sets.length, 1);
++  assert.deepEqual(out.scheduleIds, []);
++});
++
++test('stageSchedules stages one write per slot and keeps the supplied studentId', () => {
++  const batch = makeFakeBatch();
++  const ids = stageSchedules(
++    batch,
++    [{ id: 'a' }, { id: 'b' }],
++    'teacherB',
++    [
++      { studentId: 'stuX', studentName: 'سارة', ...slots[0] },
++      { studentId: 'stuX', studentName: 'سارة', ...slots[1] },
++    ],
++    TS
++  );
++  assert.deepEqual(ids, ['a', 'b']);
++  assert.equal(batch.sets.length, 2);
++  assert.equal(batch.commits, 0);
++  assert.ok(batch.sets.every((w) => w.data.studentId === 'stuX' && w.data.teacherId === 'teacherB'));
++});
++
++test('stageSchedules rejects mismatched refs/schedules', () => {
++  const batch = makeFakeBatch();
++  assert.throws(() => stageSchedules(batch, [{ id: 'a' }], 't', [], TS), /mismatch/);
++  assert.equal(batch.sets.length, 0);
++});
+diff --git a/tests/subscriptionAccess.test.ts b/tests/subscriptionAccess.test.ts
+index 8a12dc1..89ed713 100644
+--- a/tests/subscriptionAccess.test.ts
++++ b/tests/subscriptionAccess.test.ts
+@@ -5,6 +5,7 @@ import {
+   createSubscriptionGuard,
+   evaluateSubscription,
+   parseExpiryDateServer,
++  withAccessCache,
+   type AccessDeps,
+   type TeacherSubscriptionData,
+ } from '../src/server/subscriptionAccess.ts';
+@@ -220,3 +221,119 @@ test('middleware: ignores any teacherId/uid the client could send (uid comes onl
+   await guard(req as never, { status: () => ({ json: () => undefined }) }, () => {});
+   assert.deepEqual(seen, ['real-uid']);
+ });
++
++/* ---------- withAccessCache (30s TTL cache) ---------- */
++
++function cacheHarness(teacher: TeacherSubscriptionData | null, admin = false) {
++  let t = 0;
++  const calls = { teacher: 0, admin: 0 };
++  let currentTeacher = teacher;
++  let currentAdmin = admin;
++  let nowDate = NOW;
++  const base: AccessDeps = {
++    now: () => nowDate,
++    isAdmin: async () => {
++      calls.admin++;
++      return currentAdmin;
++    },
++    readTeacher: async () => {
++      calls.teacher++;
++      return currentTeacher;
++    },
++    logError: () => {},
++  };
++  const cached = withAccessCache(base, { ttlMs: 30_000, maxEntries: 3, nowMs: () => t });
++  return {
++    cached,
++    calls,
++    advance: (ms: number) => {
++      t += ms;
++      nowDate = new Date(nowDate.getTime() + ms);
++    },
++    setTeacher: (x: TeacherSubscriptionData | null) => {
++      currentTeacher = x;
++    },
++    setAdmin: (x: boolean) => {
++      currentAdmin = x;
++    },
++  };
++}
++
++test('cache: active teacher + admin result are served from memory within 30s, refreshed after', async () => {
++  const h = cacheHarness({ subscriptionExpiresAt: ts(FUTURE) });
++  await h.cached.readTeacher('u1');
++  await h.cached.isAdmin('u1');
++  h.advance(29_000);
++  await h.cached.readTeacher('u1');
++  await h.cached.isAdmin('u1');
++  assert.deepEqual(h.calls, { teacher: 1, admin: 1 }, 'second round served from cache');
++  h.advance(2_000); // 31s since the first read
++  await h.cached.readTeacher('u1');
++  await h.cached.isAdmin('u1');
++  assert.deepEqual(h.calls, { teacher: 2, admin: 2 }, 'refetched after TTL expiry');
++});
++
++test('cache: a deactivation is visible after at most 30 seconds', async () => {
++  const h = cacheHarness({ subscriptionExpiresAt: ts(FUTURE) });
++  const guard = (d: AccessDeps) => authorizeActiveSubscription('u1', d);
++  assert.equal((await guard(h.cached)).ok, true);
++  h.setTeacher({ subscriptionExpiresAt: ts(FUTURE), isActive: false });
++  h.advance(31_000);
++  const after = await guard(h.cached);
++  assert.equal(after.ok, false);
++  if (!after.ok) assert.equal(after.code, 'account_deactivated');
++});
++
++test('cache: expiry is honoured exactly even while the teacher document is cached', async () => {
++  const soon = new Date(NOW.getTime() + 10_000);
++  const h = cacheHarness({ subscriptionExpiresAt: ts(soon) });
++  assert.equal((await authorizeActiveSubscription('u1', h.cached)).ok, true);
++  h.advance(11_000); // subscription ended 1s ago, but cache TTL (30s) has not elapsed
++  const r = await authorizeActiveSubscription('u1', h.cached);
++  assert.equal(r.ok, false);
++  if (!r.ok) assert.equal(r.code, 'subscription_expired');
++  assert.equal(h.calls.teacher, 1, 'decision came from cached data, re-evaluated against the clock');
++});
++
++test('cache: expired / deactivated / missing teachers are NOT cached (renewals apply immediately)', async () => {
++  const h = cacheHarness({ subscriptionExpiresAt: ts(PAST) });
++  assert.equal((await authorizeActiveSubscription('u1', h.cached)).ok, false);
++  h.setTeacher({ subscriptionExpiresAt: ts(FUTURE) }); // admin renews
++  assert.equal((await authorizeActiveSubscription('u1', h.cached)).ok, true, 'renewal visible immediately');
++
++  const missing = cacheHarness(null);
++  assert.equal((await authorizeActiveSubscription('u2', missing.cached)).ok, false);
++  missing.setTeacher({ subscriptionExpiresAt: ts(FUTURE) }); // profile just created
++  assert.equal((await authorizeActiveSubscription('u2', missing.cached)).ok, true);
++});
++
++test('cache: errors are never cached and still fail closed with 503', async () => {
++  let fail = true;
++  const base: AccessDeps = {
++    now: () => NOW,
++    isAdmin: async () => false,
++    readTeacher: async () => {
++      if (fail) throw new Error('down');
++      return { subscriptionExpiresAt: ts(FUTURE) };
++    },
++    logError: () => {},
++  };
++  const cached = withAccessCache(base, { nowMs: () => 0 });
++  const first = await authorizeActiveSubscription('u1', cached);
++  assert.equal(first.ok, false);
++  if (!first.ok) assert.equal(first.status, 503);
++  fail = false;
++  assert.equal((await authorizeActiveSubscription('u1', cached)).ok, true);
++});
++
++test('cache: never holds more than maxEntries (oldest evicted first)', async () => {
++  const h = cacheHarness({ subscriptionExpiresAt: ts(FUTURE) });
++  for (const uid of ['a', 'b', 'c', 'd']) await h.cached.readTeacher(uid); // maxEntries = 3 -> 'a' evicted
++  assert.equal(h.calls.teacher, 4);
++  await h.cached.readTeacher('d');
++  await h.cached.readTeacher('c');
++  await h.cached.readTeacher('b');
++  assert.equal(h.calls.teacher, 4, 'b, c, d still cached');
++  await h.cached.readTeacher('a');
++  assert.equal(h.calls.teacher, 5, 'a was evicted and refetched');
++});
