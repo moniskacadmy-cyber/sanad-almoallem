@@ -151,6 +151,48 @@ service cloud.firestore {
         (!('learningStyle' in data) || (data.learningStyle is string && data.learningStyle.size() <= 200));
     }
 
+    // Workplace validation
+    function isValidWorkplace(teacherId) {
+      let data = incoming();
+      return data.teacherId == teacherId &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+        data.type in ['center', 'private', 'online'];
+    }
+
+    // Group validation
+    function isValidGroup(teacherId) {
+      let data = incoming();
+      return data.teacherId == teacherId &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+        data.workplaceId is string && data.workplaceId.size() <= 128;
+    }
+
+    // Session validation
+    function isValidSession(teacherId) {
+      let data = incoming();
+      return data.groupId is string && data.groupId.size() <= 128 &&
+        data.date is string &&
+        data.status in ['held', 'cancelled'];
+    }
+
+    // Attendance validation
+    function isValidAttendance(teacherId) {
+      let data = incoming();
+      return data.sessionId is string &&
+        data.groupId is string &&
+        data.studentId is string &&
+        data.status in ['present', 'absent', 'late', 'excused'];
+    }
+
+    // Payment validation
+    function isValidPayment(teacherId) {
+      let data = incoming();
+      return data.studentId is string &&
+        data.groupId is string &&
+        data.month is string &&
+        data.status in ['paid', 'partial', 'unpaid'];
+    }
+
     // Lesson validation
     function isValidLesson(teacherId) {
       let data = incoming();
@@ -285,6 +327,66 @@ service cloud.firestore {
       // so clients get no access (prevents spoofing/suppressing reminders and unbounded writes).
       match /sentReminders/{reminderId} {
         allow read, write: if false;
+      }
+
+      // Subcollection: Workplaces
+      match /workplaces/{workplaceId} {
+        allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+        allow create, update: if isValidId(teacherId) && isValidId(workplaceId) &&
+                                 (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isTeacherSubscriptionActive(teacherId) &&
+                                 isValidWorkplace(teacherId);
+        allow delete: if isValidId(teacherId) && isValidId(workplaceId) &&
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId);
+      }
+
+      // Subcollection: Groups
+      match /groups/{groupId} {
+        allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+        allow create, update: if isValidId(teacherId) && isValidId(groupId) &&
+                                 (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isTeacherSubscriptionActive(teacherId) &&
+                                 isValidGroup(teacherId);
+        allow delete: if isValidId(teacherId) && isValidId(groupId) &&
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId);
+      }
+
+      // Subcollection: Sessions
+      match /sessions/{sessionId} {
+        allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+        allow create, update: if isValidId(teacherId) && isValidId(sessionId) &&
+                                 (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isTeacherSubscriptionActive(teacherId) &&
+                                 isValidSession(teacherId);
+        allow delete: if isValidId(teacherId) && isValidId(sessionId) &&
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId);
+      }
+
+      // Subcollection: Attendance
+      match /attendance/{attendanceId} {
+        allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+        allow create, update: if isValidId(teacherId) && isValidId(attendanceId) &&
+                                 (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isTeacherSubscriptionActive(teacherId) &&
+                                 isValidAttendance(teacherId);
+        allow delete: if isValidId(teacherId) && isValidId(attendanceId) &&
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId);
+      }
+
+      // Subcollection: Payments
+      match /payments/{paymentId} {
+        allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+        allow create, update: if isValidId(teacherId) && isValidId(paymentId) &&
+                                 (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isTeacherSubscriptionActive(teacherId) &&
+                                 isValidPayment(teacherId);
+        allow delete: if isValidId(teacherId) && isValidId(paymentId) &&
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId);
       }
 
       // Subcollection: Students

@@ -73,11 +73,44 @@ export interface SubscriptionRecord {
   updatedAt?: any;
 }
 
+export type WorkplaceType = 'center' | 'private' | 'online';
+
+export interface Workplace {
+  id: string;
+  teacherId: string;
+  name: string;
+  type: WorkplaceType;
+  createdAt: any;
+  updatedAt: any;
+}
+
+export interface GroupScheduleSlot {
+  day: number; // 0-6
+  startTime: string; // HH:MM
+  endTime: string; // HH:MM
+}
+
+export interface Group {
+  id: string;
+  teacherId: string;
+  workplaceId: string;
+  name: string;
+  subject?: string;
+  grade?: string;
+  schedule?: GroupScheduleSlot[];
+  defaultMonthlyFee?: number;
+  active?: boolean;
+  createdAt: any;
+  updatedAt: any;
+}
+
 export interface Student {
   id: string;
   teacherId: string;
   name: string;
-  whatsapp?: string;
+  phone?: string;
+  parentPhone?: string;
+  whatsapp?: string; // legacy support
   subject: string;
   classType: ClassType;
   hourlyRate: number; // سعر الساعة (Hourly Rate)
@@ -93,19 +126,10 @@ export interface Student {
   learningStyle?: string;
   notes?: string;
   color?: string;
-  groupId?: string; // Add GroupId
-  createdAt: any;
-  updatedAt: any;
-}
-
-export interface Group {
-  id: string;
-  teacherId: string;
-  name: string;
-  grade?: string;
-  subject: string;
-  defaultPaymentType: 'hourly' | 'monthly';
-  defaultRate: number;
+  groupId?: string; // legacy
+  groupIds?: string[]; // multi-group support
+  customFees?: Record<string, number>; // groupId -> amount
+  active?: boolean;
   createdAt: any;
   updatedAt: any;
 }

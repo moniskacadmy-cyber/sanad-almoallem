@@ -44,6 +44,9 @@ import {
   BackupData,
   QuickNote,
   NoteColor,
+  Workplace,
+  Group,
+  WorkplaceType,
 } from './types';
 
 import rawFirebaseConfig from '../firebase-applet-config.json';
@@ -1612,6 +1615,197 @@ export async function requestAndSaveFCMToken(force = false): Promise<{
 
   return fcmRegistrationPromise;
 }
+
+// ==========================================
+// Phase 1: Workplaces & Groups Services + Migration
+// ==========================================
+
+export async function addWorkplace(
+  teacherId: string,
+  data: { name: string; type: WorkplaceType }
+): Promise<string> {
+  const path = `teachers/${teacherId}/workplaces`;
+  try {
+    const colRef = collection(db, 'teachers', teacherId, 'workplaces');
+    const newDoc = doc(colRef);
+    await setDoc(newDoc, {
+      id: newDoc.id,
+      teacherId,
+      name: data.name.trim(),
+      type: data.type,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return newDoc.id;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, path);
+    throw err;
+  }
+}
+
+export async function updateWorkplace(
+  teacherId: string,
+  workplaceId: string,
+  updates: Partial<{ name: string; type: WorkplaceType }>
+) {
+  const path = `teachers/${teacherId}/workplaces/${workplaceId}`;
+  try {
+    await updateDoc(doc(db, 'teachers', teacherId, 'workplaces', workplaceId), {
+      ...updates,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+    throw err;
+  }
+}
+
+export async function deleteWorkplace(teacherId: string, workplaceId: string) {
+  const path = `teachers/${teacherId}/workplaces/${workplaceId}`;
+  try {
+    await deleteDoc(doc(db, 'teachers', teacherId, 'workplaces', workplaceId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, path);
+    throw err;
+  }
+}
+
+export function subscribeToWorkplaces(
+  teacherId: string,
+  onUpdate: (workplaces: Workplace[]) => void,
+  onError?: (err: Error) => void
+) {
+  const q = query(collection(db, 'teachers', teacherId, 'workplaces'), orderBy('createdAt', 'asc'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const items: Workplace[] = snap.docs.map((d) => d.data() as Workplace);
+      onUpdate(items);
+    },
+    (err) => {
+      console.error('Error in subscribeToWorkplaces:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+export async function addGroup(
+  teacherId: string,
+  data: {
+    workplaceId: string;
+    name: string;
+    subject?: string;
+    grade?: string;
+    schedule?: Array<{ day: number; startTime: string; endTime: string }>;
+    defaultMonthlyFee?: number;
+  }
+): Promise<string> {
+  const path = `teachers/${teacherId}/groups`;
+  try {
+    const colRef = collection(db, 'teachers', teacherId, 'groups');
+    const newDoc = doc(colRef);
+    await setDoc(newDoc, {
+      id: newDoc.id,
+      teacherId,
+      workplaceId: data.workplaceId,
+      name: data.name.trim(),
+      subject: data.subject || '',
+      grade: data.grade || '',
+      schedule: data.schedule || [],
+      defaultMonthlyFee: data.defaultMonthlyFee || 0,
+      active: true,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return newDoc.id;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, path);
+    throw err;
+  }
+}
+
+export async function updateGroup(
+  teacherId: string,
+  groupId: string,
+  updates: Partial<Group>
+) {
+  const path = `teachers/${teacherId}/groups/${groupId}`;
+  try {
+    await updateDoc(doc(db, 'teachers', teacherId, 'groups', groupId), {
+      ...updates,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+    throw err;
+  }
+}
+
+export async function deleteGroup(teacherId: string, groupId: string) {
+  const path = `teachers/${teacherId}/groups/${groupId}`;
+  try {
+    await deleteDoc(doc(db, 'teachers', teacherId, 'groups', groupId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, path);
+    throw err;
+  }
+}
+
+export function subscribeToGroups(
+  teacherId: string,
+  onUpdate: (groups: Group[]) => void,
+  onError?: (err: Error) => void
+) {
+  const q = query(collection(db, 'teachers', teacherId, 'groups'), orderBy('createdAt', 'asc'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const items: Group[] = snap.docs.map((d) => d.data() as Group);
+      onUpdate(items);
+    },
+    (err) => {
+      console.error('Error in subscribeToGroups:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+// Idempotent Migration: Ensures default workplaces (Private and Online) exist for existing teachers
+export async function ensureDefaultWorkplacesAndMigration(teacherId: string): Promise<void> {
+  if (!teacherId) return;
+  try {
+    const wpSnap = await getDocs(collection(db, 'teachers', teacherId, 'workplaces'));
+    if (wpSnap.empty) {
+      const batch = writeBatch(db);
+      
+      const privRef = doc(collection(db, 'teachers', teacherId, 'workplaces'));
+      batch.set(privRef, {
+        id: privRef.id,
+        teacherId,
+        name: 'دروس خصوصية (منزلية / خاصة)',
+        type: 'private',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      const onlineRef = doc(collection(db, 'teachers', teacherId, 'workplaces'));
+      batch.set(onlineRef, {
+        id: onlineRef.id,
+        teacherId,
+        name: 'دروس أونلاين (عن بعد)',
+        type: 'online',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      await batch.commit();
+      console.log('Default workplaces successfully provisioned for teacher:', teacherId);
+    }
+  } catch (err) {
+    console.warn('Migration check warning:', err);
+  }
+}
+
 
 
 
