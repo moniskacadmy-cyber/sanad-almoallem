@@ -25,6 +25,7 @@ import { NearExpiryOverlay } from './components/NearExpiryOverlay';
 import { OfflineIndicator } from './OfflineIndicator';
 import { AIAssistantChat } from './components/AIAssistantChat';
 import { LoadingFallback } from './components/LoadingFallback';
+import { Sidebar } from './components/Sidebar';
 
 // Code-split heavy screen tabs with React.lazy to accelerate initial load time
 const StudentsTab = React.lazy(() => import('./components/StudentsTab').then((m) => ({ default: m.StudentsTab })));
@@ -47,6 +48,7 @@ import {
   AlertCircle,
   ChevronRight,
   LogOut,
+  Menu,
 } from 'lucide-react';
 import {
   getStoredReminderSettings,
@@ -121,6 +123,38 @@ export default function App() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
   const [showFinancialDashboard, setShowFinancialDashboard] = useState(false);
+
+  // Sidebar navigation drawer state
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [activeSidebarItem, setActiveSidebarItem] = useState('reminders');
+
+  const handleSidebarSelect = (itemId: string) => {
+    setActiveSidebarItem(itemId);
+    if (itemId === 'home') {
+      setActiveTab(0);
+      setShowFinancialDashboard(false);
+      setShowAdminView(false);
+    } else if (itemId === 'students') {
+      setActiveTab(1);
+      setShowFinancialDashboard(false);
+      setShowAdminView(false);
+    } else if (itemId === 'appointments') {
+      setActiveTab(2);
+      setShowFinancialDashboard(false);
+      setShowAdminView(false);
+    } else if (itemId === 'classes') {
+      setActiveTab(3);
+      setShowFinancialDashboard(false);
+      setShowAdminView(false);
+    } else if (itemId === 'profits' || itemId === 'expenses' || itemId === 'reports') {
+      setShowFinancialDashboard(true);
+      setShowAdminView(false);
+    } else if (itemId === 'reminders' || itemId === 'notifications' || itemId === 'settings') {
+      setActiveTab(4);
+      setShowFinancialDashboard(false);
+      setShowAdminView(false);
+    }
+  };
 
   // Collections state for current teacher
   const [students, setStudents] = useState<Student[]>([]);
@@ -601,9 +635,26 @@ export default function App() {
 
       {/* Mobile-first centered frame (up to 460px) */}
       <div className="w-full max-w-[460px] min-h-screen bg-slate-950/95 border-x border-purple-950/40 flex flex-col relative shadow-2xl">
+        {/* Sidebar Navigation Drawer */}
+        <Sidebar
+          isOpen={isSidebarOpen}
+          onClose={() => setIsSidebarOpen(false)}
+          activeItem={activeSidebarItem}
+          onSelect={handleSidebarSelect}
+          profile={profile}
+        />
+
         {/* Top App Header */}
         <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-purple-900/30 px-3.5 py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-1.5 rounded-xl bg-purple-900/40 hover:bg-purple-900/70 border border-purple-500/30 text-purple-200 hover:text-white transition cursor-pointer"
+              title="فتح القائمة الرئيسية"
+            >
+              <Menu className="w-4 h-4 text-amber-300" />
+            </button>
             {activeTab !== 0 ? (
               <button
                 type="button"
