@@ -212,6 +212,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
       planned,
       completed,
       date: dayDateStr,
+      isToday: dayDateStr === todayStr,
     };
   });
 
@@ -813,13 +814,19 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         </div>
       </div>
 
-      {/* 6. رسم بياني: إنجاز الحصص الأسبوعي مقارنة بالمخطط لها (recharts lazy-loaded) */}
-      <React.Suspense fallback={null}>
+      {/* 6. لوحة إحصائية: توزيع الحصص خلال الأسبوع الحالي (recharts lazy-loaded) */}
+      <React.Suspense fallback={
+        <div className="rounded-3xl p-6 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-purple-500/20 animate-pulse text-center text-xs text-slate-400">
+          جاري تحميل الإحصائيات الأسبوعية...
+        </div>
+      }>
         <StatsChart
           weeklyChartData={weeklyChartData}
           totalCompletedWeek={totalCompletedWeek}
           totalPlannedWeek={totalPlannedWeek}
           weeklyCompletionPct={weeklyCompletionPct}
+          todayDayName={todayArabicName}
+          onNavigateToSchedules={() => onNavigateToTab(2)}
         />
       </React.Suspense>
 

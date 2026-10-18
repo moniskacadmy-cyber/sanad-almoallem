@@ -26,6 +26,7 @@ import { OfflineIndicator } from './OfflineIndicator';
 import { AIAssistantChat } from './components/AIAssistantChat';
 import { LoadingFallback } from './components/LoadingFallback';
 import { Sidebar } from './components/Sidebar';
+import { ThemeToggleCompact } from './components/ThemeToggle';
 
 // Code-split heavy screen tabs with React.lazy to accelerate initial load time
 const StudentsTab = React.lazy(() => import('./components/StudentsTab').then((m) => ({ default: m.StudentsTab })));
@@ -621,7 +622,7 @@ export default function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex justify-center">
+    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex justify-center transition-colors duration-200">
       <OfflineIndicator />
 
       {/* Near Expiry Overlay Alert (3 days or less) */}
@@ -634,7 +635,7 @@ export default function App() {
       )}
 
       {/* Mobile-first centered frame (up to 460px) */}
-      <div className="w-full max-w-[460px] min-h-screen bg-slate-950/95 border-x border-purple-950/40 flex flex-col relative shadow-2xl">
+      <div className="w-full max-w-[460px] min-h-screen bg-white/95 dark:bg-slate-950/95 border-x border-slate-200 dark:border-purple-950/40 flex flex-col relative shadow-2xl transition-colors duration-200">
         {/* Sidebar Navigation Drawer */}
         <Sidebar
           isOpen={isSidebarOpen}
@@ -645,24 +646,24 @@ export default function App() {
         />
 
         {/* Top App Header */}
-        <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-purple-900/30 px-3.5 py-2.5 flex items-center justify-between">
+        <header className="sticky top-0 z-40 bg-white/90 dark:bg-slate-950/80 backdrop-blur-md border-b border-slate-200 dark:border-purple-900/30 px-3.5 py-2.5 flex items-center justify-between transition-colors duration-200">
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setIsSidebarOpen(true)}
-              className="p-1.5 rounded-xl bg-purple-900/40 hover:bg-purple-900/70 border border-purple-500/30 text-purple-200 hover:text-white transition cursor-pointer"
+              className="p-1.5 rounded-xl bg-purple-100 dark:bg-purple-900/40 hover:bg-purple-200 dark:hover:bg-purple-900/70 border border-purple-300 dark:border-purple-500/30 text-purple-700 dark:text-purple-200 hover:text-purple-900 dark:hover:text-white transition cursor-pointer"
               title="فتح القائمة الرئيسية"
             >
-              <Menu className="w-4 h-4 text-amber-300" />
+              <Menu className="w-4 h-4 text-purple-700 dark:text-amber-300" />
             </button>
             {activeTab !== 0 ? (
               <button
                 type="button"
                 onClick={() => handleSelectTab(0)}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-purple-900/50 hover:bg-purple-800/70 border border-purple-500/40 text-xs font-bold text-purple-200 hover:text-white transition cursor-pointer shadow-sm active:scale-95"
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-purple-100 dark:bg-purple-900/50 hover:bg-purple-200 dark:hover:bg-purple-800/70 border border-purple-300 dark:border-purple-500/40 text-xs font-bold text-purple-800 dark:text-purple-200 hover:text-purple-950 dark:hover:text-white transition cursor-pointer shadow-sm active:scale-95"
                 title="الرجوع للواجهة الرئيسية (Main Dashboard)"
               >
-                <ChevronRight className="w-4 h-4 text-amber-300" />
+                <ChevronRight className="w-4 h-4 text-purple-700 dark:text-amber-300" />
                 <span>الرئيسية</span>
               </button>
             ) : (
@@ -671,16 +672,19 @@ export default function App() {
               </div>
             )}
             <div>
-              <h1 className="text-sm font-extrabold text-white tracking-wide">
+              <h1 className="text-sm font-extrabold text-slate-900 dark:text-white tracking-wide">
                 سند المعلم
               </h1>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Quick Theme Toggle Button */}
+            <ThemeToggleCompact />
+
             <div
               onClick={() => setShowUpgradeModal(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-900/40 border border-purple-500/30 text-[11px] font-bold text-purple-200 cursor-pointer hover:bg-purple-900/70 transition"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-100 dark:bg-purple-900/40 border border-purple-300 dark:border-purple-500/30 text-[11px] font-bold text-purple-800 dark:text-purple-200 cursor-pointer hover:bg-purple-200 dark:hover:bg-purple-900/70 transition"
               title="ترقية أو تجديد الاشتراك"
             >
               <span>{profile.subscriptionStatus === 'active' ? 'مشترك 💎' : 'تجريبي 🎁'}</span>
@@ -690,7 +694,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setShowExitConfirmModal(true)}
-              className="p-1.5 rounded-xl bg-slate-900 hover:bg-rose-950/60 border border-slate-800 hover:border-rose-500/40 text-slate-400 hover:text-rose-300 transition cursor-pointer"
+              className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 hover:bg-rose-100 dark:hover:bg-rose-950/60 border border-slate-300 dark:border-slate-800 hover:border-rose-400 dark:hover:border-rose-500/40 text-slate-600 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-300 transition cursor-pointer"
               title="خروج من التطبيق"
             >
               <LogOut className="w-4 h-4" />
@@ -826,7 +830,7 @@ export default function App() {
         </main>
 
         {/* Bottom Tab Navigation Bar */}
-        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[460px] z-40 bg-slate-950/95 backdrop-blur-lg border-t border-purple-900/40 px-2 py-1.5 flex items-center justify-around shadow-2xl">
+        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[460px] z-40 bg-white/95 dark:bg-slate-950/95 backdrop-blur-lg border-t border-slate-200 dark:border-purple-900/40 px-2 py-1.5 flex items-center justify-around shadow-2xl transition-colors duration-200">
           {tabs.map((tab, idx) => {
             const Icon = tab.icon;
             const isActive = activeTab === idx;
@@ -836,13 +840,13 @@ export default function App() {
                 onClick={() => handleSelectTab(idx)}
                 className={`flex-1 flex flex-col items-center justify-center py-1.5 px-1 rounded-2xl transition cursor-pointer relative ${
                   isActive
-                    ? 'text-purple-300 font-bold'
-                    : 'text-slate-400 hover:text-slate-200 font-medium'
+                    ? 'text-purple-700 dark:text-purple-300 font-bold'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
                 }`}
               >
                 <div
                   className={`p-1 rounded-xl transition ${
-                    isActive ? 'bg-purple-600/30 text-amber-300 scale-110' : ''
+                    isActive ? 'bg-purple-100 dark:bg-purple-600/30 text-purple-700 dark:text-amber-300 scale-110 shadow-sm' : ''
                   }`}
                 >
                   <Icon className="w-5 h-5" />

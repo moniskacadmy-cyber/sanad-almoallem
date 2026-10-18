@@ -8,6 +8,7 @@ import { PWAInstallButton } from '../PWAInstallButton';
 const triggerConfetti = (opts: Record<string, any>) => {
   import('canvas-confetti').then((m) => m.default(opts)).catch(() => {});
 };
+import { ThemeSettingsSection } from './ThemeToggle';
 
 import {
   getStoredReminderSettings,
@@ -745,6 +746,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </div>
         </div>
       </div>
+
+      {/* App Theme (Dark & Light Mode) Selection */}
+      <ThemeSettingsSection />
 
       {/* Subscription Card */}
       <div className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-4 space-y-3">

@@ -9,11 +9,29 @@
     <meta property="og:description" content="تطبيق ويب متكامل لتنظيم الحصص والطلاب والمواعيد والمدفوعات للمعلمين الخصوصيين مع إدارة الاشتراكات." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="theme-color" content="#4c1d95" />
+    <meta name="theme-color" content="#070314" id="theme-color-meta" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="سند المعلم" />
+    <script>
+      (function() {
+        try {
+          var saved = localStorage.getItem('sanad_theme');
+          var theme = (saved === 'light' || saved === 'dark') ? saved : 'dark';
+          var doc = document.documentElement;
+          if (theme === 'dark') {
+            doc.classList.add('dark');
+            doc.classList.remove('light');
+            doc.setAttribute('data-theme', 'dark');
+          } else {
+            doc.classList.remove('dark');
+            doc.classList.add('light');
+            doc.setAttribute('data-theme', 'light');
+          }
+        } catch (e) {}
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>

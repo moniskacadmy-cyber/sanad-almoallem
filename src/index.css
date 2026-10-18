@@ -1,16 +1,43 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   * {
     font-family: 'Cairo', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
 
+  html.light,
+  body.light,
+  :root:not(.dark) {
+    color-scheme: light;
+  }
+
+  html.dark,
+  body.dark,
+  :root.dark {
+    color-scheme: dark;
+  }
+
   body {
-    background-color: #070314;
-    color: #f1f5f9;
     direction: rtl;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+
+  /* Dark mode root styles */
+  html.dark body,
+  :root.dark body {
+    background-color: #070314;
+    color: #f1f5f9;
+  }
+
+  /* Light mode root styles */
+  html.light body,
+  :root:not(.dark) body {
+    background-color: #f8fafc;
+    color: #0f172a;
   }
 }
 
@@ -20,29 +47,48 @@
   height: 5px;
 }
 ::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.08);
+}
+.dark ::-webkit-scrollbar-track {
   background: rgba(15, 23, 42, 0.6);
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(147, 51, 234, 0.4);
+  background: rgba(147, 51, 234, 0.35);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(168, 85, 247, 0.7);
 }
 
-/* Luxury Glow and Glass */
+/* Luxury Glow and Glass for both Light & Dark modes */
 .glass-panel {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  color: #0f172a;
+}
+.dark .glass-panel {
   background: rgba(26, 16, 51, 0.75);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   border: 1px solid rgba(168, 85, 247, 0.18);
+  color: #f1f5f9;
 }
 
 .glass-card {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(226, 232, 240, 0.85);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.04);
+}
+.dark .glass-card {
   background: rgba(36, 20, 68, 0.6);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border: 1px solid rgba(147, 51, 234, 0.15);
+  box-shadow: none;
 }
 
 .glow-purple {
@@ -51,4 +97,102 @@
 
 .glow-amber {
   box-shadow: 0 0 25px -5px rgba(245, 158, 11, 0.35);
+}
+
+/* Light Mode Global Elegance Adjustments */
+html.light .bg-slate-950,
+html:not(.dark) .bg-slate-950 {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+html.light .bg-slate-950\/95,
+html:not(.dark) .bg-slate-950\/95,
+html.light .bg-slate-950\/90,
+html:not(.dark) .bg-slate-950\/90,
+html.light .bg-slate-950\/80,
+html:not(.dark) .bg-slate-950\/80 {
+  background-color: rgba(255, 255, 255, 0.96);
+  color: #0f172a;
+}
+
+html.light .bg-slate-900,
+html.light .bg-slate-900\/80,
+html.light .bg-slate-900\/90,
+html.light .bg-slate-900\/70,
+html.light .bg-slate-900\/60,
+html.light .bg-slate-900\/50,
+html:not(.dark) .bg-slate-900,
+html:not(.dark) .bg-slate-900\/80,
+html:not(.dark) .bg-slate-900\/90,
+html:not(.dark) .bg-slate-900\/70,
+html:not(.dark) .bg-slate-900\/60,
+html:not(.dark) .bg-slate-900\/50 {
+  background-color: #ffffff;
+  border-color: #e2e8f0;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+}
+
+html.light .bg-slate-800,
+html.light .bg-slate-800\/60,
+html.light .bg-slate-800\/80,
+html:not(.dark) .bg-slate-800,
+html:not(.dark) .bg-slate-800\/60,
+html:not(.dark) .bg-slate-800\/80 {
+  background-color: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+/* Light mode text contrast adjustments */
+html.light .text-slate-100,
+html.light .text-slate-200,
+html:not(.dark) .text-slate-100,
+html:not(.dark) .text-slate-200 {
+  color: #1e293b;
+}
+
+html.light .text-slate-300,
+html.light .text-slate-400,
+html:not(.dark) .text-slate-300,
+html:not(.dark) .text-slate-400 {
+  color: #475569;
+}
+
+/* Headings inside light mode cards */
+html.light .bg-slate-900 h1,
+html.light .bg-slate-900 h2,
+html.light .bg-slate-900 h3,
+html.light .bg-slate-900 h4,
+html.light .bg-slate-950 h1,
+html.light .bg-slate-950 h2,
+html.light .bg-slate-950 h3,
+html.light .bg-slate-950 h4,
+html:not(.dark) .bg-slate-900 h1,
+html:not(.dark) .bg-slate-900 h2,
+html:not(.dark) .bg-slate-900 h3,
+html:not(.dark) .bg-slate-900 h4,
+html:not(.dark) .bg-slate-950 h1,
+html:not(.dark) .bg-slate-950 h2,
+html:not(.dark) .bg-slate-950 h3,
+html:not(.dark) .bg-slate-950 h4 {
+  color: #0f172a;
+}
+
+/* Ensure form controls look clean and legible in light mode */
+html.light input:not([type="checkbox"]):not([type="radio"]),
+html.light select,
+html.light textarea,
+html:not(.dark) input:not([type="checkbox"]):not([type="radio"]),
+html:not(.dark) select,
+html:not(.dark) textarea {
+  background-color: #ffffff;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+
+html.light input::placeholder,
+html.light textarea::placeholder,
+html:not(.dark) input::placeholder,
+html:not(.dark) textarea::placeholder {
+  color: #94a3b8;
 }
