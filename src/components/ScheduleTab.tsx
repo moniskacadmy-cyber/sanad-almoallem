@@ -35,6 +35,7 @@ import {
   Search,
   Layers,
   Printer,
+  MessageCircle,
 } from 'lucide-react';
 
 interface ScheduleTabProps {
@@ -1563,6 +1564,27 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
 
             {/* Action Buttons */}
             <div className="space-y-2 pt-1">
+              {(() => {
+                const student = students.find((s) => s.id === viewingScheduleDetails.studentId);
+                const phone = student?.whatsapp || '';
+                const dayName = WEEK_DAYS.find((d) => d.dayIndex === viewingScheduleDetails.dayOfWeek)?.name || '';
+                const msg = `مرحباً بك يا ${viewingScheduleDetails.studentName}،\nنذكرك بموعد حصتنا القادمة:\n📚 المادة: ${profile.subject || 'دراسات'}\n📅 اليوم: ${dayName}\n⏰ التوقيت: ${viewingScheduleDetails.time}\n\nنتطلع لحضورك المتميز!`;
+                const cleanPhone = phone.replace(/[^0-9]/g, '');
+                const waUrl = cleanPhone ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+
+                return (
+                  <a
+                    href={waUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-md"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    <span>إرسال تذكير عبر واتساب 📱</span>
+                  </a>
+                );
+              })()}
+
               <button
                 onClick={() => {
                   const toEdit = viewingScheduleDetails;

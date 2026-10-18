@@ -3,6 +3,7 @@ import { TeacherProfile, Student, LessonLog, ClassType, PaymentStatus, ScheduleS
 import { AbsenceDetailsModal, AbsenceDetailsResult } from './AbsenceDetailsModal';
 import { DailyAttendanceModal } from './DailyAttendanceModal';
 import { StudentPdfExportModal } from './StudentPdfExportModal';
+import { PerformanceInsights } from './PerformanceInsights';
 import { ReportType } from '../services/pdfReportService';
 import {
   triggerAbsenceNotificationAndChime,
@@ -1016,6 +1017,13 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
           </button>
         </div>
       </div>
+
+      {/* Performance Insights & Attendance Risk Analysis (Recharts) */}
+      <PerformanceInsights
+        students={students}
+        allLessonsMap={allLessonsMap}
+        currency={currency}
+      />
 
       {/* Search & Filter Bar */}
       <div className="space-y-2">
