@@ -11,6 +11,7 @@ import {
 import { useBackHandler } from '../services/backHandler';
 import {
   addStudent,
+  addStudentWithSchedules,
   updateStudent,
   deleteStudent,
   subscribeToStudentLessons,
@@ -256,28 +257,26 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
       return;
     }
 
-    setSavingSchedInProfile(true);
-    try {
-      await addSchedule(profile.id, {
-        studentId: selectedProfileStudent.id,
-        studentName: selectedProfileStudent.name,
-        dayOfWeek: Number(newSchedDay),
-        time: newSchedTime,
-        duration: Number(newSchedDuration) || 60,
-        recurrence: 'weekly',
-        classType: newSchedClassType,
-        color: newSchedColor || selectedProfileStudent.color || 'purple',
-      });
-      setShowAddScheduleInsideProfile(false);
-      // Reset default values
-      setNewSchedDay(6);
-      setNewSchedTime('16:00');
-      setNewSchedDuration(60);
-    } catch (err) {
+    setShowAddScheduleInsideProfile(false);
+    // Reset default values
+    setNewSchedDay(6);
+    setNewSchedTime('16:00');
+    setNewSchedDuration(60);
+    setSavingSchedInProfile(false);
+
+    addSchedule(profile.id, {
+      studentId: selectedProfileStudent.id,
+      studentName: selectedProfileStudent.name,
+      dayOfWeek: Number(newSchedDay),
+      time: newSchedTime,
+      duration: Number(newSchedDuration) || 60,
+      recurrence: 'weekly',
+      classType: newSchedClassType,
+      color: newSchedColor || selectedProfileStudent.color || 'purple',
+    }).catch((err) => {
       console.error('Error adding schedule in profile', err);
-    } finally {
-      setSavingSchedInProfile(false);
-    }
+      alert('حدث خطأ أثناء إضافة الموعد.');
+    });
   };
 
   const handleStartEditScheduleSlot = (slot: ScheduleSlot) => {
@@ -300,21 +299,19 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
       return;
     }
 
-    setSavingSchedInProfile(true);
-    try {
-      await updateSchedule(profile.id, editingScheduleSlot.id, {
-        dayOfWeek: Number(editSchedDay),
-        time: editSchedTime,
-        duration: Number(editSchedDuration) || 60,
-        classType: editSchedClassType,
-        color: editSchedColor,
-      });
-      setEditingScheduleSlot(null);
-    } catch (err) {
+    setEditingScheduleSlot(null);
+    setSavingSchedInProfile(false);
+
+    updateSchedule(profile.id, editingScheduleSlot.id, {
+      dayOfWeek: Number(editSchedDay),
+      time: editSchedTime,
+      duration: Number(editSchedDuration) || 60,
+      classType: editSchedClassType,
+      color: editSchedColor,
+    }).catch((err) => {
       console.error('Error updating schedule slot', err);
-    } finally {
-      setSavingSchedInProfile(false);
-    }
+      alert('حدث خطأ أثناء تعديل الموعد.');
+    });
   };
 
   const handleDeleteScheduleSlot = async (slotId: string) => {

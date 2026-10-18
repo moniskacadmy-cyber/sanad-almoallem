@@ -16,6 +16,8 @@
     <meta name="apple-mobile-web-app-title" content="سند المعلم" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
     <script>
       // Preamble initialization for React Fast Refresh
@@ -79,6 +81,8 @@
                  str.includes('preamble') ||
                  str.includes('server connection lost') ||
                  str.includes('connecting...') ||
+                 str.includes('Cross-Origin-Opener-Policy') ||
+                 str.includes('pollUserCancellation') ||
                  str.includes('Illegal invocation');
         }
 

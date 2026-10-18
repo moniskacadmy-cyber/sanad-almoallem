@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { onAuthStateChanged, User, signOut } from 'firebase/auth';
+import { onAuthStateChanged, User, signOut, getRedirectResult } from 'firebase/auth';
 import {
   auth,
   checkIsAdmin,
@@ -79,6 +79,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<TeacherProfile | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [adminChecked, setAdminChecked] = useState(false);
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [profileLoadingTimeout, setProfileLoadingTimeout] = useState(false);
   const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
@@ -238,27 +239,41 @@ export default function App() {
 
   // Listen to Auth State
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
+    // Process any redirect sign-in results gracefully (e.g. mobile or COOP fallbacks)
+    getRedirectResult(auth).catch((e) => {
+      console.warn('Redirect auth result warning:', e?.message || e);
+    });
+
+    const unsub = onAuthStateChanged(auth, (user) => {
       try {
         setCurrentUser(user);
+        setLoadingAuth(false);
         if (user) {
-          try {
-            const adminStatus = await checkIsAdmin(user);
-            setIsAdmin(adminStatus);
-          } catch (e) {
-            console.warn('checkIsAdmin error:', e);
-            setIsAdmin(false);
-          }
-          requestAndSaveFCMToken().then((result) => {
-            if (!result.success) console.warn('FCM notification registration:', result.error);
-          }).catch((e) => console.warn('FCM token error:', e));
+          setAdminChecked(false);
+          checkIsAdmin(user)
+            .then((adminStatus) => {
+              setIsAdmin(adminStatus);
+            })
+            .catch((e) => {
+              console.warn('checkIsAdmin error:', e);
+              setIsAdmin(false);
+            })
+            .finally(() => {
+              setAdminChecked(true);
+            });
+
+          requestAndSaveFCMToken()
+            .then((result) => {
+              if (!result.success) console.warn('FCM notification registration:', result.error);
+            })
+            .catch((e) => console.warn('FCM token error:', e));
         } else {
           setProfile(null);
           setIsAdmin(false);
+          setAdminChecked(true);
         }
       } catch (err) {
         console.error('Error in onAuthStateChanged listener:', err);
-      } finally {
         setLoadingAuth(false);
       }
     });
@@ -322,7 +337,7 @@ export default function App() {
 
   // Listen to Students, Schedules, and Library
   useEffect(() => {
-    if (!currentUser || !profile) {
+    if (!currentUser) {
       setStudents([]);
       setSchedules([]);
       setLibraryItems([]);
@@ -338,7 +353,7 @@ export default function App() {
       unsubSchedules();
       unsubLibrary();
     };
-  }, [currentUser, profile?.id]);
+  }, [currentUser?.uid]);
 
   // Run database automatic cleanup script for orphaned schedules and lessons (IIFE triggered)
   useEffect(() => {
@@ -438,6 +453,7 @@ export default function App() {
           <AdminSecretGate
             currentUser={currentUser}
             isAdmin={isAdmin}
+            adminChecked={adminChecked}
             onBackToApp={() => navigateTo('/')}
           />
         </div>

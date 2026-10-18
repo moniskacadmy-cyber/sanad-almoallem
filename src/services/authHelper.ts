@@ -30,12 +30,10 @@ export async function getValidIdToken(retries = 3): Promise<string | null> {
 /**
  * دالة مساعدة لجلب الترويسات المطلوبة للطلب (Headers)
  */
-export async function getAuthenticatedHeaders(): Promise<HeadersInit | null> {
+export async function getAuthenticatedHeaders(): Promise<HeadersInit> {
   const token = await getValidIdToken();
-  if (!token) return null;
-  
   return {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
   };
 }

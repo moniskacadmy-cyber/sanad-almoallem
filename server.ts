@@ -137,6 +137,12 @@ app.use((req, res, next) => {
 });
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
+// Set Cross-Origin-Opener-Policy to allow Firebase Auth popups without browser cancellation blocking
+app.use((_req, res, next) => {
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+  next();
+});
+
 // Shared Gemini client utility
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
@@ -686,16 +692,31 @@ app.post('/api/ai/transcribe', verifyFirebaseToken, (req, res, next) => aiRateLi
 app.post('/api/ai/assistant', verifyFirebaseToken, (req, res, next) => aiRateLimiter('assistant', req, res, next), requireActiveSubscription, async (req, res) => {
   let streamStarted = false;
   try {
-    const { message, messagesHistory, summary, model } = req.body;
+    const { message, messagesHistory, summary, model, role, customInstruction } = req.body;
     if (!message || typeof message !== 'string') return res.status(400).json({ error: 'الرسالة مطلوبة.' });
     if (message.length > 2000) return res.status(400).json({ error: 'الرسالة طويلة جداً. الحد الأقصى 2000 حرف.' });
     if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: 'خدمة الذكاء الاصطناعي غير مهيأة حالياً.' });
     
-    // Model selection
+    // Model selection: gemini-4-argon for complex tasks, gemini-3.8-flash for general tasks (default), gemini-3.1-flash-lite for fast tasks
     const allowedModels = ['gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.1-flash-lite'];
-    const selectedModel = allowedModels.includes(model) ? model : (process.env.GEMINI_MODEL || 'gemini-2.5-flash');
+    const selectedModel = allowedModels.includes(model) ? model : (process.env.GEMINI_MODEL || 'gemini-3.8-flash');
 
-    const systemInstruction = 'أنت المساعد الذكي التربوي لمنصة سند المعلم. ساعد المعلم بإجابات عملية ومباشرة. اعتمد فقط على المعلومات المتاحة. إذا لم تتوفر المعلومة وضح ذلك ولا تبتكر بيانات. اجعل الإجابة مختصرة ومنظمة.';
+    // Role-specific System Instructions
+    const ROLE_INSTRUCTIONS: Record<string, string> = {
+      general: 'أنت "سند" المساعد الذكي التربوي لمنصة سند المعلم. ساعد المعلم بإجابات عملية، ذكية، ومباشرة. اعتمد على سياق المعلم وطلابه ومواعيده المتاحة. إذا لم تتوفر معلومة وضح ذلك ولا تبتكر بيانات. اجعل إجابتك منسقة بنقاط واضحة.',
+      lesson_planner: 'أنت خبير تربوي ومستشار تصميم مناهج وتحضير دروس لمنصة سند المعلم. دورك صياغة خطط دروس احترافية وشاملة تحتوي على: الأهداف السلوكية (معرفية، وجدانية، مهارية)، التمهيد الشيق، استراتيجيات التدريس النشط، الأنشطة والوسائل، والتقويم الختامي، مع تقسيم الوقت بدقة.',
+      quiz_generator: 'أنت أخصائي قياس وتقويم تربوي وإعداد اختبارات. دورك مساعدة المعلم في توليد بنوك أسئلة وامتحانات متوازنة (اختيار من متعدد، علل، صح وخطأ، مسائل تطبيقية) متدرجة من التذكر للفهم والتطبيق، مع تزويد المعلم بنموذج إجابة كامل وسلم درجات وتوزيع النقاط.',
+      parent_comms: 'أنت خبير تواصل مدرسي وعلاقات مع أولياء الأمور. دورك مساعدة المعلم في صياغة رسائل واتساب وبريد إلكتروني راقية، مهذبة، مشجعة، وواضحة جداً. تشمل: تقارير الأداء الدوري، تنبيهات الغياب والواجبات، تذكير بمواعيد الحصص والمدفوعات بلباقة مع مراعاة الحالة النفسية للطالب وولي الأمر.',
+      problem_solver: 'أنت أستاذ متخصص في التفكير التحليلي وحل المسائل العلمية والرياضية والمنطقية المعقدة. دورك تقديم شروحات عميقة خطوة بخطوة لكل مسألة، وتوضيح القوانين الرياضية، وذكر الأخطاء الشائعة التي يقع فيها الطلاب، وتقديم طرق بديلة أو تحقق منطقي من النتيجة.',
+    };
+
+    const selectedRoleKey = (typeof role === 'string' && ROLE_INSTRUCTIONS[role]) ? role : 'general';
+    let baseInstruction = ROLE_INSTRUCTIONS[selectedRoleKey];
+    if (typeof customInstruction === 'string' && customInstruction.trim() && customInstruction.length <= 1000) {
+      baseInstruction += `\nتعليمات إضافية يفضلها المعلم:\n${customInstruction.trim()}`;
+    }
+    const systemInstruction = baseInstruction;
+
     let formattedContext = '';
     if (summary && typeof summary === 'object') {
       const stringFieldLimits: Record<string, number> = { teacherName: 150, subject: 150 };
@@ -708,10 +729,10 @@ app.post('/api/ai/assistant', verifyFirebaseToken, (req, res, next) => aiRateLim
     let historyText = '';
     if (messagesHistory !== undefined && !Array.isArray(messagesHistory)) return res.status(400).json({ error: 'سجل المحادثة غير صالح.' });
     if (Array.isArray(messagesHistory) && messagesHistory.length > 20) return res.status(400).json({ error: 'سجل المحادثة كبير جداً.' });
-    if (Array.isArray(messagesHistory) && messagesHistory.length) { const recent = messagesHistory.slice(-6); historyText = 'سجل المحادثة السابقة:\n' + recent.map((m: any) => `${m.role === 'user' ? 'المعلم' : 'المساعد'}: ${typeof m.text === 'string' ? m.text.slice(0, 1000) : ''}`).join('\n') + '\n===============================\n'; }
+    if (Array.isArray(messagesHistory) && messagesHistory.length) { const recent = messagesHistory.slice(-10); historyText = 'سجل المحادثة السابقة:\n' + recent.map((m: any) => `${m.role === 'user' ? 'المعلم' : 'المساعد'}: ${typeof m.text === 'string' ? m.text.slice(0, 1000) : ''}`).join('\n') + '\n===============================\n'; }
     const fullPrompt = `${formattedContext}\n${historyText}سؤال المعلم الحالي:\n${message.slice(0, 2000).trim()}`;
     if (fullPrompt.length > 12000) return res.status(400).json({ error: 'حجم الطلب النهائي كبير جداً.' });
-    const stream = streamGeminiTextWithFreeFallback({ model: selectedModel, contents: fullPrompt, config: { systemInstruction, maxOutputTokens: 700 } });
+    const stream = streamGeminiTextWithFreeFallback({ model: selectedModel, contents: fullPrompt, config: { systemInstruction, maxOutputTokens: 1500 } });
     res.status(200); res.setHeader('Content-Type', 'text/event-stream; charset=utf-8'); res.setHeader('Cache-Control', 'no-cache, no-transform'); res.setHeader('Connection', 'keep-alive'); res.setHeader('X-Accel-Buffering', 'no'); res.flushHeaders?.(); streamStarted = true;
     for await (const chunkText of stream) res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
     res.write('data: [DONE]\n\n'); return res.end();

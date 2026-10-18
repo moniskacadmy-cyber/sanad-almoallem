@@ -30,6 +30,7 @@ import {
   Timestamp,
   getDocFromServer,
   onSnapshot,
+  writeBatch,
   Firestore
 } from 'firebase/firestore';
 import {
@@ -262,9 +263,11 @@ export async function signInWithGoogle(): Promise<{ user: User; isNew: boolean }
     result = await signInWithPopup(auth, provider);
   } catch (error: any) {
     const code = typeof error?.code === 'string' ? error.code : '';
+    const msg = typeof error?.message === 'string' ? error.message : '';
     if (
       code === 'auth/popup-blocked' ||
-      code === 'auth/operation-not-supported-in-this-environment'
+      code === 'auth/operation-not-supported-in-this-environment' ||
+      msg.includes('Cross-Origin-Opener-Policy')
     ) {
       await signInWithRedirect(auth, provider);
       // signInWithRedirect navigates away, but TypeScript needs a return
@@ -763,6 +766,48 @@ export async function addStudent(
     return newDoc.id;
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export function addStudentWithSchedules(
+  teacherId: string,
+  student: Omit<Student, 'id' | 'teacherId' | 'createdAt' | 'updatedAt'>,
+  schedules: Array<Omit<ScheduleSlot, 'id' | 'teacherId' | 'createdAt' | 'updatedAt'>> = []
+): { studentId: string; commitPromise: Promise<void> } {
+  const path = `teachers/${teacherId}/students`;
+  try {
+    const batch = writeBatch(db);
+    const colRef = collection(db, 'teachers', teacherId, 'students');
+    const newDoc = doc(colRef);
+    const studentId = newDoc.id;
+
+    batch.set(newDoc, {
+      ...student,
+      id: studentId,
+      teacherId,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    const schedColRef = collection(db, 'teachers', teacherId, 'schedules');
+    for (const s of schedules) {
+      const newSchedDoc = doc(schedColRef);
+      batch.set(newSchedDoc, {
+        ...s,
+        id: newSchedDoc.id,
+        studentId,
+        studentName: s.studentName || student.name,
+        teacherId,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    const commitPromise = batch.commit();
+    return { studentId, commitPromise };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+    throw error;
   }
 }
 

@@ -11,18 +11,21 @@ import {
   LogIn,
   LogOut,
   ShieldCheck,
+  RefreshCw,
 } from 'lucide-react';
 
 interface AdminSecretGateProps {
   onBackToApp: () => void;
   currentUser: User | null;
   isAdmin: boolean;
+  adminChecked?: boolean;
 }
 
 export const AdminSecretGate: React.FC<AdminSecretGateProps> = ({
   onBackToApp,
   currentUser,
   isAdmin,
+  adminChecked = true,
 }) => {
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
@@ -51,6 +54,16 @@ export const AdminSecretGate: React.FC<AdminSecretGateProps> = ({
       console.error('Sign out error:', err);
     }
   };
+
+  // 0. If user is signed in but admin status check is still in progress
+  if (currentUser && !adminChecked) {
+    return (
+      <div className="min-h-[50vh] flex flex-col items-center justify-center p-6 text-center space-y-3">
+        <RefreshCw className="w-8 h-8 text-purple-400 animate-spin mx-auto" />
+        <p className="text-xs text-purple-200/80 font-medium">جارٍ التحقق من صلاحيات المشرف...</p>
+      </div>
+    );
+  }
 
   // 1. If user is authenticated and verified as admin in the Firestore admins collection
   if (currentUser && isAdmin) {
