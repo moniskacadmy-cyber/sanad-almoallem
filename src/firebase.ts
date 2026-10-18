@@ -348,6 +348,7 @@ export async function updateTeacherProfile(teacherId: string, updates: {
     requireMakeup?: boolean;
     autoCountExcused?: boolean;
   };
+  onboardingCompleted?: boolean;
 }) {
   const path = `teachers/${teacherId}`;
   try {

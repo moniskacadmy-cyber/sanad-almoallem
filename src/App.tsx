@@ -27,6 +27,7 @@ import { AIAssistantChat } from './components/AIAssistantChat';
 import { LoadingFallback } from './components/LoadingFallback';
 import { Sidebar } from './components/Sidebar';
 import { ThemeToggleCompact } from './components/ThemeToggle';
+import { OnboardingModal } from './components/OnboardingModal';
 
 // Code-split heavy screen tabs with React.lazy to accelerate initial load time
 const StudentsTab = React.lazy(() => import('./components/StudentsTab').then((m) => ({ default: m.StudentsTab })));
@@ -124,10 +125,17 @@ export default function App() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
   const [showFinancialDashboard, setShowFinancialDashboard] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   // Sidebar navigation drawer state
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [activeSidebarItem, setActiveSidebarItem] = useState('reminders');
+
+  useEffect(() => {
+    if (profile && !profile.onboardingCompleted) {
+      setShowOnboarding(true);
+    }
+  }, [profile]);
 
   const handleSidebarSelect = (itemId: string) => {
     setActiveSidebarItem(itemId);
@@ -830,7 +838,7 @@ export default function App() {
         </main>
 
         {/* Bottom Tab Navigation Bar */}
-        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[460px] z-40 bg-white/95 dark:bg-slate-950/95 backdrop-blur-lg border-t border-slate-200 dark:border-purple-900/40 px-2 py-1.5 flex items-center justify-around shadow-2xl transition-colors duration-200">
+        <nav className="secondary-nav fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[460px] z-40 bg-white/95 dark:bg-slate-950/95 backdrop-blur-lg border-t border-slate-200 dark:border-purple-900/40 px-2 py-1.5 flex items-center justify-around shadow-2xl transition-colors duration-200">
           {tabs.map((tab, idx) => {
             const Icon = tab.icon;
             const isActive = activeTab === idx;
@@ -865,12 +873,14 @@ export default function App() {
 
         {/* Floating AI Assistant Chat Window */}
         {currentUser && profile && (
-          <AIAssistantChat
-            profile={profile}
-            students={students}
-            schedules={schedules}
-            onOpenUpgradeModal={() => setShowUpgradeModal(true)}
-          />
+          <div className="ai-assistant">
+            <AIAssistantChat
+              profile={profile}
+              students={students}
+              schedules={schedules}
+              onOpenUpgradeModal={() => setShowUpgradeModal(true)}
+            />
+          </div>
         )}
 
         {/* Voluntary Upgrade Modal */}
@@ -879,6 +889,14 @@ export default function App() {
             profile={profile}
             isVoluntary={true}
             onClose={() => setShowUpgradeModal(false)}
+          />
+        )}
+
+        {/* First-Time Onboarding Modal */}
+        {showOnboarding && profile && (
+          <OnboardingModal
+            profile={profile}
+            onComplete={() => setShowOnboarding(false)}
           />
         )}
 

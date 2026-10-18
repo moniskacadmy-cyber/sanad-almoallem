@@ -16,6 +16,7 @@ import {
   getStoredReminderSettings,
 } from '../services/reminderService';
 import { LiveCountdown } from './LiveCountdown';
+import { LessonFeedbackForm } from './LessonFeedbackForm';
 const StatsChart = React.lazy(() => import('./StatsChart'));
 import {
   Calendar,
@@ -61,6 +62,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [classTopic, setClassTopic] = useState('');
   const [classHomework, setClassHomework] = useState('');
+  const [feedback, setFeedback] = useState({ strengths: '', challenges: '', homework: '' });
   const [attendance, setAttendance] = useState<'present' | 'absent' | 'excused'>('present');
   const rating = 5; // تقييم الحصة الافتراضي الكامل
   const [savingClass, setSavingClass] = useState(false);
@@ -407,6 +409,8 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         is_financial_counted: true,
         hasMakeupClass: false,
         has_makeup_class: false,
+        strengths: feedback.strengths.trim(),
+        challenges: feedback.challenges.trim(),
       });
 
       if (todaySlot) {
@@ -958,6 +962,13 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                   className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white"
                 />
               </div>
+
+              <LessonFeedbackForm
+                initialStrengths={feedback.strengths}
+                initialChallenges={feedback.challenges}
+                initialHomework={feedback.homework}
+                onSave={setFeedback}
+              />
 
               <div className="pt-2 flex flex-col gap-2">
                 <button

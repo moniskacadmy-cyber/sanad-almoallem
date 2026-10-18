@@ -3,6 +3,7 @@ import { registerSW } from 'virtual:pwa-register';
 import App from './App.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { ThemeProvider } from './context/ThemeContext';
+import { SettingsProvider } from './context/SettingsContext';
 import './index.css';
 
 // Global error handlers to prevent unhandled script or promise crashes from going silent
@@ -43,7 +44,9 @@ if (rootElement) {
   createRoot(rootElement).render(
     <ErrorBoundary>
       <ThemeProvider>
-        <App />
+        <SettingsProvider>
+          <App />
+        </SettingsProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );

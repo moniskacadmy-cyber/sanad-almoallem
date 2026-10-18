@@ -9,6 +9,7 @@ const triggerConfetti = (opts: Record<string, any>) => {
   import('canvas-confetti').then((m) => m.default(opts)).catch(() => {});
 };
 import { ThemeSettingsSection } from './ThemeToggle';
+import { useSettings } from '../context/SettingsContext';
 
 import {
   getStoredReminderSettings,
@@ -81,6 +82,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [editCurrency, setEditCurrency] = useState(profile.currency || 'ج.م');
   const [savingProfile, setSavingProfile] = useState(false);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const { isFocusMode, toggleFocusMode } = useSettings();
 
   // Backup & Import state
   const [isExporting, setIsExporting] = useState(false);
@@ -749,6 +751,20 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
       {/* App Theme (Dark & Light Mode) Selection */}
       <ThemeSettingsSection />
+
+      {/* Focus Mode Toggle */}
+      <div className="p-4 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-between">
+        <div>
+          <h4 className="text-sm font-bold text-white">وضع التركيز (Focus Mode)</h4>
+          <p className="text-xs text-slate-400">تقليل التشتت أثناء الحصص</p>
+        </div>
+        <button
+          onClick={toggleFocusMode}
+          className={`w-12 h-6 rounded-full transition-colors flex items-center ${isFocusMode ? 'bg-purple-600' : 'bg-slate-600'}`}
+        >
+          <div className={`w-4 h-4 rounded-full bg-white transition-transform ${isFocusMode ? 'translate-x-[-4px]' : 'translate-x-[4px]'}`} />
+        </button>
+      </div>
 
       {/* Subscription Card */}
       <div className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-4 space-y-3">

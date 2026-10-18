@@ -1,4 +1,4 @@
-import { Student, TeacherProfile, LessonLog, isLessonFinanciallyCounted } from '../types';
+import { Student, TeacherProfile, LessonLog, isLessonFinanciallyCounted, ScheduleSlot } from '../types';
 
 export type ReportType = 'financial' | 'attendance' | 'comprehensive';
 
@@ -567,3 +567,84 @@ export function exportReportToPdf(
     }, 300);
   };
 }
+
+/**
+ * Build HTML for schedule export
+ */
+export function buildSchedulePdfHtml(
+  teacher: TeacherProfile,
+  schedules: ScheduleSlot[],
+  students: Student[]
+): string {
+  const now = new Date();
+  const issueDateStr = new Intl.DateTimeFormat('ar-EG', {
+    dateStyle: 'full',
+  }).format(now);
+
+  const tableRowsHtml = schedules
+    .sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.time.localeCompare(b.time))
+    .map((s) => {
+      const student = students.find((st) => st.id === s.studentId);
+      const dayName = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'][s.dayOfWeek];
+      return `
+        <tr>
+          <td>${dayName}</td>
+          <td>${s.time}</td>
+          <td>${student?.name || 'غير محدد'}</td>
+          <td>${s.notes || '-'}</td>
+        </tr>
+      `;
+    }).join('');
+
+  return `
+    <html>
+    <head>
+      <style>
+        body { font-family: 'Cairo', sans-serif; direction: rtl; padding: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+        th { background-color: #f2f2f2; }
+      </style>
+    </head>
+    <body>
+      <h1>جدول الحصص الأسبوعي - ${teacher.name}</h1>
+      <p>تاريخ الإصدار: ${issueDateStr}</p>
+      <table>
+        <thead>
+          <tr>
+            <th>اليوم</th>
+            <th>الوقت</th>
+            <th>الطالب</th>
+            <th>الموضوع</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRowsHtml}
+        </tbody>
+      </table>
+    </body>
+    </html>
+  `;
+}
+
+/**
+ * Triggers schedule PDF export
+ */
+export function exportScheduleToPdf(
+  teacher: TeacherProfile,
+  schedules: ScheduleSlot[],
+  students: Student[]
+) {
+  const htmlContent = buildSchedulePdfHtml(teacher, schedules, students);
+  const printWindow = window.open('', '_blank');
+  if (printWindow) {
+    printWindow.document.open();
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+    }, 500);
+  }
+}
+

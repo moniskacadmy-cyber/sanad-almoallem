@@ -56,6 +56,8 @@ export interface TeacherProfile {
     lessonPrep?: string;
     absenceReminder?: string;
   };
+  focusModeEnabled?: boolean;
+  onboardingCompleted?: boolean;
   createdAt: any;
   updatedAt: any;
 }
@@ -91,6 +93,19 @@ export interface Student {
   learningStyle?: string;
   notes?: string;
   color?: string;
+  groupId?: string; // Add GroupId
+  createdAt: any;
+  updatedAt: any;
+}
+
+export interface Group {
+  id: string;
+  teacherId: string;
+  name: string;
+  grade?: string;
+  subject: string;
+  defaultPaymentType: 'hourly' | 'monthly';
+  defaultRate: number;
   createdAt: any;
   updatedAt: any;
 }
@@ -120,6 +135,9 @@ export interface LessonLog {
   absence_reason_type?: string;
   makeupCompleted?: boolean;
   createdAt: any;
+  updatedAt?: any;
+  strengths?: string;
+  challenges?: string;
 }
 
 export interface ScheduleSlot {

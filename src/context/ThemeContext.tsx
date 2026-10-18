@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
 
-export type ThemeMode = 'dark' | 'light';
+export type ThemeMode = 'dark' | 'light' | 'system';
 
 interface ThemeContextType {
   theme: ThemeMode;
@@ -17,13 +17,31 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<ThemeMode>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem(THEME_STORAGE_KEY) as ThemeMode | null;
-      if (saved === 'dark' || saved === 'light') {
+      if (saved === 'dark' || saved === 'light' || saved === 'system') {
         return saved;
       }
     }
-    // Default to dark theme for Sanad Al-Moallem
-    return 'dark';
+    return 'system'; // Default to system theme
   });
+
+  const [isSystemDark, setIsSystemDark] = useState(() => {
+    return typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = (e: MediaQueryListEvent) => {
+      setIsSystemDark(e.matches);
+    };
+
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
+
+  const isDark = useMemo(() => {
+    if (theme === 'system') return isSystemDark;
+    return theme === 'dark';
+  }, [theme, isSystemDark]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -32,7 +50,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const body = document.body;
     const metaThemeColor = document.querySelector('meta[name="theme-color"]');
 
-    if (theme === 'dark') {
+    if (isDark) {
       root.classList.add('dark');
       root.classList.remove('light');
       body.classList.add('dark');
@@ -57,7 +75,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // Storage might be disabled in private mode
     }
-  }, [theme]);
+  }, [isDark, theme]);
 
   const setTheme = (newTheme: ThemeMode) => {
     setThemeState(newTheme);
@@ -68,7 +86,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme, setTheme, isDark: theme === 'dark' }}>
+    <ThemeContext.Provider value={{ theme, toggleTheme, setTheme, isDark }}>
       {children}
     </ThemeContext.Provider>
   );

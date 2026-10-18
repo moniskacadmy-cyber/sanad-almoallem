@@ -2,6 +2,13 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+.focus-mode .ai-assistant,
+.focus-mode .secondary-nav {
+  opacity: 0.2;
+  pointer-events: none;
+  filter: grayscale(1);
+}
+
 @layer base {
   * {
     font-family: 'Cairo', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;

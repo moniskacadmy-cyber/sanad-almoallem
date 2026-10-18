@@ -66,7 +66,7 @@ export const ThemeSidebarToggle: React.FC<ThemeToggleProps> = ({ className = '' 
         </span>
       </div>
       <div
-        className={`grid grid-cols-2 p-1 rounded-xl gap-1 text-xs font-bold ${
+        className={`grid grid-cols-3 p-1 rounded-xl gap-1 text-xs font-bold ${
           isDark ? 'bg-slate-900/90' : 'bg-slate-200/80'
         }`}
       >
@@ -74,7 +74,7 @@ export const ThemeSidebarToggle: React.FC<ThemeToggleProps> = ({ className = '' 
           type="button"
           onClick={() => setTheme('light')}
           className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg transition-all cursor-pointer ${
-            !isDark
+            theme === 'light'
               ? 'bg-white text-amber-600 shadow-sm font-black'
               : 'text-slate-400 hover:text-slate-200'
           }`}
@@ -84,9 +84,20 @@ export const ThemeSidebarToggle: React.FC<ThemeToggleProps> = ({ className = '' 
         </button>
         <button
           type="button"
+          onClick={() => setTheme('system')}
+          className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg transition-all cursor-pointer ${
+            theme === 'system'
+              ? 'bg-slate-700 text-white shadow-sm font-black'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <span className="text-[10px]">تلقائي</span>
+        </button>
+        <button
+          type="button"
           onClick={() => setTheme('dark')}
           className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg transition-all cursor-pointer ${
-            isDark
+            theme === 'dark'
               ? 'bg-purple-600 text-white shadow-sm font-black'
               : 'text-slate-600 hover:text-slate-900'
           }`}

@@ -8,6 +8,7 @@ import {
   saveScheduleEvaluation,
   addStudent,
 } from '../firebase';
+import { exportScheduleToPdf } from '../services/pdfReportService';
 import { VoiceInputButton } from './VoiceInputButton';
 import { CalendarView } from './CalendarView';
 import { useBackHandler } from '../services/backHandler';
@@ -33,6 +34,7 @@ import {
   Star,
   Search,
   Layers,
+  Printer,
 } from 'lucide-react';
 
 interface ScheduleTabProps {
@@ -850,6 +852,14 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
           >
             <Plus className="w-4 h-4" />
             <span>إضافة موعد</span>
+          </button>
+          <button
+            onClick={() => exportScheduleToPdf(profile, schedules, students)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition cursor-pointer border border-slate-700"
+            title="تصدير جدول الحصص PDF"
+          >
+            <Printer className="w-4 h-4" />
+            <span>تصدير المواعيد</span>
           </button>
         </div>
       </div>
