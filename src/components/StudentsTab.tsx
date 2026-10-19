@@ -4,6 +4,7 @@ import { AbsenceDetailsModal, AbsenceDetailsResult } from './AbsenceDetailsModal
 import { DailyAttendanceModal } from './DailyAttendanceModal';
 import { StudentPdfExportModal } from './StudentPdfExportModal';
 import { PerformanceInsights } from './PerformanceInsights';
+import { GroupManagementTab } from './GroupManagementTab';
 import { ReportType } from '../services/pdfReportService';
 import {
   triggerAbsenceNotificationAndChime,
@@ -34,6 +35,7 @@ import {
 import { VoiceInputButton } from './VoiceInputButton';
 import { hasConflict } from '../services/conflictService';
 import {
+  Users,
   UserPlus,
   Search,
   MessageCircle,
@@ -87,6 +89,7 @@ interface StudentsTabProps {
 export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, schedules: rawSchedules = [] }) => {
   const schedules = rawSchedules.filter((s) => students.some((st) => st.id === s.studentId));
   const currency = profile?.currency || 'ج.م';
+  const [activeMainView, setActiveMainView] = useState<'groups_and_individuals' | 'records'>('groups_and_individuals');
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | ClassType>('all');
   const [paymentFilter, setPaymentFilter] = useState<'all' | PaymentStatus>('all');
@@ -992,12 +995,52 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
   return (
     <div className="space-y-4 pb-20">
-      {/* Top Header & Add Button */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-white">سجل الطلاب ({students.length})</h2>
-          <p className="text-xs text-slate-400">إدارة الطلاب، الحضور، التقارير والمدفوعات</p>
-        </div>
+      {/* Top View Mode Switcher */}
+      <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-900/90 border border-purple-500/30 shadow-inner">
+        <button
+          type="button"
+          onClick={() => setActiveMainView('groups_and_individuals')}
+          className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
+            activeMainView === 'groups_and_individuals'
+              ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-950/50 scale-[1.01]'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          <span>المجموعات والطلاب</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveMainView('records')}
+          className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
+            activeMainView === 'records'
+              ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-950/50 scale-[1.01]'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <BookOpen className="w-4 h-4" />
+          <span>سجل الطلاب المالي</span>
+        </button>
+      </div>
+
+      {activeMainView === 'groups_and_individuals' ? (
+        <GroupManagementTab
+          teacherId={profile.id}
+          profile={profile}
+          currency={currency}
+          defaultSubject={profile.subject}
+          initialStudents={students}
+          onSelectStudent={(st) => handleOpenStudentProfile(st)}
+        />
+      ) : (
+        <>
+          {/* Top Header & Add Button */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-white">سجل الطلاب ({students.length})</h2>
+              <p className="text-xs text-slate-400">إدارة الطلاب، الحضور، التقارير والمدفوعات</p>
+            </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -1273,6 +1316,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
             <X className="w-4 h-4" />
           </button>
         </div>
+      )}
+        </>
       )}
 
       {/* Add / Edit Student Modal */}

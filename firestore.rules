@@ -159,12 +159,28 @@ service cloud.firestore {
         data.type in ['center', 'private', 'online'];
     }
 
+    // Center validation
+    function isValidCenter(teacherId) {
+      let data = incoming();
+      return (data.ownerUid == teacherId || data.teacherId == teacherId) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 120;
+    }
+
     // Group validation
     function isValidGroup(teacherId) {
       let data = incoming();
-      return data.teacherId == teacherId &&
-        data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
-        data.workplaceId is string && data.workplaceId.size() <= 128;
+      return (data.ownerUid == teacherId || data.teacherId == teacherId) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+        (!('centerName' in data) || (data.centerName is string && data.centerName.size() <= 120)) &&
+        (!('monthlyFee' in data) || (data.monthlyFee is number && data.monthlyFee >= 0));
+    }
+
+    // Membership validation
+    function isValidMembership(teacherId) {
+      let data = incoming();
+      return (data.ownerUid == teacherId || data.teacherId == teacherId) &&
+        data.studentId is string && data.studentId.size() <= 128 &&
+        data.active is bool;
     }
 
     // Session validation
@@ -341,6 +357,18 @@ service cloud.firestore {
                          isTeacherSubscriptionActive(teacherId);
       }
 
+      // Subcollection: Centers
+      match /centers/{centerId} {
+        allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+        allow create, update: if isValidId(teacherId) && isValidId(centerId) &&
+                                 (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isTeacherSubscriptionActive(teacherId) &&
+                                 isValidCenter(teacherId);
+        allow delete: if isValidId(teacherId) && isValidId(centerId) &&
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId);
+      }
+
       // Subcollection: Groups
       match /groups/{groupId} {
         allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
@@ -349,6 +377,18 @@ service cloud.firestore {
                                  isTeacherSubscriptionActive(teacherId) &&
                                  isValidGroup(teacherId);
         allow delete: if isValidId(teacherId) && isValidId(groupId) &&
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId);
+      }
+
+      // Subcollection: Memberships
+      match /memberships/{membershipId} {
+        allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+        allow create, update: if isValidId(teacherId) && isValidId(membershipId) &&
+                                 (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isTeacherSubscriptionActive(teacherId) &&
+                                 isValidMembership(teacherId);
+        allow delete: if isValidId(teacherId) && isValidId(membershipId) &&
                          (isTeacherOwner(teacherId) || isAdmin()) &&
                          isTeacherSubscriptionActive(teacherId);
       }

@@ -47,6 +47,9 @@ import {
   Workplace,
   Group,
   WorkplaceType,
+  EducationalCenter,
+  GroupMembership,
+  GroupScheduleItem,
 } from './types';
 
 import rawFirebaseConfig from '../firebase-applet-config.json';
@@ -1689,31 +1692,123 @@ export function subscribeToWorkplaces(
   );
 }
 
-export async function addGroup(
+// -------------------------------------------------------------
+// Educational Centers
+// -------------------------------------------------------------
+
+export async function addCenter(
   teacherId: string,
-  data: {
-    workplaceId: string;
-    name: string;
-    subject?: string;
-    grade?: string;
-    schedule?: Array<{ day: number; startTime: string; endTime: string }>;
-    defaultMonthlyFee?: number;
-  }
+  name: string
 ): Promise<string> {
-  const path = `teachers/${teacherId}/groups`;
+  const cleanName = name.trim();
+  if (!cleanName) throw new Error('يرجى إدخال اسم السنتر');
+  const path = `teachers/${teacherId}/centers`;
   try {
-    const colRef = collection(db, 'teachers', teacherId, 'groups');
+    const colRef = collection(db, 'teachers', teacherId, 'centers');
+    // Check if center with same name already exists
+    const q = query(colRef, where('name', '==', cleanName), where('archived', '!=', true));
+    const existing = await getDocs(q);
+    if (!existing.empty) {
+      return existing.docs[0].id;
+    }
     const newDoc = doc(colRef);
     await setDoc(newDoc, {
       id: newDoc.id,
+      ownerUid: teacherId,
+      name: cleanName,
+      archived: false,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return newDoc.id;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, path);
+    throw err;
+  }
+}
+
+export function subscribeToCenters(
+  teacherId: string,
+  onUpdate: (centers: EducationalCenter[]) => void,
+  onError?: (err: Error) => void
+) {
+  const q = query(collection(db, 'teachers', teacherId, 'centers'), orderBy('createdAt', 'asc'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const items: EducationalCenter[] = snap.docs.map((d) => d.data() as EducationalCenter);
+      onUpdate(items);
+    },
+    (err) => {
+      console.error('Error in subscribeToCenters:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+// -------------------------------------------------------------
+// Groups
+// -------------------------------------------------------------
+
+export async function addGroup(
+  teacherId: string,
+  data: {
+    name: string;
+    centerId: string;
+    centerName: string;
+    subject: string;
+    grade?: string;
+    schedule: GroupScheduleItem[];
+    monthlyFee: number;
+    color?: string;
+    status?: 'active' | 'paused';
+    notes?: string;
+    workplaceId?: string;
+  }
+): Promise<string> {
+  const cleanName = data.name.trim();
+  const cleanCenter = data.centerName.trim();
+  if (!cleanName) throw new Error('يرجى إدخال اسم المجموعة');
+  if (!cleanCenter) throw new Error('يرجى اختيار أو إدخال اسم السنتر');
+  if (!data.subject?.trim()) throw new Error('يرجى تحديد المادة الدراسية');
+  if (data.monthlyFee === undefined || data.monthlyFee < 0) throw new Error('يرجى تحديد سعر الشهر بشكل صحيح');
+
+  const path = `teachers/${teacherId}/groups`;
+  try {
+    const colRef = collection(db, 'teachers', teacherId, 'groups');
+    // Rule: Prevent duplicate group name in the same center
+    const checkSnap = await getDocs(colRef);
+    const hasDuplicate = checkSnap.docs.some((d) => {
+      const g = d.data() as Group;
+      return (
+        !g.archived &&
+        g.name.trim().toLowerCase() === cleanName.toLowerCase() &&
+        g.centerName?.trim().toLowerCase() === cleanCenter.toLowerCase()
+      );
+    });
+
+    if (hasDuplicate) {
+      throw new Error(`توجد بالفعل مجموعة نشطة باسم "${cleanName}" في سنتر "${cleanCenter}". يرجى اختيار اسم مختلف.`);
+    }
+
+    const newDoc = doc(colRef);
+    await setDoc(newDoc, {
+      id: newDoc.id,
+      ownerUid: teacherId,
       teacherId,
-      workplaceId: data.workplaceId,
-      name: data.name.trim(),
-      subject: data.subject || '',
-      grade: data.grade || '',
+      workplaceId: data.workplaceId || data.centerId,
+      name: cleanName,
+      centerId: data.centerId,
+      centerName: cleanCenter,
+      subject: data.subject.trim(),
+      grade: data.grade?.trim() || '',
       schedule: data.schedule || [],
-      defaultMonthlyFee: data.defaultMonthlyFee || 0,
-      active: true,
+      monthlyFee: Number(data.monthlyFee) || 0,
+      color: data.color || '#7c3aed',
+      status: data.status || 'active',
+      notes: data.notes?.trim() || '',
+      active: (data.status || 'active') === 'active',
+      archived: false,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -1731,6 +1826,30 @@ export async function updateGroup(
 ) {
   const path = `teachers/${teacherId}/groups/${groupId}`;
   try {
+    // If name or centerName is being updated, check for duplicates
+    if (updates.name || updates.centerName) {
+      const colRef = collection(db, 'teachers', teacherId, 'groups');
+      const checkSnap = await getDocs(colRef);
+      const targetDoc = checkSnap.docs.find((d) => d.id === groupId);
+      const currentData = targetDoc ? (targetDoc.data() as Group) : null;
+      const targetName = (updates.name || currentData?.name || '').trim().toLowerCase();
+      const targetCenter = (updates.centerName || currentData?.centerName || '').trim().toLowerCase();
+
+      const hasDuplicate = checkSnap.docs.some((d) => {
+        if (d.id === groupId) return false;
+        const g = d.data() as Group;
+        return (
+          !g.archived &&
+          g.name?.trim().toLowerCase() === targetName &&
+          g.centerName?.trim().toLowerCase() === targetCenter
+        );
+      });
+
+      if (hasDuplicate) {
+        throw new Error(`توجد بالفعل مجموعة نشطة بنفس الاسم في هذا السنتر.`);
+      }
+    }
+
     await updateDoc(doc(db, 'teachers', teacherId, 'groups', groupId), {
       ...updates,
       updatedAt: serverTimestamp(),
@@ -1741,7 +1860,25 @@ export async function updateGroup(
   }
 }
 
+// Soft delete (archive) group with undo capability
+export async function archiveGroup(teacherId: string, groupId: string, archived: boolean = true) {
+  const path = `teachers/${teacherId}/groups/${groupId}`;
+  try {
+    await updateDoc(doc(db, 'teachers', teacherId, 'groups', groupId), {
+      archived,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+    throw err;
+  }
+}
+
 export async function deleteGroup(teacherId: string, groupId: string) {
+  return archiveGroup(teacherId, groupId, true);
+}
+
+export async function deleteGroupPermanently(teacherId: string, groupId: string) {
   const path = `teachers/${teacherId}/groups/${groupId}`;
   try {
     await deleteDoc(doc(db, 'teachers', teacherId, 'groups', groupId));
@@ -1768,6 +1905,280 @@ export function subscribeToGroups(
       if (onError) onError(err);
     }
   );
+}
+
+// -------------------------------------------------------------
+// Memberships (Student <-> Group relation with historical preservation)
+// -------------------------------------------------------------
+
+export function getMembershipId(studentId: string, groupId: string) {
+  return `${studentId}_${groupId}`;
+}
+
+export async function addStudentToGroup(
+  teacherId: string,
+  studentId: string,
+  groupId: string,
+  studentName: string,
+  groupName: string,
+  centerName: string
+) {
+  const membershipId = getMembershipId(studentId, groupId);
+  const path = `teachers/${teacherId}/memberships/${membershipId}`;
+  try {
+    const memRef = doc(db, 'teachers', teacherId, 'memberships', membershipId);
+    await setDoc(
+      memRef,
+      {
+        id: membershipId,
+        ownerUid: teacherId,
+        studentId,
+        studentName,
+        groupId,
+        groupName,
+        centerName,
+        joinedAt: serverTimestamp(),
+        active: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    // Also update student's groupIds array and classType
+    const studentRef = doc(db, 'teachers', teacherId, 'students', studentId);
+    const studentSnap = await getDoc(studentRef);
+    if (studentSnap.exists()) {
+      const existing = studentSnap.data() as Student;
+      const currentGroups = existing.groupIds || [];
+      const updatedGroups = currentGroups.includes(groupId) ? currentGroups : [...currentGroups, groupId];
+      await updateDoc(studentRef, {
+        groupIds: updatedGroups,
+        classType: 'center',
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, path);
+    throw err;
+  }
+}
+
+export async function removeStudentFromGroup(
+  teacherId: string,
+  studentId: string,
+  groupId: string
+) {
+  const membershipId = getMembershipId(studentId, groupId);
+  const path = `teachers/${teacherId}/memberships/${membershipId}`;
+  try {
+    const memRef = doc(db, 'teachers', teacherId, 'memberships', membershipId);
+    // Mark membership inactive and record leftAt so history is preserved
+    await updateDoc(memRef, {
+      active: false,
+      leftAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    const studentRef = doc(db, 'teachers', teacherId, 'students', studentId);
+    const studentSnap = await getDoc(studentRef);
+    if (studentSnap.exists()) {
+      const existing = studentSnap.data() as Student;
+      const currentGroups = (existing.groupIds || []).filter((g) => g !== groupId);
+      await updateDoc(studentRef, {
+        groupIds: currentGroups,
+        classType: currentGroups.length > 0 ? 'center' : 'private',
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+    throw err;
+  }
+}
+
+export async function moveStudentGroup(
+  teacherId: string,
+  studentId: string,
+  studentName: string,
+  fromGroupId: string,
+  toGroupId: string,
+  toGroupName: string,
+  toCenterName: string
+) {
+  const batch = writeBatch(db);
+
+  // 1. Deactivate old membership
+  const oldMemId = getMembershipId(studentId, fromGroupId);
+  const oldRef = doc(db, 'teachers', teacherId, 'memberships', oldMemId);
+  batch.update(oldRef, {
+    active: false,
+    leftAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  // 2. Activate or create new membership
+  const newMemId = getMembershipId(studentId, toGroupId);
+  const newRef = doc(db, 'teachers', teacherId, 'memberships', newMemId);
+  batch.set(
+    newRef,
+    {
+      id: newMemId,
+      ownerUid: teacherId,
+      studentId,
+      studentName,
+      groupId: toGroupId,
+      groupName: toGroupName,
+      centerName: toCenterName,
+      joinedAt: serverTimestamp(),
+      active: true,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  // 3. Update student record
+  const studentRef = doc(db, 'teachers', teacherId, 'students', studentId);
+  const studentSnap = await getDoc(studentRef);
+  if (studentSnap.exists()) {
+    const existing = studentSnap.data() as Student;
+    const currentGroups = (existing.groupIds || []).filter((g) => g !== fromGroupId);
+    const updatedGroups = currentGroups.includes(toGroupId) ? currentGroups : [...currentGroups, toGroupId];
+    batch.update(studentRef, {
+      groupIds: updatedGroups,
+      classType: 'center',
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  await batch.commit();
+}
+
+export async function convertStudentToIndividual(
+  teacherId: string,
+  studentId: string,
+  fromGroupId?: string
+) {
+  const batch = writeBatch(db);
+
+  if (fromGroupId) {
+    const oldMemId = getMembershipId(studentId, fromGroupId);
+    const oldRef = doc(db, 'teachers', teacherId, 'memberships', oldMemId);
+    batch.update(oldRef, {
+      active: false,
+      leftAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  const studentRef = doc(db, 'teachers', teacherId, 'students', studentId);
+  batch.update(studentRef, {
+    groupIds: [],
+    classType: 'private',
+    isIndividual: true,
+    updatedAt: serverTimestamp(),
+  });
+
+  await batch.commit();
+}
+
+// Bulk add students to a group from newline-separated names
+export async function bulkAddStudentsToGroup(
+  teacherId: string,
+  groupId: string,
+  groupName: string,
+  centerName: string,
+  studentNames: string[],
+  subject: string = 'عام',
+  hourlyRate: number = 100
+): Promise<number> {
+  const cleanNames = studentNames
+    .map((n) => n.trim())
+    .filter((n) => n.length > 0);
+
+  if (cleanNames.length === 0) return 0;
+
+  const batch = writeBatch(db);
+
+  for (const name of cleanNames) {
+    const studentRef = doc(collection(db, 'teachers', teacherId, 'students'));
+    const studentId = studentRef.id;
+
+    batch.set(studentRef, {
+      id: studentId,
+      teacherId,
+      ownerUid: teacherId,
+      name,
+      phone: '',
+      parentPhone: '',
+      whatsapp: '',
+      subject,
+      classType: 'center',
+      hourlyRate,
+      pendingDues: 0,
+      totalHours: 0,
+      collectedDues: 0,
+      paymentStatus: 'unpaid',
+      groupIds: [groupId],
+      active: true,
+      archived: false,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    const memId = getMembershipId(studentId, groupId);
+    const memRef = doc(db, 'teachers', teacherId, 'memberships', memId);
+    batch.set(memRef, {
+      id: memId,
+      ownerUid: teacherId,
+      studentId,
+      studentName: name,
+      groupId,
+      groupName,
+      centerName,
+      joinedAt: serverTimestamp(),
+      active: true,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  await batch.commit();
+  return cleanNames.length;
+}
+
+export function subscribeToMemberships(
+  teacherId: string,
+  onUpdate: (memberships: GroupMembership[]) => void,
+  onError?: (err: Error) => void
+) {
+  const q = query(collection(db, 'teachers', teacherId, 'memberships'), orderBy('createdAt', 'desc'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const items: GroupMembership[] = snap.docs.map((d) => d.data() as GroupMembership);
+      onUpdate(items);
+    },
+    (err) => {
+      console.error('Error in subscribeToMemberships:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+// Soft delete (archive) student with undo support
+export async function archiveStudent(teacherId: string, studentId: string, archived: boolean = true) {
+  const path = `teachers/${teacherId}/students/${studentId}`;
+  try {
+    await updateDoc(doc(db, 'teachers', teacherId, 'students', studentId), {
+      archived,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+    throw err;
+  }
 }
 
 // Idempotent Migration: Ensures default workplaces (Private and Online) exist for existing teachers
@@ -1805,6 +2216,7 @@ export async function ensureDefaultWorkplacesAndMigration(teacherId: string): Pr
     console.warn('Migration check warning:', err);
   }
 }
+
 
 
 

@@ -84,22 +84,53 @@ export interface Workplace {
   updatedAt: any;
 }
 
-export interface GroupScheduleSlot {
-  day: number; // 0-6
-  startTime: string; // HH:MM
-  endTime: string; // HH:MM
+export interface EducationalCenter {
+  id: string;
+  ownerUid: string;
+  name: string;
+  createdAt: any;
+  updatedAt: any;
+  archived?: boolean;
+}
+
+export interface GroupScheduleItem {
+  day: number; // 0: الأحد ... 6: السبت
+  time: string; // HH:MM
+  duration?: number; // بالدقائق
 }
 
 export interface Group {
   id: string;
-  teacherId: string;
-  workplaceId: string;
+  ownerUid: string;
+  teacherId?: string; // backward compat
+  workplaceId?: string; // backward compat
   name: string;
-  subject?: string;
+  centerId: string;
+  centerName: string;
+  subject: string;
   grade?: string;
-  schedule?: GroupScheduleSlot[];
-  defaultMonthlyFee?: number;
+  schedule: GroupScheduleItem[];
+  monthlyFee: number;
+  color?: string;
+  status: 'active' | 'paused';
+  notes?: string;
   active?: boolean;
+  archived?: boolean;
+  createdAt: any;
+  updatedAt: any;
+}
+
+export interface GroupMembership {
+  id: string; // deterministic e.g. `${studentId}_${groupId}`
+  ownerUid: string;
+  studentId: string;
+  studentName?: string;
+  groupId: string | null; // null if individual
+  groupName?: string;
+  centerName?: string;
+  joinedAt: any;
+  leftAt?: any;
+  active: boolean;
   createdAt: any;
   updatedAt: any;
 }
@@ -107,6 +138,7 @@ export interface Group {
 export interface Student {
   id: string;
   teacherId: string;
+  ownerUid?: string;
   name: string;
   phone?: string;
   parentPhone?: string;
@@ -130,6 +162,8 @@ export interface Student {
   groupIds?: string[]; // multi-group support
   customFees?: Record<string, number>; // groupId -> amount
   active?: boolean;
+  archived?: boolean;
+  isIndividual?: boolean;
   createdAt: any;
   updatedAt: any;
 }

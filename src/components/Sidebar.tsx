@@ -39,7 +39,7 @@ export function Sidebar({ isOpen, onClose, activeItem, onSelect, profile }: Side
 
   const menuItems = [
     { id: 'home', label: 'الرئيسية', icon: LayoutGrid },
-    { id: 'students', label: 'الطلاب', icon: Users },
+    { id: 'students', label: 'المجموعات والطلاب', icon: Users },
     { id: 'appointments', label: 'المواعيد', icon: Calendar },
     { id: 'classes', label: 'الحصص', icon: BookOpen },
     { id: 'profits', label: 'الأرباح', icon: DollarSign },

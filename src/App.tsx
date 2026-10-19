@@ -132,7 +132,7 @@ export default function App() {
   const [activeSidebarItem, setActiveSidebarItem] = useState('reminders');
 
   useEffect(() => {
-    if (profile && !profile.onboardingCompleted) {
+    if (profile && profile.role !== 'admin' && !profile.onboardingCompleted) {
       setShowOnboarding(true);
     }
   }, [profile]);
