@@ -89,6 +89,44 @@ interface StudentsTabProps {
   schedules?: ScheduleSlot[];
 }
 
+// Helper Component for Attendance
+const AttendanceIndicator: React.FC<{ student: Student }> = ({ student }) => {
+  const [status, setStatus] = useState<'present' | 'absent' | 'excused'>('present');
+
+  const toggleStatus = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const statuses: Array<'present' | 'absent' | 'excused'> = ['present', 'absent', 'excused'];
+    const nextIndex = (statuses.indexOf(status) + 1) % statuses.length;
+    setStatus(statuses[nextIndex]);
+  };
+
+  const getStyle = () => {
+    switch (status) {
+      case 'present': return 'bg-emerald-500';
+      case 'absent': return 'bg-rose-500';
+      case 'excused': return 'bg-amber-400';
+      default: return 'bg-gray-400';
+    }
+  };
+
+  const getLabel = () => {
+    switch (status) {
+      case 'present': return 'حاضر';
+      case 'absent': return 'غائب';
+      case 'excused': return 'مؤجل';
+      default: return 'غير محدد';
+    }
+  };
+
+  return (
+    <button
+      onClick={toggleStatus}
+      className={`w-3 h-3 rounded-full ${getStyle()} hover:scale-150 transition-all duration-300 shadow-sm`}
+      title={`حالة الحضور: ${getLabel()} (اضغط للتبديل)`}
+    />
+  );
+};
+
 export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, schedules: rawSchedules = [] }) => {
   const schedules = rawSchedules.filter((s) => students.some((st) => st.id === s.studentId));
   const currency = profile?.currency || 'ج.م';
@@ -1524,6 +1562,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                       <h3 className="text-sm font-bold text-white hover:text-purple-300 transition">
                         {s.name}
                       </h3>
+                      <AttendanceIndicator student={s} />
                       {getClassTypeBadge(s.classType)}
 
                       {/* Paid Classes Running Low Alert Badge */}
