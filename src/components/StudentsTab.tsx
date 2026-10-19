@@ -1595,7 +1595,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                       )}
                     </div>
                     <p className="text-xs text-slate-400 mt-1">
-                      مادة: <span className="text-purple-300 font-medium">{s.subject}</span> •{' '}
+                      مادة: <span className="text-purple-300 font-medium">{s.subject}</span>
+                      <input type="date" defaultValue={new Date().toISOString().split('T')[0]} className="bg-slate-800 text-[10px] text-white rounded px-1 py-0.5 border border-slate-700 cursor-pointer mx-1" title="تعديل تاريخ الحصة" />
+                      •{' '}
                       <span className="text-amber-300 font-bold font-mono">
                         المستحقات: {pendingAmount} {currency} ({pendingHours} ساعة)
                       </span>

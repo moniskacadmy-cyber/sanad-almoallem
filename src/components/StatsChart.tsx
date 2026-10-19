@@ -68,11 +68,12 @@ export const StatsChart: React.FC<StatsChartProps> = ({
 
       return (
         <div
-          className={`p-3 rounded-2xl shadow-xl border text-right transition-colors ${
+          className={`p-3 shadow-xl border text-right transition-colors ${
             isDark
-              ? 'bg-slate-900/95 border-purple-500/40 text-slate-100'
-              : 'bg-white/95 border-slate-200 text-slate-800'
+              ? 'bg-[#0f172a] border-[#334155] text-[#f8fafc]'
+              : 'bg-[#ffffff] border-[#e2e8f0] text-[#0f172a]'
           }`}
+          style={{ borderRadius: '12px', fontSize: '11px' }}
           dir="rtl"
         >
           <div className="flex items-center justify-between gap-2 border-b pb-1.5 mb-2 border-slate-200 dark:border-slate-800">
