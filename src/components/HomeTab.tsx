@@ -724,115 +724,23 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         </div>
       </div>
 
-      {/* 5. كارت "روابط سريعة" (وصول فوري للأقسام) - شبكة 3 أعمدة × صفين */}
-      <div className="rounded-3xl bg-slate-900/90 border border-purple-500/20 p-4 sm:p-5 shadow-xl space-y-3">
-        <div className="flex items-center justify-between border-b border-purple-900/30 pb-2.5">
-          <h3 className="text-sm font-black text-white">روابط سريعة</h3>
-          <span className="text-[11px] text-purple-300/70">وصول فوري للأقسام</span>
-        </div>
-
-        <div className="grid grid-cols-3 gap-2.5">
-          {/* 1. مكتبتي */}
-          <button
-            type="button"
-            onClick={() => onNavigateToTab(3)}
-            className="p-3 rounded-2xl bg-slate-950/70 hover:bg-purple-950/50 border border-purple-500/20 hover:border-purple-400/50 transition cursor-pointer flex flex-col items-center justify-center gap-1.5 group shadow-sm active:scale-95"
-          >
-            <div className="w-10 h-10 rounded-2xl bg-purple-500/20 text-purple-300 group-hover:text-purple-200 flex items-center justify-center transition">
-              <BookOpen className="w-5 h-5" />
-            </div>
-            <span className="text-xs font-bold text-slate-200 group-hover:text-white">
-              مكتبتي
-            </span>
-          </button>
-
-          {/* 2. جدول المواعيد */}
-          <button
-            type="button"
-            onClick={() => onNavigateToTab(2)}
-            className="p-3 rounded-2xl bg-slate-950/70 hover:bg-purple-950/50 border border-purple-500/20 hover:border-purple-400/50 transition cursor-pointer flex flex-col items-center justify-center gap-1.5 group shadow-sm active:scale-95"
-          >
-            <div className="w-10 h-10 rounded-2xl bg-sky-500/20 text-sky-300 group-hover:text-sky-200 flex items-center justify-center transition">
-              <Calendar className="w-5 h-5" />
-            </div>
-            <span className="text-xs font-bold text-slate-200 group-hover:text-white">
-              جدول المواعيد
-            </span>
-          </button>
-
-          {/* 3. إضافة طالب */}
-          <button
-            type="button"
-            onClick={() => onNavigateToTab(1)}
-            className="p-3 rounded-2xl bg-slate-950/70 hover:bg-purple-950/50 border border-purple-500/20 hover:border-purple-400/50 transition cursor-pointer flex flex-col items-center justify-center gap-1.5 group shadow-sm active:scale-95"
-          >
-            <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-300 group-hover:text-emerald-200 flex items-center justify-center transition">
-              <UserPlus className="w-5 h-5" />
-            </div>
-            <span className="text-xs font-bold text-slate-200 group-hover:text-white">
-              إضافة طالب
-            </span>
-          </button>
-
-          {/* 4. الإعدادات */}
-          <button
-            type="button"
-            onClick={() => onNavigateToTab(4)}
-            className="p-3 rounded-2xl bg-slate-950/70 hover:bg-purple-950/50 border border-purple-500/20 hover:border-purple-400/50 transition cursor-pointer flex flex-col items-center justify-center gap-1.5 group shadow-sm active:scale-95"
-          >
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-300 group-hover:text-amber-200 flex items-center justify-center transition">
-              <Settings className="w-5 h-5" />
-            </div>
-            <span className="text-xs font-bold text-slate-200 group-hover:text-white">
-              الإعدادات
-            </span>
-          </button>
-
-          {/* 5. الاشتراك */}
-          <button
-            type="button"
-            onClick={onOpenUpgradeModal}
-            className="p-3 rounded-2xl bg-slate-950/70 hover:bg-purple-950/50 border border-purple-500/20 hover:border-purple-400/50 transition cursor-pointer flex flex-col items-center justify-center gap-1.5 group shadow-sm active:scale-95"
-          >
-            <div className="w-10 h-10 rounded-2xl bg-rose-500/20 text-rose-300 group-hover:text-rose-200 flex items-center justify-center transition">
-              <Crown className="w-5 h-5" />
-            </div>
-            <span className="text-xs font-bold text-slate-200 group-hover:text-white">
-              الاشتراك
-            </span>
-          </button>
-
-          {/* 6. ملاحظات الطلاب */}
-          <button
-            type="button"
-            onClick={() => onNavigateToTab(1)}
-            className="p-3 rounded-2xl bg-slate-950/70 hover:bg-purple-950/50 border border-purple-500/20 hover:border-purple-400/50 transition cursor-pointer flex flex-col items-center justify-center gap-1.5 group shadow-sm active:scale-95"
-          >
-            <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 text-indigo-300 group-hover:text-indigo-200 flex items-center justify-center transition">
-              <FileText className="w-5 h-5" />
-            </div>
-            <span className="text-xs font-bold text-slate-200 group-hover:text-white">
-              ملاحظات الطلاب
-            </span>
-          </button>
-        </div>
-      </div>
-
       {/* 6. لوحة إحصائية: توزيع الحصص خلال الأسبوع الحالي (recharts lazy-loaded) */}
-      <React.Suspense fallback={
-        <div className="rounded-3xl p-6 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-purple-500/20 animate-pulse text-center text-xs text-slate-400">
-          جاري تحميل الإحصائيات الأسبوعية...
-        </div>
-      }>
-        <StatsChart
-          weeklyChartData={weeklyChartData}
-          totalCompletedWeek={totalCompletedWeek}
-          totalPlannedWeek={totalPlannedWeek}
-          weeklyCompletionPct={weeklyCompletionPct}
-          todayDayName={todayArabicName}
-          onNavigateToSchedules={() => onNavigateToTab(2)}
-        />
-      </React.Suspense>
+      <div className="mt-10">
+        <React.Suspense fallback={
+          <div className="rounded-3xl p-6 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-purple-500/20 animate-pulse text-center text-xs text-slate-400">
+            جاري تحميل الإحصائيات الأسبوعية...
+          </div>
+        }>
+          <StatsChart
+            weeklyChartData={weeklyChartData}
+            totalCompletedWeek={totalCompletedWeek}
+            totalPlannedWeek={totalPlannedWeek}
+            weeklyCompletionPct={weeklyCompletionPct}
+            todayDayName={todayArabicName}
+            onNavigateToSchedules={() => onNavigateToTab(2)}
+          />
+        </React.Suspense>
+      </div>
 
       {/* Start Class Modal */}
       {showStartClassModal && (
