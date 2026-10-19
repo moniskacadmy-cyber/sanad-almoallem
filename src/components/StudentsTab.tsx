@@ -25,6 +25,8 @@ import {
   addLibraryItem,
   fetchAllStudentLessons,
   settleStudentAccount,
+  normalizeArabicText,
+  recordStudentAttendance,
 } from '../firebase';
 import {
   WEEK_DAYS,
@@ -63,6 +65,7 @@ import {
   ChevronDown,
   DollarSign,
   Download,
+  RotateCcw,
 } from 'lucide-react';
 
 interface FormScheduleRow {
@@ -93,6 +96,33 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | ClassType>('all');
   const [paymentFilter, setPaymentFilter] = useState<'all' | PaymentStatus>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [subjectFilter, setSubjectFilter] = useState<string>('all');
+
+  // Available subjects dynamically extracted from students and profile
+  const availableSubjects = React.useMemo(() => {
+    const set = new Set<string>();
+    if (profile?.subject?.trim()) set.add(profile.subject.trim());
+    students.forEach((s) => {
+      if (s.subject?.trim()) set.add(s.subject.trim());
+    });
+    return Array.from(set).filter(Boolean);
+  }, [students, profile?.subject]);
+
+  const hasActiveFilters =
+    searchQuery.trim() !== '' ||
+    statusFilter !== 'all' ||
+    subjectFilter !== 'all' ||
+    typeFilter !== 'all' ||
+    paymentFilter !== 'all';
+
+  const handleResetFilters = () => {
+    setSearchQuery('');
+    setStatusFilter('all');
+    setSubjectFilter('all');
+    setTypeFilter('all');
+    setPaymentFilter('all');
+  };
 
   // Lessons map for calculating dynamic dues and hours for all students
   const [allLessonsMap, setAllLessonsMap] = useState<Record<string, LessonLog[]>>({});
@@ -131,6 +161,56 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const [showPdfExportModal, setShowPdfExportModal] = useState(false);
   const [pdfExportReportType, setPdfExportReportType] = useState<ReportType>('financial');
   useBackHandler(showPdfExportModal, () => setShowPdfExportModal(false), 'student_pdf_export_modal');
+
+  // WhatsApp Reminder Modal State
+  const [reminderModalStudent, setReminderModalStudent] = useState<Student | null>(null);
+  const [reminderType, setReminderType] = useState<'schedule' | 'dues' | 'prepaid' | 'custom'>('schedule');
+  const [reminderCustomText, setReminderCustomText] = useState('');
+  const [copiedReminder, setCopiedReminder] = useState(false);
+  useBackHandler(!!reminderModalStudent, () => setReminderModalStudent(null), 'student_whatsapp_reminder');
+
+  // Attendance Modal State
+  const [attendanceModalStudent, setAttendanceModalStudent] = useState<Student | null>(null);
+  const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'absent' | 'late'>('present');
+  const [attendanceDate, setAttendanceDate] = useState(() => new Intl.DateTimeFormat('en-CA').format(new Date()));
+  const [attendanceNotes, setAttendanceNotes] = useState('');
+  const [isSavingAttendance, setIsSavingAttendance] = useState(false);
+  const [attendanceSuccessMsg, setAttendanceSuccessMsg] = useState<string | null>(null);
+  useBackHandler(!!attendanceModalStudent, () => setAttendanceModalStudent(null), 'student_attendance_modal');
+
+  const handleOpenAttendanceModal = (s: Student) => {
+    setAttendanceModalStudent(s);
+    setAttendanceStatus('present');
+    setAttendanceDate(new Intl.DateTimeFormat('en-CA').format(new Date()));
+    setAttendanceNotes('');
+    setAttendanceSuccessMsg(null);
+  };
+
+  const handleSaveAttendanceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!attendanceModalStudent || isSavingAttendance) return;
+    setIsSavingAttendance(true);
+    setAttendanceSuccessMsg(null);
+    try {
+      await recordStudentAttendance(profile.id, {
+        studentId: attendanceModalStudent.id,
+        studentName: attendanceModalStudent.name,
+        subject: attendanceModalStudent.subject || profile.subject || 'المادة',
+        status: attendanceStatus,
+        date: attendanceDate,
+        notes: attendanceNotes,
+      });
+      setAttendanceSuccessMsg('تم تسجيل وحفظ حالة الحضور في مجموعة attendance بنجاح! ✅');
+      setTimeout(() => {
+        setAttendanceModalStudent(null);
+        setAttendanceSuccessMsg(null);
+      }, 1500);
+    } catch (err: any) {
+      console.error('Error saving attendance:', err);
+    } finally {
+      setIsSavingAttendance(false);
+    }
+  };
 
   const handleOpenPdfExport = (type: ReportType = 'financial') => {
     setPdfExportReportType(type);
@@ -402,18 +482,48 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     }
   };
 
-  // Filter students
+  // Filter students in-memory without requiring any Firestore index
   const filteredStudents = students.filter((s) => {
-    const matchesSearch =
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.whatsapp && s.whatsapp.includes(searchQuery)) ||
-      s.subject.toLowerCase().includes(searchQuery.toLowerCase());
+    // 1. Search Query with Arabic normalization
+    if (searchQuery.trim()) {
+      const q = normalizeArabicText(searchQuery);
+      const nameMatch = normalizeArabicText(s.name || '').includes(q);
+      const subjectMatch = normalizeArabicText(s.subject || '').includes(q);
+      const phoneMatch =
+        (s.phone && s.phone.includes(searchQuery.trim())) ||
+        (s.whatsapp && s.whatsapp.includes(searchQuery.trim())) ||
+        (s.parentPhone && s.parentPhone.includes(searchQuery.trim()));
+      if (!nameMatch && !subjectMatch && !phoneMatch) return false;
+    }
+
+    // 2. Status Filter (نشط / غير نشط / الكل)
+    if (statusFilter === 'active') {
+      const isActive = s.active !== false && !s.archived;
+      if (!isActive) return false;
+    } else if (statusFilter === 'inactive') {
+      const isInactive = s.active === false || s.archived === true;
+      if (!isInactive) return false;
+    }
+
+    // 3. Subject Filter (المادة الدراسية)
+    if (subjectFilter !== 'all') {
+      if (normalizeArabicText(s.subject || '') !== normalizeArabicText(subjectFilter)) {
+        return false;
+      }
+    }
+
+    // 4. Class Type Filter
     const matchesType =
       typeFilter === 'all' ||
       s.classType === typeFilter ||
       (typeFilter === 'in_person' && (s.classType === 'private' || s.classType === 'center' || !s.classType));
+    if (!matchesType) return false;
+
+    // 5. Payment Filter
     const matchesPayment = paymentFilter === 'all' || s.paymentStatus === paymentFilter;
-    return matchesSearch && matchesType && matchesPayment;
+    if (!matchesPayment) return false;
+
+    return true;
   });
 
   const handleOpenStudentProfile = (s: Student) => {
@@ -964,6 +1074,144 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     window.open(url, '_blank');
   };
 
+  // -------------------------------------------------------------
+  // WhatsApp Reminder Modal Helpers
+  // -------------------------------------------------------------
+  const getNextScheduleInfo = (student: Student) => {
+    const studentScheds = schedules.filter((sch) => sch.studentId === student.id);
+    if (!studentScheds.length) return null;
+
+    const now = new Date();
+    const currentDay = now.getDay(); // 0: Sun ... 6: Sat
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+    // Map and sort schedule slots by how soon they occur
+    const sorted = [...studentScheds]
+      .map((slot) => {
+        const [hours, minutes] = slot.time.split(':').map(Number);
+        const slotMinutes = (hours || 0) * 60 + (minutes || 0);
+
+        let dayDiff = slot.dayOfWeek - currentDay;
+        if (dayDiff < 0 || (dayDiff === 0 && slotMinutes <= currentMinutes)) {
+          dayDiff += 7;
+        }
+        return { slot, dayDiff, slotMinutes };
+      })
+      .sort((a, b) => a.dayDiff - b.dayDiff || a.slotMinutes - b.slotMinutes);
+
+    const next = sorted[0];
+    if (!next) return null;
+
+    const targetDate = new Date();
+    targetDate.setDate(now.getDate() + next.dayDiff);
+    const dayName = WEEK_DAYS.find((d) => d.dayIndex === next.slot.dayOfWeek)?.name || 'اليوم المحدد';
+    const formattedDate = new Intl.DateTimeFormat('ar-EG', {
+      day: 'numeric',
+      month: 'long',
+    }).format(targetDate);
+
+    // Format 12-hour time
+    const [h, m] = next.slot.time.split(':').map(Number);
+    const isPM = h >= 12;
+    const hour12 = h % 12 || 12;
+    const timeFormatted = `${hour12}:${String(m).padStart(2, '0')} ${isPM ? 'مساءً' : 'صباحاً'}`;
+
+    return {
+      dayName,
+      formattedDate,
+      time: timeFormatted,
+      classType:
+        next.slot.classType === 'online'
+          ? 'أونلاين 🌐'
+          : next.slot.classType === 'center'
+          ? 'في السنتر 🏫'
+          : 'حصة خاصة / منزلية 👤',
+      duration: next.slot.duration,
+    };
+  };
+
+  const generateReminderText = (
+    student: Student,
+    type: 'schedule' | 'dues' | 'prepaid' | 'custom'
+  ): string => {
+    const teacherName = profile.name || 'معلمك';
+    const studentName = student.name;
+    const subject = student.subject || profile.subject || 'المادة';
+
+    if (type === 'schedule') {
+      const nextSched = getNextScheduleInfo(student);
+      if (nextSched) {
+        return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر الطالب/ة: *${studentName}*،\n\nنود تذكيركم بموعد حصة *${subject}* القادمة بإذن الله:\n📅 *اليوم:* ${nextSched.dayName} (${nextSched.formattedDate})\n⏰ *الساعة:* ${nextSched.time}\n📍 *طبيعة الحصة:* ${nextSched.classType}\n⏳ *المدة:* ${nextSched.duration} دقيقة\n\nنرجو الالتزام بالموعد والتأكد من جاهزية الأدوات والكراسة. شاكرين ومقدرين حسن تعاونكم الدائم ✨\n\nمع تحيات: *أستاذ ${teacherName}*`;
+      } else {
+        return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر الطالب/ة: *${studentName}*،\n\nنود تذكيركم بموعد حصة *${subject}* القادمة.\nيرجى التنسيق والالتزام بالموعد المحدد.\n\nمع تحيات: *أستاذ ${teacherName}*`;
+      }
+    }
+
+    if (type === 'dues') {
+      const sLessons = allLessonsMap[student.id] || [];
+      const hourlyRate = student.hourlyRate || (student.monthlyFee ? Math.round(student.monthlyFee / 4) : 100);
+      const unsettledLessons = sLessons.filter((l) => !l.settled && isLessonFinanciallyCounted(l));
+      const pendingMinutes = unsettledLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
+      const pendingHours = (pendingMinutes / 60).toFixed(1);
+      const pendingAmount = unsettledLessons.reduce((acc, l) => {
+        const dur = l.duration || 60;
+        const rate = l.hourlyRate || hourlyRate;
+        return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
+      }, 0);
+
+      const lessonsListText = unsettledLessons
+        .slice(0, 5)
+        .map(
+          (l, i) =>
+            `  • [${l.date}] ${l.topic} (${l.duration || 60} دقيقة) - ${l.cost || Math.round(((l.duration || 60) / 60) * hourlyRate)} ${currency}`
+        )
+        .join('\n');
+
+      return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر الطالب/ة: *${studentName}*،\n\nنود إحاطتكم علماً ببيان الحساب والمستحقات الخاصة بحصص مادة *${subject}*:\n💰 *المبلغ المستحق:* ${pendingAmount} ${currency}\n⏱️ *إجمالي الساعات المنفذة:* ${pendingHours} ساعة (${unsettledLessons.length} حصص)\n${lessonsListText ? `\n📋 *تفاصيل الحصص:*\n${lessonsListText}\n` : ''}\nنرجو التكرم بسداد المبلغ في أقرب وقت مناسب لكم. شاكرين تعاونكم ودعمكم المستمر لتقدم الطالب ✨\n\nمع تحيات: *أستاذ ${teacherName}*`;
+    }
+
+    if (type === 'prepaid') {
+      const remaining = student.remainingPaidLessons ?? 0;
+      return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر الطالب/ة: *${studentName}*،\n\nنود إحاطتكم علماً بأن رصيد باقة الحصص المدفوعة لمادة *${subject}*:\n⏳ *الرصيد المتبقي:* ${remaining} حصص فقط.\n\nيرجى التكرم بتجديد باقة الحصص لضمان استمرار الحصص بانتظام دون توقف. شاكرين ومقدرين تعاونكم الدائم ✨\n\nمع تحيات: *أستاذ ${teacherName}*`;
+    }
+
+    return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر الطالب/ة: *${studentName}*،\n\nبخصوص حصص مادة *${subject}*:\n[اكتب رسالتك وتوجيهاتك هنا]\n\nمع تحيات: *أستاذ ${teacherName}*`;
+  };
+
+  const handleOpenWhatsAppReminderModal = (s: Student) => {
+    setReminderModalStudent(s);
+    setCopiedReminder(false);
+    const sLessons = allLessonsMap[s.id] || [];
+    const unsettledLessons = sLessons.filter((l) => !l.settled && isLessonFinanciallyCounted(l));
+    const initialType: 'schedule' | 'dues' | 'prepaid' | 'custom' =
+      unsettledLessons.length > 0 ? 'dues' : 'schedule';
+    setReminderType(initialType);
+    setReminderCustomText(generateReminderText(s, initialType));
+  };
+
+  const handleSwitchReminderType = (type: 'schedule' | 'dues' | 'prepaid' | 'custom') => {
+    if (!reminderModalStudent) return;
+    setReminderType(type);
+    setReminderCustomText(generateReminderText(reminderModalStudent, type));
+  };
+
+  const handleSendReminderViaWhatsApp = () => {
+    if (!reminderModalStudent) return;
+    const rawPhone = reminderModalStudent.whatsapp || reminderModalStudent.phone || reminderModalStudent.parentPhone || '';
+    const clean = rawPhone.replace(/[^0-9]/g, '');
+    const phoneParam = clean ? (clean.startsWith('0') ? '2' + clean : clean) : '';
+    const waUrl = phoneParam
+      ? `https://wa.me/${phoneParam}?text=${encodeURIComponent(reminderCustomText)}`
+      : `https://wa.me/?text=${encodeURIComponent(reminderCustomText)}`;
+    window.open(waUrl, '_blank');
+  };
+
+  const handleCopyReminder = () => {
+    navigator.clipboard.writeText(reminderCustomText);
+    setCopiedReminder(true);
+    setTimeout(() => setCopiedReminder(false), 2500);
+  };
+
   const getClassTypeBadge = (type?: ClassType) => {
     switch (type) {
       case 'online':
@@ -1068,58 +1316,158 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
         currency={currency}
       />
 
-      {/* Search & Filter Bar */}
-      <div className="space-y-2">
+      {/* Search & Advanced Filter Bar */}
+      <div className="space-y-3 p-3.5 sm:p-4 rounded-3xl bg-slate-900/90 border border-purple-500/30 shadow-lg shadow-purple-950/20">
+        {/* Search Input Box with clear button */}
         <div className="relative">
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="بحث بالاسم، المادة، أو رقم الهاتف..."
-            className="w-full rounded-xl bg-slate-900/90 border border-slate-700/80 px-3.5 py-2.5 pr-10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400"
+            className="w-full rounded-2xl bg-slate-950 border border-slate-700/80 px-4 py-2.5 pr-10 pl-9 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 transition"
           />
-          <Search className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
+          <Search className="w-4 h-4 text-purple-400 absolute right-3.5 top-3" />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute left-3 top-2.5 text-slate-400 hover:text-white p-0.5 rounded-lg transition cursor-pointer"
+              title="مسح البحث"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
-        {/* Filter Pills */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 text-[11px]">
-          <span className="text-slate-400 flex items-center gap-1">
-            <Filter className="w-3 h-3" />
-            <span>النوع:</span>
-          </span>
-          {[
-            { id: 'all', label: 'الكل' },
-            { id: 'online', label: 'أونلاين 🌐' },
-            { id: 'in_person', label: 'حضور شخصي 👤' },
-            { id: 'trial', label: 'حصة تجريبية ✨' },
-          ].map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTypeFilter(t.id as any)}
-              className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer whitespace-nowrap ${
-                typeFilter === t.id
-                  ? 'bg-purple-600 text-white shadow'
-                  : 'bg-slate-800/80 text-slate-400 hover:text-white'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+        {/* Filters Container */}
+        <div className="space-y-2.5 text-xs">
+          {/* Row 1: Status & Subject Filters */}
+          <div className="flex items-center justify-between gap-2.5 flex-wrap">
+            {/* Status Filter (حالة الطالب: نشط / غير نشط / الكل) */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[11px] text-slate-400 flex items-center gap-1 font-bold">
+                <UserCheck className="w-3.5 h-3.5 text-purple-400" />
+                <span>الحالة:</span>
+              </span>
+              {[
+                { id: 'all', label: 'الكل' },
+                { id: 'active', label: 'نشط 🟢' },
+                { id: 'inactive', label: 'غير نشط 🔴' },
+              ].map((st) => (
+                <button
+                  key={st.id}
+                  type="button"
+                  onClick={() => setStatusFilter(st.id as any)}
+                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition cursor-pointer whitespace-nowrap border ${
+                    statusFilter === st.id
+                      ? st.id === 'active'
+                        ? 'bg-emerald-600 text-white border-emerald-500 shadow-md shadow-emerald-950/40'
+                        : st.id === 'inactive'
+                        ? 'bg-rose-600 text-white border-rose-500 shadow-md shadow-rose-950/40'
+                        : 'bg-purple-600 text-white border-purple-500 shadow-md shadow-purple-950/40'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {st.label}
+                </button>
+              ))}
+            </div>
 
-          <span className="text-slate-400 mr-2">الدفع:</span>
-          {(['all', 'paid', 'unpaid'] as const).map((p) => (
-            <button
-              key={p}
-              onClick={() => setPaymentFilter(p)}
-              className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer whitespace-nowrap ${
-                paymentFilter === p
-                  ? 'bg-purple-600 text-white shadow'
-                  : 'bg-slate-800/80 text-slate-400 hover:text-white'
-              }`}
-            >
-              {p === 'all' ? 'الكل' : p === 'paid' ? 'دفع ✅' : 'لم يدفع ❌'}
-            </button>
-          ))}
+            {/* Subject Dropdown Filter (المادة الدراسية) */}
+            <div className="flex items-center gap-1.5 min-w-[170px] max-w-[240px]">
+              <span className="text-[11px] text-slate-400 flex items-center gap-1 font-bold flex-shrink-0">
+                <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
+                <span>المادة:</span>
+              </span>
+              <select
+                value={subjectFilter}
+                onChange={(e) => setSubjectFilter(e.target.value)}
+                className="w-full rounded-xl bg-slate-950 border border-slate-800 px-2.5 py-1 text-[11px] text-white focus:outline-none focus:border-indigo-400 transition"
+              >
+                <option value="all">جميع المواد ({students.length})</option>
+                {availableSubjects.map((subj) => {
+                  const count = students.filter(
+                    (s) => normalizeArabicText(s.subject || '') === normalizeArabicText(subj)
+                  ).length;
+                  return (
+                    <option key={subj} value={subj}>
+                      {subj} ({count})
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          </div>
+
+          {/* Row 2: Secondary Filters (Class Type & Payment Status) */}
+          <div className="flex items-center justify-between gap-2 flex-wrap pt-2 border-t border-slate-800/60">
+            <div className="flex items-center gap-2 overflow-x-auto pb-0.5 text-[11px] flex-wrap">
+              {/* Class Type */}
+              <div className="flex items-center gap-1">
+                <span className="text-slate-400 flex items-center gap-1">
+                  <Filter className="w-3 h-3 text-purple-400" />
+                  <span>النوع:</span>
+                </span>
+                {[
+                  { id: 'all', label: 'الكل' },
+                  { id: 'online', label: 'أونلاين 🌐' },
+                  { id: 'in_person', label: 'شخصي 👤' },
+                  { id: 'trial', label: 'تجريبية ✨' },
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setTypeFilter(t.id as any)}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer whitespace-nowrap ${
+                      typeFilter === t.id
+                        ? 'bg-purple-600 text-white shadow'
+                        : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Payment Filter */}
+              <div className="flex items-center gap-1 mr-2">
+                <span className="text-slate-400">الدفع:</span>
+                {(['all', 'paid', 'unpaid'] as const).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPaymentFilter(p)}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer whitespace-nowrap ${
+                      paymentFilter === p
+                        ? 'bg-purple-600 text-white shadow'
+                        : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {p === 'all' ? 'الكل' : p === 'paid' ? 'دفع ✅' : 'لم يدفع ❌'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Reset Button & Count */}
+            <div className="flex items-center gap-2 mr-auto pt-1 sm:pt-0">
+              <span className="text-[10px] text-slate-400 font-mono">
+                {filteredStudents.length} / {students.length} طالب
+              </span>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="inline-flex items-center gap-1 text-[11px] text-purple-400 hover:text-purple-300 font-bold transition cursor-pointer"
+                  title="إلغاء جميع الفلاتر"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>إعادة ضبط</span>
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1249,26 +1597,34 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                 </div>
 
                 {/* Action Buttons Row */}
-                <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    {s.whatsapp ? (
-                      <a
-                        href={`https://wa.me/${s.whatsapp.replace(/[^0-9]/g, '')}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-950/60 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-900/50 transition"
-                      >
-                        <MessageCircle className="w-3.5 h-3.5" />
-                        <span>واتساب</span>
-                      </a>
-                    ) : (
-                      <span className="text-[11px] text-slate-500 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800">
-                        بدون واتساب
-                      </span>
-                    )}
+                <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {/* WhatsApp Custom Reminder Button */}
                     <button
+                      type="button"
+                      onClick={() => handleOpenWhatsAppReminderModal(s)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-md shadow-emerald-950/40 active:scale-95 transition cursor-pointer"
+                      title="إرسال تذكير واتساب مخصص (موعد الحصة القادم / المستحقات المالية)"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span>تذكير واتساب 📲</span>
+                    </button>
+
+                    {/* Record Attendance Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleOpenAttendanceModal(s)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md shadow-blue-950/40 active:scale-95 transition cursor-pointer"
+                      title="تسجيل حالة الحضور (حاضر، غائب، متأخر) وحفظها في مجموعة attendance"
+                    >
+                      <UserCheck className="w-3.5 h-3.5" />
+                      <span>تسجيل الحضور 📋</span>
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => handleOpenStudentProfile(s)}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-950/60 border border-purple-500/30 text-purple-300 hover:bg-purple-900/50 transition cursor-pointer"
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-purple-950/60 border border-purple-500/30 text-purple-300 hover:bg-purple-900/50 transition cursor-pointer font-bold text-xs"
                     >
                       <BookOpen className="w-3.5 h-3.5" />
                       <span>متابعة وتصفية</span>
@@ -3119,6 +3475,251 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
           lessons={studentLessons}
           defaultReportType={pdfExportReportType}
         />
+      )}
+
+      {/* WhatsApp Custom Reminder Modal (تذكير مخصص عبر واتساب) */}
+      {reminderModalStudent && (
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 text-right animate-in fade-in duration-200"
+          dir="rtl"
+        >
+          <div className="w-full max-w-lg bg-slate-900 border border-emerald-500/40 rounded-3xl p-5 sm:p-6 shadow-2xl relative space-y-4 max-h-[92vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-emerald-900/40 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-600/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30 shadow-inner">
+                  <MessageCircle className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-white flex items-center gap-1.5">
+                    <span>تذكير واتساب مخصص</span>
+                    <span className="text-xs text-emerald-400 font-bold">📲</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    الطالب: <strong className="text-purple-300">{reminderModalStudent.name}</strong> •{' '}
+                    <span className="font-mono text-slate-300" dir="ltr">
+                      {reminderModalStudent.whatsapp || reminderModalStudent.phone || 'بدون رقم مسجل'}
+                    </span>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReminderModalStudent(null)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Reminder Type Selector Tabs */}
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-bold text-slate-300">اختر نوع التذكير:</label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                {[
+                  { id: 'schedule', label: 'موعد الحصة ⏰' },
+                  { id: 'dues', label: 'المستحقات 💰' },
+                  { id: 'prepaid', label: 'رصيد الحصص ⏳' },
+                  { id: 'custom', label: 'رسالة مخصصة ✍️' },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => handleSwitchReminderType(tab.id as any)}
+                    className={`px-2 py-2 rounded-xl text-xs font-bold transition cursor-pointer border text-center ${
+                      reminderType === tab.id
+                        ? 'bg-emerald-600 text-white border-emerald-500 shadow-md shadow-emerald-950/40'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Message Preview & Edit Box */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1">
+                  <span>نص الرسالة (يمكنك تعديلها بحرية قبل الإرسال):</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={handleCopyReminder}
+                  className="inline-flex items-center gap-1 text-[11px] text-purple-400 hover:text-purple-300 font-bold transition cursor-pointer"
+                >
+                  {copiedReminder ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-400">تم النسخ!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>نسخ النص</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <textarea
+                rows={7}
+                value={reminderCustomText}
+                onChange={(e) => setReminderCustomText(e.target.value)}
+                placeholder="اكتب أو عدل نص التذكير هنا..."
+                className="w-full rounded-2xl bg-slate-950 border border-slate-700/80 p-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition font-sans leading-relaxed resize-y"
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={handleSendReminderViaWhatsApp}
+                className="flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black shadow-lg shadow-emerald-950/50 transition active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+              >
+                <Send className="w-4 h-4" />
+                <span>إرسال عبر WhatsApp 🚀</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setReminderModalStudent(null)}
+                className="py-3 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition cursor-pointer"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Attendance Record Modal (تسجيل الحضور في مجموعة attendance بـ Firestore) */}
+      {attendanceModalStudent && (
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 text-right animate-in fade-in duration-200"
+          dir="rtl"
+        >
+          <div className="w-full max-w-md bg-slate-900 border border-blue-500/40 rounded-3xl p-5 sm:p-6 shadow-2xl relative space-y-4">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-blue-900/40 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-blue-600/20 text-blue-300 flex items-center justify-center border border-blue-500/30 shadow-inner">
+                  <UserCheck className="w-5 h-5 text-blue-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-white flex items-center gap-1.5">
+                    <span>تسجيل الحضور</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    الطالب: <strong className="text-purple-300">{attendanceModalStudent.name}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAttendanceModalStudent(null)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Success Message */}
+            {attendanceSuccessMsg && (
+              <div className="p-3 rounded-2xl bg-emerald-950/90 border border-emerald-500/50 text-emerald-300 text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                <span>{attendanceSuccessMsg}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveAttendanceSubmit} className="space-y-4">
+              {/* Status Selector */}
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <UserCheck className="w-3.5 h-3.5 text-blue-400" />
+                  <span>حالة الحضور <span className="text-rose-400">*</span></span>
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'present', label: 'حاضر ✅', activeClass: 'bg-emerald-600 border-emerald-500 text-white shadow-lg shadow-emerald-950/50' },
+                    { id: 'absent', label: 'غائب ❌', activeClass: 'bg-rose-600 border-rose-500 text-white shadow-lg shadow-rose-950/50' },
+                    { id: 'late', label: 'متأخر ⏳', activeClass: 'bg-amber-600 border-amber-500 text-white shadow-lg shadow-amber-950/50' },
+                  ].map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setAttendanceStatus(item.id as any)}
+                      className={`py-2.5 px-3 rounded-2xl text-xs font-bold transition cursor-pointer border text-center ${
+                        attendanceStatus === item.id
+                          ? item.activeClass
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Date Input */}
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-blue-400" />
+                  <span>تاريخ الحصة <span className="text-rose-400">*</span></span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={attendanceDate}
+                  onChange={(e) => setAttendanceDate(e.target.value)}
+                  className="w-full rounded-2xl bg-slate-950 border border-slate-700/80 px-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-blue-400 transition"
+                />
+              </div>
+
+              {/* Notes Input */}
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                  ملاحظات الحضور (اختياري)
+                </label>
+                <textarea
+                  rows={2}
+                  value={attendanceNotes}
+                  onChange={(e) => setAttendanceNotes(e.target.value)}
+                  placeholder="سبب التأخير أو الغياب أو تفاصيل الحصة..."
+                  className="w-full rounded-2xl bg-slate-950 border border-slate-700/80 px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-400 transition"
+                />
+              </div>
+
+              {/* Submit Buttons */}
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="submit"
+                  disabled={isSavingAttendance}
+                  className="flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-black shadow-lg shadow-blue-950/50 transition active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                >
+                  {isSavingAttendance ? (
+                    <span>جارٍ الحفظ في Firestore...</span>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>حفظ حالة الحضور</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setAttendanceModalStudent(null)}
+                  className="py-3 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition cursor-pointer"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

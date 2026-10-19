@@ -23,9 +23,6 @@ import {
   updateDoc,
   deleteDoc,
   collection,
-  query,
-  orderBy,
-  where,
   serverTimestamp,
   Timestamp,
   getDocFromServer,
@@ -50,6 +47,7 @@ import {
   EducationalCenter,
   GroupMembership,
   GroupScheduleItem,
+  AttendanceRecord,
 } from './types';
 
 import rawFirebaseConfig from '../firebase-applet-config.json';
@@ -1673,16 +1671,44 @@ export async function deleteWorkplace(teacherId: string, workplaceId: string) {
   }
 }
 
+// -------------------------------------------------------------
+// Helper: Arabic Text Normalization & Unification
+// -------------------------------------------------------------
+
+/**
+ * توحيد الحروف العربية وإزالة التشكيل والمحاذاة للمقارنة الدقيقة:
+ * - تحويل [أإآٱ] إلى 'ا'
+ * - تحويل [ة] إلى 'ه'
+ * - تحويل [ى] إلى 'ي'
+ * - إزالة التشكيل والتنوين
+ * - إزالة المسافات المتكررة
+ */
+export function normalizeArabicText(text: string): string {
+  if (!text) return '';
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي')
+    .replace(/[\u064B-\u065F\u0670]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
 export function subscribeToWorkplaces(
   teacherId: string,
   onUpdate: (workplaces: Workplace[]) => void,
   onError?: (err: Error) => void
 ) {
-  const q = query(collection(db, 'teachers', teacherId, 'workplaces'), orderBy('createdAt', 'asc'));
+  const colRef = collection(db, 'teachers', teacherId, 'workplaces');
   return onSnapshot(
-    q,
+    colRef,
     (snap) => {
-      const items: Workplace[] = snap.docs.map((d) => d.data() as Workplace);
+      const items: Workplace[] = snap.docs.map((d) => ({
+        ...d.data(),
+        id: d.id,
+      })) as Workplace[];
+      items.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
       onUpdate(items);
     },
     (err) => {
@@ -1705,12 +1731,19 @@ export async function addCenter(
   const path = `teachers/${teacherId}/centers`;
   try {
     const colRef = collection(db, 'teachers', teacherId, 'centers');
-    // Check if center with same name already exists
-    const q = query(colRef, where('name', '==', cleanName), where('archived', '!=', true));
-    const existing = await getDocs(q);
-    if (!existing.empty) {
-      return existing.docs[0].id;
+    // Fetch all centers with getDocs without where or orderBy
+    const existing = await getDocs(colRef);
+    const normalizedTarget = normalizeArabicText(cleanName);
+    const foundDoc = existing.docs.find((d) => {
+      const data = d.data() as EducationalCenter;
+      if (data.archived) return false;
+      return normalizeArabicText(data.name || '') === normalizedTarget;
+    });
+
+    if (foundDoc) {
+      return foundDoc.id;
     }
+
     const newDoc = doc(colRef);
     await setDoc(newDoc, {
       id: newDoc.id,
@@ -1732,11 +1765,15 @@ export function subscribeToCenters(
   onUpdate: (centers: EducationalCenter[]) => void,
   onError?: (err: Error) => void
 ) {
-  const q = query(collection(db, 'teachers', teacherId, 'centers'), orderBy('createdAt', 'asc'));
+  const colRef = collection(db, 'teachers', teacherId, 'centers');
   return onSnapshot(
-    q,
+    colRef,
     (snap) => {
-      const items: EducationalCenter[] = snap.docs.map((d) => d.data() as EducationalCenter);
+      const items: EducationalCenter[] = snap.docs.map((d) => ({
+        ...d.data(),
+        id: d.id,
+      })) as EducationalCenter[];
+      items.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
       onUpdate(items);
     },
     (err) => {
@@ -1776,14 +1813,16 @@ export async function addGroup(
   const path = `teachers/${teacherId}/groups`;
   try {
     const colRef = collection(db, 'teachers', teacherId, 'groups');
-    // Rule: Prevent duplicate group name in the same center
+    // Fetch all groups without where or orderBy
     const checkSnap = await getDocs(colRef);
+    const targetName = normalizeArabicText(cleanName);
+    const targetCenter = normalizeArabicText(cleanCenter);
     const hasDuplicate = checkSnap.docs.some((d) => {
       const g = d.data() as Group;
+      if (g.archived) return false;
       return (
-        !g.archived &&
-        g.name.trim().toLowerCase() === cleanName.toLowerCase() &&
-        g.centerName?.trim().toLowerCase() === cleanCenter.toLowerCase()
+        normalizeArabicText(g.name || '') === targetName &&
+        normalizeArabicText(g.centerName || '') === targetCenter
       );
     });
 
@@ -1832,16 +1871,16 @@ export async function updateGroup(
       const checkSnap = await getDocs(colRef);
       const targetDoc = checkSnap.docs.find((d) => d.id === groupId);
       const currentData = targetDoc ? (targetDoc.data() as Group) : null;
-      const targetName = (updates.name || currentData?.name || '').trim().toLowerCase();
-      const targetCenter = (updates.centerName || currentData?.centerName || '').trim().toLowerCase();
+      const targetName = normalizeArabicText(updates.name || currentData?.name || '');
+      const targetCenter = normalizeArabicText(updates.centerName || currentData?.centerName || '');
 
       const hasDuplicate = checkSnap.docs.some((d) => {
         if (d.id === groupId) return false;
         const g = d.data() as Group;
+        if (g.archived) return false;
         return (
-          !g.archived &&
-          g.name?.trim().toLowerCase() === targetName &&
-          g.centerName?.trim().toLowerCase() === targetCenter
+          normalizeArabicText(g.name || '') === targetName &&
+          normalizeArabicText(g.centerName || '') === targetCenter
         );
       });
 
@@ -1893,11 +1932,15 @@ export function subscribeToGroups(
   onUpdate: (groups: Group[]) => void,
   onError?: (err: Error) => void
 ) {
-  const q = query(collection(db, 'teachers', teacherId, 'groups'), orderBy('createdAt', 'asc'));
+  const colRef = collection(db, 'teachers', teacherId, 'groups');
   return onSnapshot(
-    q,
+    colRef,
     (snap) => {
-      const items: Group[] = snap.docs.map((d) => d.data() as Group);
+      const items: Group[] = snap.docs.map((d) => ({
+        ...d.data(),
+        id: d.id,
+      })) as Group[];
+      items.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
       onUpdate(items);
     },
     (err) => {
@@ -2153,11 +2196,19 @@ export function subscribeToMemberships(
   onUpdate: (memberships: GroupMembership[]) => void,
   onError?: (err: Error) => void
 ) {
-  const q = query(collection(db, 'teachers', teacherId, 'memberships'), orderBy('createdAt', 'desc'));
+  const colRef = collection(db, 'teachers', teacherId, 'memberships');
   return onSnapshot(
-    q,
+    colRef,
     (snap) => {
-      const items: GroupMembership[] = snap.docs.map((d) => d.data() as GroupMembership);
+      const items: GroupMembership[] = snap.docs.map((d) => ({
+        ...d.data(),
+        id: d.id,
+      })) as GroupMembership[];
+      items.sort((a, b) => {
+        const tA = (a.createdAt as any)?.toMillis?.() || 0;
+        const tB = (b.createdAt as any)?.toMillis?.() || 0;
+        return tB - tA;
+      });
       onUpdate(items);
     },
     (err) => {
@@ -2216,6 +2267,41 @@ export async function ensureDefaultWorkplacesAndMigration(teacherId: string): Pr
     console.warn('Migration check warning:', err);
   }
 }
+
+export async function recordStudentAttendance(
+  teacherId: string,
+  data: {
+    studentId: string;
+    studentName: string;
+    subject: string;
+    status: 'present' | 'absent' | 'late';
+    date: string; // YYYY-MM-DD
+    notes?: string;
+  }
+): Promise<string> {
+  const path = `teachers/${teacherId}/attendance`;
+  try {
+    const colRef = collection(db, 'teachers', teacherId, 'attendance');
+    const newDoc = doc(colRef);
+    await setDoc(newDoc, {
+      id: newDoc.id,
+      teacherId,
+      studentId: data.studentId,
+      studentName: data.studentName,
+      subject: data.subject,
+      status: data.status,
+      date: data.date,
+      notes: data.notes?.trim() || '',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return newDoc.id;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, path);
+    throw err;
+  }
+}
+
 
 
 

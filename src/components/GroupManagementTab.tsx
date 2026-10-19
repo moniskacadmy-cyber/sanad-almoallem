@@ -16,6 +16,7 @@ import {
   addCenter,
   addStudent,
   archiveGroup,
+  normalizeArabicText,
 } from '../firebase';
 import { GroupDetailsModal } from './GroupDetailsModal';
 import {
@@ -365,7 +366,7 @@ export const GroupManagementTab: React.FC<GroupManagementTabProps> = ({
     try {
       // 1. Ensure Center exists
       let targetCenter = centers.find(
-        (c) => c.name.trim().toLowerCase() === cleanCenter.toLowerCase()
+        (c) => !c.archived && normalizeArabicText(c.name || '') === normalizeArabicText(cleanCenter)
       );
       let centerId = targetCenter?.id;
       if (!centerId) {

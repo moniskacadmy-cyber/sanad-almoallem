@@ -304,6 +304,19 @@ export const DEFAULT_WHATSAPP_TEMPLATES = {
   absenceReminder: `السلام عليكم ورحمة الله وبركاته 🌷\nنود إحاطتكم علماً بخصوص حصة مادة ({subject}) للطالب/ـة: *{studentName}*:\n\n📅 موعد الحصة: {date}\n🎯 الحالة: {statusLabel}\n{financialNote}\n{makeupNote}\n{extraNotes}\nشاكرين ومقدرين حسن تعاونكم وحرصكم الدائم على مصلحة الطالب 🌟\nأ. {teacherName}`
 };
 
+export interface AttendanceRecord {
+  id: string;
+  teacherId: string;
+  studentId: string;
+  studentName: string;
+  subject: string;
+  status: 'present' | 'absent' | 'late';
+  date: string; // YYYY-MM-DD
+  notes?: string;
+  createdAt: any;
+  updatedAt?: any;
+}
+
 export type NoteColor = 'amber' | 'emerald' | 'purple' | 'blue' | 'rose';
 
 export interface QuickNote {

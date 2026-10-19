@@ -16,7 +16,20 @@ import {
   X,
   Send,
   FileText,
+  UserCheck,
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  CartesianGrid,
+  Cell,
+} from 'recharts';
+import { useTheme } from '../context/ThemeContext';
 
 interface FinancialDashboardProps {
   profile: TeacherProfile;
@@ -114,6 +127,49 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
   };
 
   const isAllTime = selectedMonthKey === 'all';
+  const { isDark } = useTheme();
+
+  // Attendance & Absence stats for the selected/current month
+  const monthAttendanceStats = React.useMemo(() => {
+    let presentCount = 0;
+    let absentCount = 0;
+    let excusedCount = 0;
+
+    Object.values(lessonsMap).forEach((lessons) => {
+      lessons.forEach((l) => {
+        if (!l.date) return;
+        if (!isAllTime && !l.date.startsWith(selectedMonthKey)) return;
+
+        if (l.attendance === 'present') {
+          presentCount++;
+        } else if (l.attendance === 'absent') {
+          absentCount++;
+        } else if (l.attendance === 'excused' || l.attendance === 'late') {
+          excusedCount++;
+        }
+      });
+    });
+
+    const total = presentCount + absentCount + excusedCount;
+    const attendanceRate = total > 0 ? Math.round((presentCount / total) * 100) : 100;
+    const absenceRate = total > 0 ? Math.round(((absentCount + excusedCount) / total) * 100) : 0;
+
+    const chartData = [
+      { name: 'حاضر', count: presentCount, fill: '#10b981' },
+      { name: 'غائب', count: absentCount, fill: '#f43f5e' },
+      { name: 'معتذر/متأخر', count: excusedCount, fill: '#f59e0b' },
+    ];
+
+    return {
+      presentCount,
+      absentCount,
+      excusedCount,
+      total,
+      attendanceRate,
+      absenceRate,
+      chartData,
+    };
+  }, [lessonsMap, selectedMonthKey, isAllTime]);
 
   // Calculate statistics per student
   const studentFinancials = students.map((st) => {
@@ -520,6 +576,77 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
         <p className="text-[11px] text-purple-200">
           <strong className="text-white">نظام الحساب الأوتوماتيكي:</strong> قيمة الحصة = (الدقائق ÷ 60) × سعر الساعة.
         </p>
+      </div>
+
+      {/* Attendance & Absence Recharts Analytics for Selected Month */}
+      <div className="rounded-3xl bg-slate-900/90 border border-purple-500/30 p-4 sm:p-5 shadow-xl space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-2xl bg-emerald-600/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30">
+              <UserCheck className="w-5 h-5 text-emerald-400" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white">إحصائيات حضور وغياب الطلاب</h3>
+              <p className="text-[11px] text-slate-400">نسبة الحضور والغياب خلال ({selectedMonthInfo.label})</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs">
+            <span className="px-2.5 py-1 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold">
+              نسبة الحضور: {monthAttendanceStats.attendanceRate}% 🟢
+            </span>
+            <span className="px-2.5 py-1 rounded-xl bg-rose-950/80 border border-rose-500/40 text-rose-300 font-bold">
+              نسبة الغياب: {monthAttendanceStats.absenceRate}% 🔴
+            </span>
+          </div>
+        </div>
+
+        {/* Recharts Bar */}
+        <div className="h-56 w-full bg-slate-950/60 rounded-2xl border border-slate-800 p-3 pt-4" dir="ltr">
+          {monthAttendanceStats.total === 0 ? (
+            <div className="h-full flex items-center justify-center text-xs text-slate-400">
+              لا توجد حصص أو بيانات حضور مسجلة في هذه الفترة
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={monthAttendanceStats.chartData}
+                margin={{ top: 10, right: 10, left: -25, bottom: 5 }}
+              >
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke={isDark ? '#334155' : '#cbd5e1'}
+                  opacity={isDark ? 0.3 : 0.6}
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="name"
+                  stroke={isDark ? '#94a3b8' : '#64748b'}
+                  tick={{ fontSize: 11, fill: isDark ? '#94a3b8' : '#64748b' }}
+                />
+                <YAxis
+                  stroke={isDark ? '#94a3b8' : '#64748b'}
+                  tick={{ fontSize: 11, fill: isDark ? '#94a3b8' : '#64748b' }}
+                  allowDecimals={false}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: isDark ? '#0f172a' : '#ffffff',
+                    borderColor: isDark ? '#334155' : '#e2e8f0',
+                    borderRadius: '12px',
+                    fontSize: '11px',
+                    color: isDark ? '#f8fafc' : '#0f172a',
+                  }}
+                />
+                <Bar dataKey="count" name="عدد الحصص" radius={[8, 8, 0, 0]}>
+                  {monthAttendanceStats.chartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.fill} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
       </div>
 
       {/* Search & Filters */}
