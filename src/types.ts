@@ -320,6 +320,24 @@ export const DEFAULT_WHATSAPP_TEMPLATES = {
   absenceReminder: `السلام عليكم ورحمة الله وبركاته 🌷\nنود إحاطتكم علماً بخصوص حصة مادة ({subject}) للطالب/ـة: *{studentName}*:\n\n📅 موعد الحصة: {date}\n🎯 الحالة: {statusLabel}\n{financialNote}\n{makeupNote}\n{extraNotes}\nشاكرين ومقدرين حسن تعاونكم وحرصكم الدائم على مصلحة الطالب 🌟\nأ. {teacherName}`
 };
 
+export const ALL_SUBJECTS = [
+  'القرآن الكريم',
+  'اللغة العربية',
+  'الرياضيات',
+  'العلوم',
+  'اللغة الإنجليزية',
+  'الفيزياء',
+  'الكيمياء',
+  'الأحياء',
+  'التاريخ',
+  'الجغرافيا',
+  'الدراسات الاجتماعية',
+  'اللغة الفرنسية',
+  'اللغة الألمانية',
+  'الحاسب الآلي والبرمجة',
+  'أخرى',
+];
+
 export interface AttendanceRecord {
   id: string;
   teacherId: string;

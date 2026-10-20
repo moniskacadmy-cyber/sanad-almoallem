@@ -58,6 +58,7 @@ export interface GroupManagementTabProps {
 }
 
 const COMMON_SUBJECTS = [
+  'القرآن الكريم',
   'اللغة العربية',
   'الرياضيات',
   'العلوم',

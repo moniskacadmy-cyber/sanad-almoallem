@@ -9,6 +9,7 @@ interface OnboardingModalProps {
 }
 
 const SUBJECTS = [
+  'القرآن الكريم',
   'اللغة العربية',
   'اللغة الإنجليزية',
   'الرياضيات',

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TeacherProfile, Student, LessonLog, ClassType, PaymentStatus, ScheduleSlot, DEFAULT_WHATSAPP_TEMPLATES, renderTemplate, isLessonFinanciallyCounted } from '../types';
+import { TeacherProfile, Student, LessonLog, ClassType, PaymentStatus, ScheduleSlot, DEFAULT_WHATSAPP_TEMPLATES, renderTemplate, isLessonFinanciallyCounted, ALL_SUBJECTS } from '../types';
 import { AbsenceDetailsModal, AbsenceDetailsResult } from './AbsenceDetailsModal';
 import { DailyAttendanceModal } from './DailyAttendanceModal';
 import { StudentPdfExportModal } from './StudentPdfExportModal';
@@ -1840,18 +1840,39 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">المادة الدراسية *</label>
-                <input
-                  type="text"
-                  value={formSubject}
+                <select
+                  value={ALL_SUBJECTS.includes(formSubject) ? formSubject : 'أخرى'}
                   onChange={(e) => {
-                    setFormSubject(e.target.value);
+                    const val = e.target.value;
+                    if (val !== 'أخرى') {
+                      setFormSubject(val);
+                    } else {
+                      setFormSubject('');
+                    }
                     if (formErrors.subject) setFormErrors((prev) => ({ ...prev, subject: undefined }));
                   }}
-                  placeholder="مثال: رياضيات / فيزياء / لغة إنجليزية"
                   className={`w-full rounded-xl bg-slate-800 border px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 ${
                     formErrors.subject ? 'border-rose-500' : 'border-slate-700'
                   }`}
-                />
+                >
+                  <option value="" disabled>-- اختر المادة الدراسية --</option>
+                  {ALL_SUBJECTS.map((subj) => (
+                    <option key={subj} value={subj}>
+                      {subj}
+                    </option>
+                  ))}
+                </select>
+
+                {!ALL_SUBJECTS.includes(formSubject) && (
+                  <input
+                    type="text"
+                    value={formSubject}
+                    onChange={(e) => setFormSubject(e.target.value)}
+                    placeholder="اكتب اسم المادة المخصصة..."
+                    className="w-full mt-2 rounded-xl bg-slate-800 border border-purple-500/50 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
+                  />
+                )}
+
                 {formErrors.subject && (
                   <p className="text-[10px] text-rose-400 font-bold mt-1 flex items-center gap-1">
                     <AlertCircle className="w-3 h-3 shrink-0" />
