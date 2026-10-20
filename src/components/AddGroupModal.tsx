@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Group, EducationalCenter, GroupScheduleItem } from '../types';
 import { addGroup, addCenter } from '../firebase';
+import { useBackHandler } from '../services/backHandler';
 import {
   Users,
   X,
@@ -88,6 +89,8 @@ export const AddGroupModal: React.FC<AddGroupModalProps> = ({
   onGroupAdded,
   onCenterAdded,
 }) => {
+  useBackHandler(isOpen, onClose, 'add_group_modal');
+
   const [name, setName] = useState('');
   const [centerName, setCenterName] = useState('');
   const [subject, setSubject] = useState(defaultSubject || 'اللغة العربية');

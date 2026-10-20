@@ -51,6 +51,8 @@ import {
   ChevronRight,
   LogOut,
   Menu,
+  Bot,
+  Sparkles,
 } from 'lucide-react';
 import {
   getStoredReminderSettings,
@@ -179,11 +181,15 @@ export default function App() {
     subject?: string;
   } | null>(null);
 
+  // AI Assistant Chat state (Header Icon trigger)
+  const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
+
   // Register top-level modals & subviews on back handler stack
   useBackHandler(showExitConfirmModal, () => setShowExitConfirmModal(false), 'exit_confirm_modal', false);
   useBackHandler(showUpgradeModal, () => setShowUpgradeModal(false), 'upgrade_modal');
   useBackHandler(showFinancialDashboard, () => setShowFinancialDashboard(false), 'financial_dashboard');
   useBackHandler(showAdminView, () => setShowAdminView(false), 'admin_view');
+  useBackHandler(isAIAssistantOpen, () => setIsAIAssistantOpen(false), 'ai_assistant_modal');
   useBackHandler(!!activeReminderAlert, () => setActiveReminderAlert(null), 'active_reminder_alert', false);
 
   // Push initial history state on mount & Request browser notification permission
@@ -687,6 +693,21 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Quick AI Assistant Icon in Header */}
+            <button
+              type="button"
+              onClick={() => setIsAIAssistantOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-700 to-indigo-600 hover:from-purple-600 hover:to-indigo-500 text-white text-xs font-bold shadow-md shadow-purple-950/40 active:scale-95 transition cursor-pointer border border-purple-400/30 group"
+              title="المساعد الذكي Gemini"
+            >
+              <div className="relative">
+                <Bot className="w-4 h-4 text-amber-300 group-hover:rotate-12 transition" />
+                <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+              </div>
+              <span className="hidden sm:inline text-[11px]">المساعد الذكي</span>
+              <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+            </button>
+
             {/* Quick Theme Toggle Button */}
             <ThemeToggleCompact />
 
@@ -879,6 +900,8 @@ export default function App() {
               students={students}
               schedules={schedules}
               onOpenUpgradeModal={() => setShowUpgradeModal(true)}
+              isOpenControlled={isAIAssistantOpen}
+              onCloseControlled={() => setIsAIAssistantOpen(false)}
             />
           </div>
         )}

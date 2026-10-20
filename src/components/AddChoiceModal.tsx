@@ -1,5 +1,6 @@
 import React from 'react';
 import { User, Users, X, Sparkles, Plus } from 'lucide-react';
+import { useBackHandler } from '../services/backHandler';
 
 interface AddChoiceModalProps {
   isOpen: boolean;
@@ -14,6 +15,8 @@ export const AddChoiceModal: React.FC<AddChoiceModalProps> = ({
   onSelectIndividual,
   onSelectGroup,
 }) => {
+  useBackHandler(isOpen, onClose, 'add_choice_modal');
+
   if (!isOpen) return null;
 
   return (

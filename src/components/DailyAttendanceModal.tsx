@@ -6,6 +6,8 @@ import {
   LessonLog,
   AbsencePolicySettings,
   DEFAULT_ABSENCE_POLICY,
+  PaymentStatus,
+  StudentPaymentRecord,
 } from '../types';
 import { useBackHandler } from '../services/backHandler';
 import {
@@ -14,6 +16,9 @@ import {
   updateStudent,
   fetchAllStudentLessons,
   addSchedule,
+  recordStudentPayment,
+  subscribeToMonthlyPayments,
+  getPaymentRecordId,
 } from '../firebase';
 import {
   createAbsenceReminderMessage,
@@ -48,6 +53,9 @@ interface DailyAttendanceModalProps {
   students: Student[];
   schedules: ScheduleSlot[];
   onAttendanceUpdated?: () => void;
+  targetGroupId?: string | null;
+  targetDate?: string;
+  targetGroupName?: string;
 }
 
 interface ActiveAbsenceAlert {
@@ -66,16 +74,82 @@ export const DailyAttendanceModal: React.FC<DailyAttendanceModalProps> = ({
   students,
   schedules,
   onAttendanceUpdated,
+  targetGroupId,
+  targetDate,
+  targetGroupName,
 }) => {
   useBackHandler(isOpen, onClose, 'daily_attendance_modal');
 
   const todayIso = new Intl.DateTimeFormat('en-CA').format(new Date());
-  const [selectedDate, setSelectedDate] = useState<string>(todayIso);
-  const [filterMode, setFilterMode] = useState<'scheduled' | 'all'>('scheduled');
+  const [selectedDate, setSelectedDate] = useState<string>(targetDate || todayIso);
+  const [filterMode, setFilterMode] = useState<'scheduled' | 'all'>(targetGroupId ? 'all' : 'scheduled');
   const [searchQuery, setSearchQuery] = useState('');
   const [allLessons, setAllLessons] = useState<Record<string, LessonLog[]>>({});
   const [processingStudentId, setProcessingStudentId] = useState<string | null>(null);
   const [copiedStudentId, setCopiedStudentId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (targetDate) {
+      setSelectedDate(targetDate);
+    }
+  }, [targetDate]);
+
+  // Payment status tracking for current selected month
+  const currentMonthKey = useMemo(() => (selectedDate ? selectedDate.substring(0, 7) : todayIso.substring(0, 7)), [selectedDate, todayIso]);
+  const [paymentsMap, setPaymentsMap] = useState<Record<string, StudentPaymentRecord>>({});
+
+  useEffect(() => {
+    if (!isOpen || !profile.id) return;
+    const unsub = subscribeToMonthlyPayments(profile.id, currentMonthKey, (records) => {
+      const map: Record<string, StudentPaymentRecord> = {};
+      records.forEach((r) => {
+        map[r.studentId] = r;
+      });
+      setPaymentsMap(map);
+    });
+    return () => unsub();
+  }, [isOpen, profile.id, currentMonthKey]);
+
+  const handleTogglePayment = async (student: Student) => {
+    const rec = paymentsMap[student.id];
+    const currentStatus: PaymentStatus = rec?.status || (student.paymentStatus as PaymentStatus) || 'unpaid';
+    const nextStatus: PaymentStatus =
+      currentStatus === 'unpaid' ? 'paid' : currentStatus === 'paid' ? 'partial' : 'unpaid';
+    const fee = student.monthlyFee || (student.hourlyRate ? student.hourlyRate * 4 : 300);
+    const amountPaid = nextStatus === 'paid' ? fee : nextStatus === 'partial' ? Math.round(fee / 2) : 0;
+    const gId = targetGroupId || (student.groupIds && student.groupIds[0]) || 'individual';
+
+    // Optimistic update
+    setPaymentsMap((prev) => ({
+      ...prev,
+      [student.id]: {
+        id: getPaymentRecordId(student.id, gId, currentMonthKey),
+        studentId: student.id,
+        studentName: student.name,
+        groupId: gId,
+        groupName: targetGroupName || '',
+        month: currentMonthKey,
+        status: nextStatus,
+        amountPaid,
+        amountDue: fee,
+      },
+    }));
+
+    try {
+      await recordStudentPayment(profile.id, {
+        studentId: student.id,
+        studentName: student.name,
+        groupId: gId,
+        groupName: targetGroupName || '',
+        month: currentMonthKey,
+        status: nextStatus,
+        amountPaid,
+        amountDue: fee,
+      });
+    } catch (err) {
+      console.error('Error toggling payment in attendance:', err);
+    }
+  };
 
   // Auto-reminder toggle
   const [autoReminderEnabled, setAutoReminderEnabled] = useState(true);
@@ -154,7 +228,11 @@ export const DailyAttendanceModal: React.FC<DailyAttendanceModalProps> = ({
   // Filter students based on filterMode & search query
   const displayedStudents = useMemo(() => {
     let list = students;
-    if (filterMode === 'scheduled') {
+    if (targetGroupId) {
+      list = students.filter(
+        (s) => !s.archived && s.groupIds && s.groupIds.includes(targetGroupId)
+      );
+    } else if (filterMode === 'scheduled') {
       list = students.filter((s) => scheduledStudentMap.has(s.id));
       // If none scheduled on this day, fallback gracefully or show empty
     }
@@ -580,7 +658,7 @@ export const DailyAttendanceModal: React.FC<DailyAttendanceModalProps> = ({
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
-                <span>سجل الحضور والغياب اليومي</span>
+                <span>{targetGroupName ? `تسجيل حضور مجموعة: ${targetGroupName}` : 'سجل الحضور والغياب اليومي'}</span>
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
                   {dayNameArabic}
                 </span>
@@ -899,8 +977,37 @@ export const DailyAttendanceModal: React.FC<DailyAttendanceModalProps> = ({
                       </div>
                     </div>
 
-                    {/* Recorded Status Badge */}
-                    <div>
+                    {/* Recorded Status & 1-Click Monthly Payment Status */}
+                    <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                      {/* Payment Status Toggle */}
+                      {(() => {
+                        const rec = paymentsMap[student.id];
+                        const status: PaymentStatus =
+                          rec?.status || (student.paymentStatus as PaymentStatus) || 'unpaid';
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => handleTogglePayment(student)}
+                            className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition cursor-pointer flex items-center gap-1 shadow-sm active:scale-95 ${
+                              status === 'paid'
+                                ? 'bg-emerald-600/25 border-emerald-500/50 text-emerald-300 hover:bg-emerald-600/35'
+                                : status === 'partial'
+                                ? 'bg-amber-500/25 border-amber-500/50 text-amber-300 hover:bg-amber-500/35'
+                                : 'bg-rose-500/20 border-rose-500/40 text-rose-300 hover:bg-rose-500/30'
+                            }`}
+                            title="حالة دفع اشتراك هذا الشهر (اضغط للتبديل السريع: دفع / جزئي / لم يدفع)"
+                          >
+                            <span>
+                              {status === 'paid'
+                                ? 'دفع ✅'
+                                : status === 'partial'
+                                ? 'جزئي ⏳'
+                                : 'لم يدفع ❌'}
+                            </span>
+                          </button>
+                        );
+                      })()}
+
                       {lesson ? (
                         <div className="flex items-center gap-1">
                           <span

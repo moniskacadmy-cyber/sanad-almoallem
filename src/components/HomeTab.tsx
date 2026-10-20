@@ -18,6 +18,7 @@ import {
 import { LiveCountdown } from './LiveCountdown';
 import { LessonFeedbackForm } from './LessonFeedbackForm';
 import { CollapsibleSection } from './CollapsibleSection';
+import { useSettings } from '../context/SettingsContext';
 const StatsChart = React.lazy(() => import('./StatsChart'));
 import {
   Calendar,

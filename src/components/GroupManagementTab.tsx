@@ -19,6 +19,7 @@ import {
   normalizeArabicText,
 } from '../firebase';
 import { GroupDetailsModal } from './GroupDetailsModal';
+import { useBackHandler } from '../services/backHandler';
 import {
   Users,
   User,
@@ -150,6 +151,12 @@ export const GroupManagementTab: React.FC<GroupManagementTabProps> = ({
   const [showAddGroupModal, setShowAddGroupModal] = useState(false);
   const [showAddIndividualModal, setShowAddIndividualModal] = useState(false);
   const [selectedGroupForDetails, setSelectedGroupForDetails] = useState<Group | null>(null);
+
+  // Register modals on back handler stack so mobile back closes them
+  useBackHandler(showChoiceModal, () => setShowChoiceModal(false), 'gm_choice_modal');
+  useBackHandler(showAddGroupModal, () => setShowAddGroupModal(false), 'gm_add_group_modal');
+  useBackHandler(showAddIndividualModal, () => setShowAddIndividualModal(false), 'gm_add_individual_modal');
+  useBackHandler(!!selectedGroupForDetails, () => setSelectedGroupForDetails(null), 'gm_group_details_modal');
 
   // Toast Notifications
   const [toast, setToast] = useState<{ message: string; isError?: boolean } | null>(null);

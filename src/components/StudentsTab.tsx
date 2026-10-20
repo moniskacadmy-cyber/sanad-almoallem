@@ -5,6 +5,7 @@ import { DailyAttendanceModal } from './DailyAttendanceModal';
 import { StudentPdfExportModal } from './StudentPdfExportModal';
 import { PerformanceInsights } from './PerformanceInsights';
 import { GroupManagementTab } from './GroupManagementTab';
+import { AddChoiceModal } from './AddChoiceModal';
 import { ReportType } from '../services/pdfReportService';
 import {
   triggerAbsenceNotificationAndChime,
@@ -171,6 +172,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const [isSettling, setIsSettling] = useState(false);
 
   // Modals state
+  const [showAddChoiceModal, setShowAddChoiceModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [selectedProfileStudent, setSelectedProfileStudent] = useState<Student | null>(null);
@@ -179,6 +181,24 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const [showMonthlyReportModal, setShowMonthlyReportModal] = useState(false);
   const [reportEditableText, setReportEditableText] = useState('');
   const [copiedReport, setCopiedReport] = useState(false);
+
+  // Optional Feature: Performance Insights toggle (defaults to false to keep UI clean)
+  const [showPerformanceInsights, setShowPerformanceInsights] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('sanad_show_performance_insights') === 'true';
+    }
+    return false;
+  });
+
+  const togglePerformanceInsights = () => {
+    setShowPerformanceInsights((prev) => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('sanad_show_performance_insights', next ? 'true' : 'false');
+      }
+      return next;
+    });
+  };
 
   // Lesson Prep Modal State (Edit Before Send Modal)
   const [showLessonPrepModal, setShowLessonPrepModal] = useState(false);
@@ -189,6 +209,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const [prepSavedNotice, setPrepSavedNotice] = useState(false);
 
   // Register modals on back handler stack
+  useBackHandler(showAddChoiceModal, () => setShowAddChoiceModal(false), 'student_choice_modal');
   useBackHandler(!!selectedProfileStudent, () => setSelectedProfileStudent(null), 'student_profile');
   useBackHandler(showAddModal, () => setShowAddModal(false), 'student_add_modal');
   useBackHandler(!!showDeleteConfirm, () => setShowDeleteConfirm(null), 'student_delete_confirm');
@@ -1341,30 +1362,48 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
             <span className="hidden sm:inline">تسجيل الحضور اليومي 📋</span>
           </button>
           <button
-            onClick={handleOpenAddModal}
+            onClick={() => setShowAddChoiceModal(true)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-950/50 active:scale-95 transition cursor-pointer"
           >
-            <UserPlus className="w-4 h-4" />
-            <span className="hidden sm:inline">إضافة طالب</span>
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">إضافة جديدة</span>
           </button>
         </div>
       </div>
       
-      {/* Floating Action Button for Mobile */}
-      <button
-        onClick={handleOpenAddModal}
-        className="fixed bottom-20 right-4 sm:hidden z-50 p-4 rounded-full bg-purple-600 text-white shadow-2xl hover:bg-purple-500 transition-transform active:scale-90"
-        title="إضافة طالب"
-      >
-        <UserPlus className="w-6 h-6" />
-      </button>
+      {/* Primary Floating Action Button (+) for all screens */}
+      <div className="fixed bottom-20 start-5 sm:bottom-24 sm:start-8 z-40">
+        <button
+          type="button"
+          onClick={() => setShowAddChoiceModal(true)}
+          className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-tr from-purple-600 via-indigo-600 to-purple-500 text-white flex items-center justify-center shadow-2xl shadow-purple-600/60 hover:shadow-purple-600/90 hover:scale-105 active:scale-95 transition-all cursor-pointer border-2 border-purple-400/50 group focus:outline-none focus:ring-4 focus:ring-purple-500/40"
+          title="إضافة جديدة (طالب فردي أو مجموعة)"
+          aria-label="إضافة جديدة"
+        >
+          <Plus className="w-7 h-7 sm:w-8 sm:h-8 group-hover:rotate-90 transition-transform duration-300" />
+        </button>
+      </div>
 
-      {/* Performance Insights & Attendance Risk Analysis (Recharts) */}
-      <PerformanceInsights
-        students={students}
-        allLessonsMap={allLessonsMap}
-        currency={currency}
-      />
+      {/* Optional Performance Insights Toggle Button */}
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={togglePerformanceInsights}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-900 border border-purple-500/30 text-purple-300 hover:text-white transition cursor-pointer"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+          <span>{showPerformanceInsights ? 'إخفاء تحليلات أداء الطلاب 📊' : 'عرض تحليلات أداء الطلاب 📊'}</span>
+        </button>
+      </div>
+
+      {/* Performance Insights & Attendance Risk Analysis (Optional) */}
+      {showPerformanceInsights && (
+        <PerformanceInsights
+          students={students}
+          allLessonsMap={allLessonsMap}
+          currency={currency}
+        />
+      )}
 
       {/* Search & Advanced Filter Bar */}
       <div className="space-y-3 p-3.5 sm:p-4 rounded-3xl bg-slate-900/90 border border-purple-500/30 shadow-lg shadow-purple-950/20">
@@ -3774,6 +3813,20 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
           </div>
         </div>
       )}
+
+      {/* Add Choice Modal: Individual Student or Group */}
+      <AddChoiceModal
+        isOpen={showAddChoiceModal}
+        onClose={() => setShowAddChoiceModal(false)}
+        onSelectIndividual={() => {
+          setShowAddChoiceModal(false);
+          handleOpenAddModal();
+        }}
+        onSelectGroup={() => {
+          setShowAddChoiceModal(false);
+          setActiveMainView('groups_and_individuals');
+        }}
+      />
     </div>
   );
 };

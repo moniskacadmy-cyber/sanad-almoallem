@@ -48,6 +48,8 @@ import {
   GroupMembership,
   GroupScheduleItem,
   AttendanceRecord,
+  PaymentStatus,
+  StudentPaymentRecord,
 } from './types';
 
 import rawFirebaseConfig from '../firebase-applet-config.json';
@@ -2302,24 +2304,134 @@ export async function recordStudentAttendance(
   }
 }
 
+export function getPaymentRecordId(studentId: string, groupId: string | null | undefined, month: string): string {
+  const gId = groupId && groupId.trim() ? groupId.trim() : 'individual';
+  return `${studentId}_${gId}_${month}`;
+}
+
+export async function recordStudentPayment(
+  teacherId: string,
+  record: {
+    studentId: string;
+    studentName?: string;
+    groupId?: string | null;
+    groupName?: string;
+    month: string; // YYYY-MM
+    status: PaymentStatus;
+    amountPaid: number;
+    amountDue: number;
+    notes?: string;
+  }
+) {
+  const paymentId = getPaymentRecordId(record.studentId, record.groupId, record.month);
+  const path = `teachers/${teacherId}/payments/${paymentId}`;
+  try {
+    const paymentRef = doc(db, 'teachers', teacherId, 'payments', paymentId);
+    await setDoc(
+      paymentRef,
+      {
+        id: paymentId,
+        teacherId,
+        studentId: record.studentId,
+        studentName: record.studentName || '',
+        groupId: record.groupId || 'individual',
+        groupName: record.groupName || '',
+        month: record.month,
+        status: record.status,
+        amountPaid: record.amountPaid,
+        amountDue: record.amountDue,
+        notes: record.notes || '',
+        paidAt: record.status === 'paid' ? serverTimestamp() : null,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    // Also update student document directly for quick querying/filtering
+    const studentRef = doc(db, 'teachers', teacherId, 'students', record.studentId);
+    await updateDoc(studentRef, {
+      paymentStatus: record.status,
+      lastPaymentMonth: record.month,
+      collectedDues: record.amountPaid,
+      updatedAt: serverTimestamp(),
+    }).catch(() => {});
+
+    return paymentId;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, path);
+    throw err;
+  }
+}
+
+export function subscribeToMonthlyPayments(
+  teacherId: string,
+  month: string,
+  callback: (records: StudentPaymentRecord[]) => void
+) {
+  const collRef = collection(db, 'teachers', teacherId, 'payments');
+  return onSnapshot(
+    collRef,
+    (snapshot) => {
+      const list: StudentPaymentRecord[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data.month === month) {
+          list.push({
+            id: docSnap.id,
+            ...data,
+          } as StudentPaymentRecord);
+        }
+      });
+      callback(list);
+    },
+    (err) => {
+      console.error('Error in payments subscription:', err);
+      callback([]);
+    }
+  );
+}
+
+export function subscribeToAllPayments(
+  teacherId: string,
+  callback: (records: StudentPaymentRecord[]) => void
+) {
+  const collRef = collection(db, 'teachers', teacherId, 'payments');
+  return onSnapshot(
+    collRef,
+    (snapshot) => {
+      const list: StudentPaymentRecord[] = [];
+      snapshot.forEach((docSnap) => {
+        list.push({
+          id: docSnap.id,
+          ...docSnap.data(),
+        } as StudentPaymentRecord);
+      });
+      callback(list);
+    },
+    (err) => {
+      console.error('Error in all payments subscription:', err);
+      callback([]);
+    }
+  );
+}
+
 export async function updateStudentPaymentStatus(
   teacherId: string,
   studentId: string,
   isPaid: boolean,
-  amount: number
+  amount: number,
+  groupId: string | null = null,
+  month?: string
 ) {
-  const path = `teachers/${teacherId}/students/${studentId}`;
-  try {
-    const studentRef = doc(db, 'teachers', teacherId, 'students', studentId);
-    await updateDoc(studentRef, {
-      paymentStatus: isPaid ? 'paid' : 'unpaid',
-      collectedDues: isPaid ? amount : 0,
-      updatedAt: serverTimestamp(),
-    });
-  } catch (err) {
-    handleFirestoreError(err, OperationType.UPDATE, path);
-    throw err;
-  }
+  const currentMonth = month || new Date().toISOString().substring(0, 7);
+  return recordStudentPayment(teacherId, {
+    studentId,
+    groupId,
+    month: currentMonth,
+    status: isPaid ? 'paid' : 'unpaid',
+    amountPaid: isPaid ? amount : 0,
+    amountDue: amount,
+  });
 }
 
 

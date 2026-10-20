@@ -2,8 +2,24 @@ export type SubscriptionStatus = 'trial' | 'active' | 'expired';
 export type SubscriptionPlan = 'none' | 'monthly' | 'three_months' | 'six_months' | 'yearly' | 'custom';
 export type ClassType = 'online' | 'in_person' | 'trial' | 'private' | 'center';
 export type AttendanceStatus = 'present' | 'absent' | 'excused';
-export type PaymentStatus = 'paid' | 'unpaid';
+export type PaymentStatus = 'paid' | 'unpaid' | 'partial';
 export type RecurrenceType = 'daily' | 'weekly' | 'monthly' | 'once';
+
+export interface StudentPaymentRecord {
+  id: string; // `${studentId}_${groupId || 'individual'}_${month}`
+  teacherId?: string;
+  studentId: string;
+  studentName?: string;
+  groupId: string; // groupId or 'individual'
+  groupName?: string;
+  month: string; // YYYY-MM
+  status: PaymentStatus;
+  amountPaid: number;
+  amountDue: number;
+  paidAt?: any;
+  updatedAt?: any;
+  notes?: string;
+}
 
 export type AbsenceReasonType =
   | 'excused_early'

@@ -52,6 +52,8 @@ interface AIAssistantChatProps {
   students: Student[];
   schedules: ScheduleSlot[];
   onOpenUpgradeModal: () => void;
+  isOpenControlled?: boolean;
+  onCloseControlled?: () => void;
 }
 
 interface RoleConfig {
@@ -167,8 +169,19 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
   students,
   schedules,
   onOpenUpgradeModal,
+  isOpenControlled,
+  onCloseControlled,
 }) => {
-  const [isOpen, setIsOpen] = useState(false);
+  const [internalIsOpen, setInternalIsOpen] = useState(false);
+  const isOpen = isOpenControlled !== undefined ? isOpenControlled : internalIsOpen;
+  const handleClose = () => {
+    if (onCloseControlled) {
+      onCloseControlled();
+    } else {
+      setInternalIsOpen(false);
+    }
+  };
+
   const [selectedRole, setSelectedRole] = useState<ChatbotRole>('general');
   const [selectedModel, setSelectedModel] = useState<GeminiModelChoice>('gemini-3.8-flash');
   const [showRoleSelector, setShowRoleSelector] = useState(false);
@@ -177,7 +190,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
   const [showScrollDown, setShowScrollDown] = useState(false);
 
   // Close AI Assistant on Back button press
-  useBackHandler(isOpen, () => setIsOpen(false), 'ai_assistant_chat');
+  useBackHandler(isOpen, handleClose, 'ai_assistant_chat');
   const [inputMessage, setInputMessage] = useState('');
 
   const storageKey = `sanad_gemini_chat_${profile.id || 'guest'}`;
@@ -493,20 +506,20 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
 
   return (
     <>
-      {/* Floating Trigger Button */}
-      {!isOpen && (
+      {/* Floating Trigger Button (only when not controlled externally from header) */}
+      {!isOpen && isOpenControlled === undefined && (
         <button
           type="button"
-          onClick={() => setIsOpen(true)}
-          className="fixed bottom-20 left-4 z-40 flex items-center gap-2 px-4 py-3 rounded-full bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 text-white font-bold shadow-2xl hover:scale-105 active:scale-95 transition cursor-pointer border border-purple-400/40 group"
+          onClick={() => setInternalIsOpen(true)}
+          className="fixed bottom-24 left-4 z-40 flex items-center gap-2 p-3 rounded-full bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 text-white font-bold shadow-2xl hover:scale-105 active:scale-95 transition cursor-pointer border border-purple-400/40 group"
           title="المساعد الذكي (Gemini Chatbot)"
         >
           <div className="relative">
-            <Bot className="w-6 h-6 text-amber-300 group-hover:rotate-12 transition" />
-            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+            <Bot className="w-5 h-5 text-amber-300 group-hover:rotate-12 transition" />
+            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
           </div>
-          <span className="text-xs sm:text-sm">سند المعلم الذكي</span>
-          <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
+          <span className="text-xs hidden sm:inline">سند الذكي</span>
+          <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
         </button>
       )}
 
@@ -546,7 +559,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setIsOpen(false)}
+                onClick={handleClose}
                 className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer"
                 title="إغلاق"
               >
