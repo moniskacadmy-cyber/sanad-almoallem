@@ -2302,6 +2302,26 @@ export async function recordStudentAttendance(
   }
 }
 
+export async function updateStudentPaymentStatus(
+  teacherId: string,
+  studentId: string,
+  isPaid: boolean,
+  amount: number
+) {
+  const path = `teachers/${teacherId}/students/${studentId}`;
+  try {
+    const studentRef = doc(db, 'teachers', teacherId, 'students', studentId);
+    await updateDoc(studentRef, {
+      paymentStatus: isPaid ? 'paid' : 'unpaid',
+      collectedDues: isPaid ? amount : 0,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+    throw err;
+  }
+}
+
 
 
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { TeacherProfile, Student, ScheduleSlot, ClassType, RecurrenceType } from '../types';
+import { TeacherProfile, Student, ScheduleSlot, ClassType, RecurrenceType, Group } from '../types';
 import {
   addSchedule,
   updateSchedule,
@@ -7,6 +7,7 @@ import {
   toggleScheduleCompletedToday,
   saveScheduleEvaluation,
   addStudent,
+  subscribeToGroups,
 } from '../firebase';
 import { exportScheduleToPdf } from '../services/pdfReportService';
 import { VoiceInputButton } from './VoiceInputButton';
@@ -217,6 +218,16 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<ScheduleSlot | null>(null);
   const [viewingScheduleDetails, setViewingScheduleDetails] = useState<ScheduleSlot | null>(null);
+  
+  // Payment Modal
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [activeGroup, setActiveGroup] = useState<Group | null>(null);
+  const [groups, setGroups] = useState<Group[]>([]);
+
+  useEffect(() => {
+    const unsub = subscribeToGroups(profile.id, (g) => setGroups(g));
+    return () => unsub();
+  }, [profile.id]);
 
   // Quick Evaluation Modal State
   const [showQuickEvalModal, setShowQuickEvalModal] = useState(false);

@@ -1335,17 +1335,26 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
             title="سجل الحضور والغياب اليومي للطلاب وتفعيل التذكيرات التلقائية"
           >
             <UserCheck className="w-4 h-4" />
-            <span>تسجيل الحضور اليومي 📋</span>
+            <span className="hidden sm:inline">تسجيل الحضور اليومي 📋</span>
           </button>
           <button
             onClick={handleOpenAddModal}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-950/50 active:scale-95 transition cursor-pointer"
           >
             <UserPlus className="w-4 h-4" />
-            <span>إضافة طالب</span>
+            <span className="hidden sm:inline">إضافة طالب</span>
           </button>
         </div>
       </div>
+      
+      {/* Floating Action Button for Mobile */}
+      <button
+        onClick={handleOpenAddModal}
+        className="fixed bottom-20 right-4 sm:hidden z-50 p-4 rounded-full bg-purple-600 text-white shadow-2xl hover:bg-purple-500 transition-transform active:scale-90"
+        title="إضافة طالب"
+      >
+        <UserPlus className="w-6 h-6" />
+      </button>
 
       {/* Performance Insights & Attendance Risk Analysis (Recharts) */}
       <PerformanceInsights
@@ -1381,9 +1390,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
         {/* Filters Container */}
         <div className="space-y-2.5 text-xs">
           {/* Row 1: Status & Subject Filters */}
-          <div className="flex items-center justify-between gap-2.5 flex-wrap">
+          <div className="flex items-center gap-2.5 overflow-x-auto pb-1">
             {/* Status Filter (حالة الطالب: نشط / غير نشط / الكل) */}
-            <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-nowrap shrink-0">
               <span className="text-[11px] text-slate-400 flex items-center gap-1 font-bold">
                 <UserCheck className="w-3.5 h-3.5 text-purple-400" />
                 <span>الحالة:</span>
@@ -1439,8 +1448,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
           </div>
 
           {/* Row 2: Secondary Filters (Class Type & Payment Status) */}
-          <div className="flex items-center justify-between gap-2 flex-wrap pt-2 border-t border-slate-800/60">
-            <div className="flex items-center gap-2 overflow-x-auto pb-0.5 text-[11px] flex-wrap">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-2 border-t border-slate-800/60">
+            <div className="flex items-center gap-2 flex-nowrap shrink-0 text-[11px]">
               {/* Class Type */}
               <div className="flex items-center gap-1">
                 <span className="text-slate-400 flex items-center gap-1">
@@ -1559,7 +1568,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                     className="cursor-pointer flex-1"
                   >
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-sm font-bold text-white hover:text-purple-300 transition">
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white hover:text-purple-600 dark:hover:text-purple-300 transition">
                         {s.name}
                       </h3>
                       <AttendanceIndicator student={s} />

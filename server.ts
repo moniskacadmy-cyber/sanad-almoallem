@@ -732,7 +732,15 @@ app.post('/api/ai/assistant', verifyFirebaseToken, (req, res, next) => aiRateLim
     if (Array.isArray(messagesHistory) && messagesHistory.length) { const recent = messagesHistory.slice(-10); historyText = 'سجل المحادثة السابقة:\n' + recent.map((m: any) => `${m.role === 'user' ? 'المعلم' : 'المساعد'}: ${typeof m.text === 'string' ? m.text.slice(0, 1000) : ''}`).join('\n') + '\n===============================\n'; }
     const fullPrompt = `${formattedContext}\n${historyText}سؤال المعلم الحالي:\n${message.slice(0, 2000).trim()}`;
     if (fullPrompt.length > 12000) return res.status(400).json({ error: 'حجم الطلب النهائي كبير جداً.' });
-    const stream = streamGeminiTextWithFreeFallback({ model: selectedModel, contents: fullPrompt, config: { systemInstruction, maxOutputTokens: 1500 } });
+    const stream = streamGeminiTextWithFreeFallback({ 
+      model: selectedModel, 
+      contents: fullPrompt, 
+      config: { 
+        systemInstruction, 
+        maxOutputTokens: 1500,
+        tools: [{ googleSearch: {} }]
+      }
+    });
     res.status(200); res.setHeader('Content-Type', 'text/event-stream; charset=utf-8'); res.setHeader('Cache-Control', 'no-cache, no-transform'); res.setHeader('Connection', 'keep-alive'); res.setHeader('X-Accel-Buffering', 'no'); res.flushHeaders?.(); streamStarted = true;
     for await (const chunkText of stream) res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
     res.write('data: [DONE]\n\n'); return res.end();
