@@ -28,6 +28,9 @@ import {
   getDocFromServer,
   onSnapshot,
   writeBatch,
+  query,
+  orderBy,
+  limit,
   Firestore
 } from 'firebase/firestore';
 import {
@@ -240,6 +243,21 @@ export async function registerTeacher(params: {
     await setDoc(teacherDocRef, newProfile);
   } catch (err) {
     handleFirestoreError(err, OperationType.CREATE, `teachers/${user.uid}`);
+  }
+
+  try {
+    await setDoc(doc(collection(db, 'admin_notifications')), {
+      type: 'new_user_registration',
+      teacherId: user.uid,
+      teacherName: params.name.trim(),
+      teacherEmail: normalizedEmail,
+      whatsapp: params.whatsapp.trim(),
+      subject: params.subject.trim(),
+      createdAt: serverTimestamp(),
+      read: false,
+    });
+  } catch (err) {
+    console.warn('Could not record admin notification:', err);
   }
 
   // Seed starter library templates
@@ -2433,6 +2451,36 @@ export async function updateStudentPaymentStatus(
     amountDue: amount,
   });
 }
+
+export interface AdminNotification {
+  id: string;
+  type: string;
+  teacherId: string;
+  teacherName: string;
+  teacherEmail: string;
+  whatsapp: string;
+  subject: string;
+  createdAt: any;
+  read: boolean;
+}
+
+export function subscribeToAdminNotifications(callback: (notifications: AdminNotification[]) => void) {
+  const q = query(collection(db, 'admin_notifications'), orderBy('createdAt', 'desc'), limit(50));
+  return onSnapshot(q, (snapshot) => {
+    const list: AdminNotification[] = [];
+    snapshot.forEach((docSnap) => {
+      list.push({
+        id: docSnap.id,
+        ...docSnap.data(),
+      } as AdminNotification);
+    });
+    callback(list);
+  }, (err) => {
+    console.error('Error subscribing to admin notifications:', err);
+    callback([]);
+  });
+}
+
 
 
 
