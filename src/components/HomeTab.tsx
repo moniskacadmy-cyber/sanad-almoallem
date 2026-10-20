@@ -17,6 +17,7 @@ import {
 } from '../services/reminderService';
 import { LiveCountdown } from './LiveCountdown';
 import { LessonFeedbackForm } from './LessonFeedbackForm';
+import { CollapsibleSection } from './CollapsibleSection';
 const StatsChart = React.lazy(() => import('./StatsChart'));
 import {
   Calendar,
@@ -727,18 +728,25 @@ export const HomeTab: React.FC<HomeTabProps> = ({
       {/* 6. لوحة إحصائية: توزيع الحصص خلال الأسبوع الحالي (recharts lazy-loaded) */}
       <div className="mt-10">
         <React.Suspense fallback={
-          <div className="rounded-3xl p-6 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-purple-500/20 animate-pulse text-center text-xs text-slate-400">
+    <div className="rounded-3xl p-6 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-purple-500/20 animate-pulse text-center text-xs text-slate-500 dark:text-slate-400">
             جاري تحميل الإحصائيات الأسبوعية...
           </div>
         }>
-          <StatsChart
-            weeklyChartData={weeklyChartData}
-            totalCompletedWeek={totalCompletedWeek}
-            totalPlannedWeek={totalPlannedWeek}
-            weeklyCompletionPct={weeklyCompletionPct}
-            todayDayName={todayArabicName}
-            onNavigateToSchedules={() => onNavigateToTab(2)}
-          />
+          <CollapsibleSection 
+            title="توزيع الحصص خلال الأسبوع الحالي"
+            description="عرض/إخفاء تفاصيل الإنجاز والرسوم البيانية"
+            icon={<TrendingUp className="w-5 h-5" />}
+            defaultOpen={false}
+          >
+            <StatsChart
+              weeklyChartData={weeklyChartData}
+              totalCompletedWeek={totalCompletedWeek}
+              totalPlannedWeek={totalPlannedWeek}
+              weeklyCompletionPct={weeklyCompletionPct}
+              todayDayName={todayArabicName}
+              onNavigateToSchedules={() => onNavigateToTab(2)}
+            />
+          </CollapsibleSection>
         </React.Suspense>
       </div>
 

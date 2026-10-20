@@ -92,9 +92,12 @@ interface StudentsTabProps {
 // Helper Component for Attendance
 const AttendanceIndicator: React.FC<{ student: Student }> = ({ student }) => {
   const [status, setStatus] = useState<'present' | 'absent' | 'excused'>('present');
+  const [isAnimating, setIsAnimating] = useState(false);
 
   const toggleStatus = (e: React.MouseEvent) => {
     e.stopPropagation();
+    setIsAnimating(true);
+    setTimeout(() => setIsAnimating(false), 300);
     const statuses: Array<'present' | 'absent' | 'excused'> = ['present', 'absent', 'excused'];
     const nextIndex = (statuses.indexOf(status) + 1) % statuses.length;
     setStatus(statuses[nextIndex]);
@@ -102,9 +105,9 @@ const AttendanceIndicator: React.FC<{ student: Student }> = ({ student }) => {
 
   const getStyle = () => {
     switch (status) {
-      case 'present': return 'bg-emerald-500';
-      case 'absent': return 'bg-rose-500';
-      case 'excused': return 'bg-amber-400';
+      case 'present': return 'bg-green-500';
+      case 'absent': return 'bg-red-500';
+      case 'excused': return 'bg-yellow-400';
       default: return 'bg-gray-400';
     }
   };
@@ -121,7 +124,7 @@ const AttendanceIndicator: React.FC<{ student: Student }> = ({ student }) => {
   return (
     <button
       onClick={toggleStatus}
-      className={`w-3 h-3 rounded-full ${getStyle()} hover:scale-150 transition-all duration-300 shadow-sm`}
+      className={`w-3.5 h-3.5 rounded-full ${getStyle()} transition-all duration-300 shadow-sm ${isAnimating ? 'scale-125' : 'scale-100'} hover:scale-150`}
       title={`حالة الحضور: ${getLabel()} (اضغط للتبديل)`}
     />
   );
@@ -1372,7 +1375,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="بحث بالاسم، المادة، أو رقم الهاتف..."
-            className="w-full rounded-2xl bg-slate-950 border border-slate-700/80 px-4 py-2.5 pr-10 pl-9 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 transition"
+            className="w-full rounded-2xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700/80 px-4 py-2.5 pr-10 pl-9 text-xs text-slate-900 dark:text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 transition"
           />
           <Search className="w-4 h-4 text-purple-400 absolute right-3.5 top-3" />
           {searchQuery && (
@@ -1520,12 +1523,12 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
       {/* Students List */}
       {filteredStudents.length === 0 ? (
-        <div className="rounded-2xl bg-slate-900/50 border border-slate-800 p-8 text-center">
-          <BookOpen className="w-10 h-10 mx-auto text-purple-400/60 mb-2" />
-          <p className="text-sm font-bold text-slate-200">
+        <div className="rounded-2xl bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 p-8 text-center">
+          <BookOpen className="w-10 h-10 mx-auto text-purple-600 dark:text-purple-400/60 mb-2" />
+          <p className="text-sm font-bold text-slate-900 dark:text-slate-200">
             {students.length === 0 ? 'لم تقم بإضافة أي طالب بعد' : 'لا توجد نتائج مطابقة للبحث'}
           </p>
-          <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xs mx-auto">
             {students.length === 0
               ? 'أضف أول طالب لك لبدء تسجيل الحضور ومتابعة الدروس والمدفوعات.'
               : 'جرب تغيير معايير البحث أو الفلترة.'}
