@@ -118,23 +118,33 @@ export function storeReminderSettings(settings: ReminderSettings) {
 }
 
 // Call /api/reminders/check with the teacher's current schedules and local time
-export async function checkRemindersApi(params: {
-  teacher: TeacherProfile;
-  schedules: ScheduleSlot[];
-  students: Student[];
-  minutesBefore?: number;
-}): Promise<{
+export async function checkRemindersApi(
+  params: {
+    teacher: TeacherProfile;
+    schedules: ScheduleSlot[];
+    students: Student[];
+    minutesBefore?: number;
+  },
+  attempt = 1
+): Promise<{
   success: boolean;
   checkedCount: number;
   remindersSent: number;
   matchedReminders: ReminderLog[];
 }> {
+  // فحص حالة الإنترنت أولاً لمنع إرسال طلبات فاشلة وتسجيل أخطاء في الـ Console
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return { success: false, checkedCount: 0, remindersSent: 0, matchedReminders: [] };
+  }
+
+  const MAX_RETRIES = 2;
+
   try {
     const headers = await getAuthenticatedHeaders();
-    if (!headers) {
-       console.warn('No auth token available in checkRemindersApi');
-       return { success: false, checkedCount: 0, remindersSent: 0, matchedReminders: [] };
+    if (!headers || !('Authorization' in headers)) {
+      return { success: false, checkedCount: 0, remindersSent: 0, matchedReminders: [] };
     }
+
     const response = await fetch('/api/reminders/check', {
       method: 'POST',
       headers,
@@ -150,14 +160,27 @@ export async function checkRemindersApi(params: {
     });
 
     if (!response.ok) {
-       console.warn(`Auth token issue in checkRemindersApi: ${response.status}`);
-       return { success: false, checkedCount: 0, remindersSent: 0, matchedReminders: [] };
+      return { success: false, checkedCount: 0, remindersSent: 0, matchedReminders: [] };
     }
 
     const data = await response.json();
     return data;
   } catch (err: any) {
-    console.warn('checkRemindersApi error (network/other):', err.message);
+    const errorMessage = err.message || '';
+
+    // عدم إعادة المحاولة وإرجاع النتيجة بهدوء عند أخطاء الشبكة
+    if (
+      errorMessage.includes('Failed to fetch') ||
+      errorMessage.includes('ERR_CONNECTION_CLOSED') ||
+      errorMessage.includes('ERR_NAME_NOT_RESOLVED')
+    ) {
+      return { success: false, checkedCount: 0, remindersSent: 0, matchedReminders: [] };
+    }
+
+    if (attempt < MAX_RETRIES && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+      return checkRemindersApi(params, attempt + 1);
+    }
+
     return {
       success: false,
       checkedCount: 0,
@@ -176,11 +199,21 @@ export async function fetchCronStatusApi(): Promise<{
   totalDispatched: number;
   recentLogs: ReminderLog[];
 }> {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return {
+      isRunning: true,
+      intervalMinutes: 15,
+      lastRun: null,
+      nextRun: null,
+      totalDispatched: 0,
+      recentLogs: [],
+    };
+  }
+
   try {
     const headers = await getAuthenticatedHeaders();
     const res = await fetch('/api/reminders/status', { headers });
     if (res.status === 401) {
-       // Token probably expired, try silent refresh
        return {
          isRunning: true,
          intervalMinutes: 15,
@@ -398,5 +431,3 @@ export function triggerAbsenceNotificationAndChime(params: {
     playNotificationChime();
   }
 }
-
-

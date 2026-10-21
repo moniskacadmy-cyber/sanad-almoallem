@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { TeacherProfile, Student, LessonLog, ClassType, PaymentStatus, ScheduleSlot, DEFAULT_WHATSAPP_TEMPLATES, renderTemplate, isLessonFinanciallyCounted, ALL_SUBJECTS } from '../types';
 import { AbsenceDetailsModal, AbsenceDetailsResult } from './AbsenceDetailsModal';
 import { DailyAttendanceModal } from './DailyAttendanceModal';
@@ -170,6 +172,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const [allLessonsMap, setAllLessonsMap] = useState<Record<string, LessonLog[]>>({});
   const [showConfirmSettleStudent, setShowConfirmSettleStudent] = useState<Student | null>(null);
   const [isSettling, setIsSettling] = useState(false);
+  const [groups, setGroups] = useState<Group[]>([]);
 
   // Modals state
   const [showAddChoiceModal, setShowAddChoiceModal] = useState(false);
@@ -383,15 +386,50 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     monthlyFee?: string;
   }>({});
 
-  const checkScheduleConflict = (dayOfWeek: number, timeStr: string, durationMin: number, excludeScheduleId?: string): string | null => {
+  // Combined schedules (individual students + active groups) for conflict checking
+  const groupSlots = useMemo(() => {
+    const slots: ScheduleSlot[] = [];
+    groups.forEach((g) => {
+      if (g.status !== 'active' || g.archived || !Array.isArray(g.schedule)) return;
+      g.schedule.forEach((item) => {
+        slots.push({
+          id: `group_slot_${g.id}_day_${item.day}_time_${item.time}`,
+          teacherId: profile.id,
+          studentId: `group_${g.id}`,
+          studentName: `مجموعة ${g.name}`,
+          dayOfWeek: item.day,
+          time: item.time,
+          duration: item.duration || 60,
+          recurrence: 'weekly',
+          classType: 'center',
+          color: g.color || 'purple',
+          locationOrLink: g.centerName || 'السنتر',
+        } as any);
+      });
+    });
+    return slots;
+  }, [groups, profile.id]);
+
+  const allSchedules = useMemo(() => [...(schedules || []), ...groupSlots], [schedules, groupSlots]);
+
+  const checkScheduleConflict = (
+    dayOfWeek: number,
+    timeStr: string,
+    durationMin: number,
+    excludeStudentId?: string
+  ): string | null => {
+    // Filter out the student's own schedules if editing
+    const slotsToCheck = excludeStudentId
+      ? allSchedules.filter((s) => s.studentId !== excludeStudentId)
+      : allSchedules;
+
     const res = hasConflict(
       {
         dayOfWeek: Number(dayOfWeek),
         time: timeStr,
         duration: durationMin || 60,
       },
-      schedules,
-      excludeScheduleId
+      slotsToCheck
     );
     return res.hasConflict ? res.message || 'تعارض في الموعد' : null;
   };
@@ -529,6 +567,11 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     });
     return () => unsub();
   }, [profile.id, selectedProfileStudent]);
+
+  useEffect(() => {
+    const unsub = subscribeToGroups(profile.id, (g) => setGroups(g));
+    return () => unsub();
+  }, [profile.id]);
 
   const handleSaveProfileNotes = async () => {
     if (!selectedProfileStudent) return;
@@ -682,10 +725,15 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
     setFormErrors({});
 
-    // 2. Overlapping Schedule Validation for new student schedules before writing to Firestore
-    if (!editingStudent && formSchedules.length > 0) {
+    // 2. Overlapping Schedule Validation for new/updated student schedules before writing to Firestore
+    if (formSchedules.length > 0) {
       for (const s of formSchedules) {
-        const conflict = checkScheduleConflict(Number(s.dayOfWeek), s.time, Number(s.duration) || 60);
+        const conflict = checkScheduleConflict(
+          Number(s.dayOfWeek),
+          s.time,
+          Number(s.duration) || 60,
+          editingStudent?.id
+        );
         if (conflict) {
           setToastMessage({ type: 'error', text: conflict });
           alert(conflict);
@@ -1342,6 +1390,88 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     }
   };
 
+  const handleExportStudentsPdf = () => {
+    try {
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      
+      doc.setFontSize(18);
+      doc.text(`Sanad Almoallem - Students & Schedules Report`, 105, 15, { align: 'center' });
+      
+      doc.setFontSize(11);
+      doc.text(`Teacher: ${profile.name} (${profile.subject || 'General'})`, 105, 22, { align: 'center' });
+      doc.text(`Date: ${new Date().toLocaleDateString()}`, 105, 28, { align: 'center' });
+
+      const tableData = students.map((s, idx) => {
+        const sSchedules = (schedules || []).filter((sc) => sc.studentId === s.id);
+        const schedStr = sSchedules.map((sc) => {
+          const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+          return `${dayNames[sc.dayOfWeek] || 'Day'} ${sc.time} (${sc.duration || 60}m)`;
+        }).join(', ') || 'No Schedule';
+
+        return [
+          idx + 1,
+          s.name,
+          s.subject || profile.subject || '-',
+          s.whatsapp || s.phone || '-',
+          s.classType || 'private',
+          s.paymentStatus === 'paid' ? 'Paid' : 'Unpaid',
+          schedStr
+        ];
+      });
+
+      autoTable(doc, {
+        startY: 35,
+        head: [['#', 'Student Name', 'Subject', 'Phone', 'Type', 'Status', 'Schedules']],
+        body: tableData,
+        styles: { font: 'helvetica', fontSize: 9, cellPadding: 4 },
+        headStyles: { fillColor: [124, 58, 237] },
+        alternateRowStyles: { fillColor: [245, 243, 255] },
+      });
+
+      doc.save(`students_schedules_report_${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (err) {
+      console.error('Error generating PDF with jspdf:', err);
+      alert('حدث خطأ أثناء تصدير ملف PDF.');
+    }
+  };
+
+  const handleExportStudentsExcel = () => {
+    try {
+      let csvContent = '\uFEFF';
+      csvContent += 'ID,Student Name,Subject,Phone,Class Type,Payment Status,Remaining Paid Lessons,Schedules\n';
+
+      students.forEach((s) => {
+        const sSchedules = (schedules || []).filter((sc) => sc.studentId === s.id);
+        const dayNames = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+        const schedStr = sSchedules.map((sc) => `${dayNames[sc.dayOfWeek] || ''} ${sc.time}`).join(' | ');
+
+        const row = [
+          `"${s.id}"`,
+          `"${(s.name || '').replace(/"/g, '""')}"`,
+          `"${(s.subject || '').replace(/"/g, '""')}"`,
+          `"${(s.whatsapp || s.phone || '').replace(/"/g, '""')}"`,
+          `"${s.classType || 'private'}"`,
+          `"${s.paymentStatus === 'paid' ? 'مدفوع' : 'غير مدفوع'}"`,
+          `${s.remainingPaidLessons ?? 0}`,
+          `"${schedStr.replace(/"/g, '""')}"`
+        ];
+        csvContent += row.join(',') + '\n';
+      });
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `students_schedules_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Error generating Excel/CSV:', err);
+      alert('حدث خطأ أثناء تصدير ملف Excel.');
+    }
+  };
+
   return (
     <div className="space-y-4 pb-20">
       {/* Top View Mode Switcher */}
@@ -1391,6 +1521,24 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
               <p className="text-xs text-slate-400">إدارة الطلاب، الحضور، التقارير والمدفوعات</p>
             </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleExportStudentsPdf}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/30 text-xs font-bold shadow-md transition cursor-pointer"
+            title="تصدير قائمة الطلاب والمواعيد إلى PDF"
+          >
+            <Download className="w-4 h-4 text-purple-400" />
+            <span className="hidden md:inline">تصدير PDF</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleExportStudentsExcel}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/30 text-xs font-bold shadow-md transition cursor-pointer"
+            title="تصدير قائمة الطلاب والمواعيد إلى Excel (CSV)"
+          >
+            <FileText className="w-4 h-4 text-emerald-400" />
+            <span className="hidden md:inline">تصدير Excel</span>
+          </button>
           <button
             type="button"
             onClick={() => setShowDailyAttendanceModal(true)}

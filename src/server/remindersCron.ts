@@ -340,11 +340,12 @@ export function createRemindersRouter(): Router {
 
   // 2. Schedule Check Endpoint (stateless evaluation for active teacher on client trigger)
   router.post('/check', (req: Request, res: Response) => {
+    // Wrap in a safe handler to ensure JSON response always
     try {
       // Identity comes ONLY from the verified ID token; any teacherId in the body is ignored.
       const authUserUid = (req as any).user?.uid as string | undefined;
       if (!authUserUid) {
-        return res.status(401).json({ error: 'غير مصرح به: يلزم تسجيل الدخول.' });
+        return res.status(401).json({ success: false, error: 'غير مصرح به: يلزم تسجيل الدخول.' });
       }
       const teacherId = authUserUid;
 
@@ -359,10 +360,10 @@ export function createRemindersRouter(): Router {
 
       // Bound the work a single request can make the server do.
       if (!Array.isArray(schedules) || !Array.isArray(students)) {
-        return res.status(400).json({ error: 'صيغة البيانات غير صحيحة.' });
+        return res.status(400).json({ success: false, error: 'صيغة البيانات غير صحيحة.' });
       }
       if (schedules.length > MAX_CHECK_SCHEDULES || students.length > MAX_CHECK_STUDENTS) {
-        return res.status(400).json({ error: 'حجم البيانات المرسلة أكبر من المسموح.' });
+        return res.status(400).json({ success: false, error: 'حجم البيانات المرسلة أكبر من المسموح.' });
       }
 
       const evalTime = clientTime ? new Date(clientTime) : new Date();
@@ -377,7 +378,7 @@ export function createRemindersRouter(): Router {
         minutesWindow: Number(minutesBefore) || 15,
       });
 
-      return res.json({
+      return res.status(200).json({
         success: true,
         evaluatedTime: evalTime.toISOString(),
         minutesWindow: Number(minutesBefore) || 15,
@@ -388,6 +389,7 @@ export function createRemindersRouter(): Router {
     } catch (err: any) {
       console.error('Error in /api/reminders/check:', err);
       return res.status(500).json({
+        success: false,
         error: 'حدث خطأ أثناء فحص جدول المواعيد.',
       });
     }

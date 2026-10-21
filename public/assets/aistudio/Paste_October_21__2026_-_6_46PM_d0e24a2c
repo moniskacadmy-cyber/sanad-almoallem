@@ -1,0 +1,2244 @@
+
+Conversation with Gemini
+عاوز اقول لجوجل ايه اي استديو يضيف الاداتين
+
+أهلاً بك! يمكنك إرسال رسالة واضحة ומباشرة لفريق تطوير Google AI Studio أو كتابتها في قسم الملاحظات والتعليقات (Feedback) الخاص بالمنصة.
+
+إليك نموذج جاهز ومقترح باللغتين (العربية والإنجليزية) لتطلبتهم بإضافة الأدوات (مثل أدوات البحث، تشغيل الكود، أو غيرها):
+
+النموذج باللغة العربية (يفضل استخدامه):
+"أود اقتراح ميزة مهمة لتحسين تجربة العمل على Google AI Studio، وهي إضافة أداتين: [اكتب اسم الأداة الأولى] و**[اكتب اسم الأداة الثانية]**. دمج هاتين الأداة مباشرة داخل بيئة التطوير سيساعدنا كثيراً في تنفيذ المهام البرمجية والبحثية بشكل أسرع وأكثر كفاءة دون الحاجة للخروج من المنصة. شكراً لجهودكم المستمرة في تطوير هذه الأداة الرائعة."
+
+النموذج باللغة الإنجليزية (غالباً ما يكون أكثر فعالية مع فرق الدعم العالمية):
+"I would like to suggest a valuable feature to improve the workflow in Google AI Studio by integrating two tools: [Tool 1 Name] and [Tool 2 Name]. Having these tools built directly into the development environment would greatly enhance productivity and streamline coding and research tasks without needing external workarounds. Thank you for your continuous efforts in improving this amazing platform!"
+
+💡 نصائح سريعة لضمان وصول طلبك:
+حدد الأدوات بدقة: استبدل ما بين الأقواس [...] بالأدوات التي تقصدها بالضبط (مثل: Google Search للبحث المباشر، أو Code Execution لتشغيل الأكواد، أو File Upload لملفات معينة).
+
+مكان الإرسال: يمكنك استخدام خيار Send Feedback (إرسال ملاحظات) المتاح عادةً في واجهة Google AI Studio (في القائمة الجانبية أو أعلى الصفحة) لتصل مباشرة للفريق المسؤول عن الميزات والتطوير.
+
+عاوز اقوله على انه فيه حجات على اللابتوب مش شايفها على الهاتف وانا بستخدم التطبيق زي اضافة جديدة دي حلوة بس مش لاقيها في الفون
+
+فهمت قصدك تماماً! تفاوت الميزات بين نسختي سطح المكتب (المتصفح على اللابتوب) والموبايل أمر شائع، وتنبيه فريق التطوير لهذه النقطة يساعدهم جداً على تحسين التطبيق.
+
+إليك صياغة موجهة لوصف هذه المشكلة والاقتراح بوضوح:
+
+النص المقترح باللغة العربية:
+"مرحباً، أود التنويه إلى وجود اختلاف في الميزات المتاحة بين نسخة اللابتوب والتطبيق على الهاتف. هناك ميزات وإضافات جديدة ممتازة جداً أستمتع بتجربتها على اللابتوب (مثل ميزة إضافة مشروع/أداة جديدة)، ولكنها لا تظهر مطلقاً على تطبيق الهاتف.
+
+أتمنى مزامنة جميع الميزات بين النسختين وتوفير هذه الإضافة الجديدة على الهاتف لتصبح تجربة الاستخدام متكاملة وسلسة أينما كنا. شكراً لكم!"
+
+النص المقترح باللغة الإنجليزية (للوصول الأسرع لفريق الدعم):
+"Hi! I noticed that some features available on the desktop/laptop version are missing in the mobile app. For example, there are great new options (like the new add/extension feature) that work seamlessly on the laptop, but aren't visible or accessible on mobile.
+
+It would be amazing if you could synchronize all features across both platforms so we can enjoy the same complete experience on mobile. Thank you for the great work!"
+
+📌 كيف ترسلها من داخل المنصة؟
+افتح Google AI Studio على اللابتوب.
+
+اضغط على آيقونة Send Feedback (إرسال ملاحظات/آراء) الموجودة عادة في أسفل القائمة الجانبية أو أعلى الصفحة.
+
+انسخ النص (العربي أو الإنجليزي) وألصقه هناك ثم اضغط إرسال.
+
+(index):120 [OrphanCleanup] Skipped: orphan cleanup is disabled / no-op.
+
+(index):120 [OrphanCleanup] Skipped: orphan cleanup is disabled / no-op.
+
+(index):120 [OrphanCleanup] Skipped: orphan cleanup is disabled / no-op.
+
+(index):120 [OrphanCleanup] Skipped: orphan cleanup is disabled / no-op.
+
+(index):120 [OrphanCleanup] Skipped: orphan cleanup is disabled / no-op.
+
+(index):120 [OrphanCleanup] Skipped: orphan cleanup is disabled / no-op.
+
+(index):120 [OrphanCleanup] Skipped: orphan cleanup is disabled / no-op.
+
+(index):120 [OrphanCleanup] Skipped: orphan cleanup is disabled / no-op.
+
+(index):120 [OrphanCleanup] Skipped: orphan cleanup is disabled / no-op.
+
+(index):120 [OrphanCleanup] Skipped: orphan cleanup is disabled / no-op.
+
+(index):120 [OrphanCleanup] Skipped: orphan cleanup is disabled / no-op.
+
+(index):120 [OrphanCleanup] Skipped: orphan cleanup is disabled / no-op.
+
+(index):120 [OrphanCleanup] Skipped: orphan cleanup is disabled / no-op.
+
+(index):120 [OrphanCleanup] Skipped: orphan cleanup is disabled / no-op.
+
+(index):120 [OrphanCleanup] Skipped: orphan cleanup is disabled / no-op.
+
+firebase-BYHGo2S7.js:6  GET https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?gsessionid=Z6jSNrIP61vA1OFM4GhGFOdrfUB6KFiHXWCu23dmerGr_a5VrFbnRg&VER=8&database=projects%2Fsanadak-3cc89%2Fdatabases%2F(default)&RID=rpc&SID=HB-wxdKnyQvtTbuS-Hagsw&AID=41&CI=0&TYPE=xmlhttp&zx=2hnmor4mjace&t=1 net::ERR_QUIC_PROTOCOL_ERROR.QUIC_TOO_MANY_RTOS 200 (OK)
+
+e.send @ firebase-BYHGo2S7.js:6
+
+e.ea @ firebase-BYHGo2S7.js:8
+
+Dt @ firebase-BYHGo2S7.js:5
+
+Yn @ firebase-BYHGo2S7.js:9
+
+e.Da @ firebase-BYHGo2S7.js:9
+
+ue @ firebase-BYHGo2S7.js:1
+
+Promise.then
+
+oe @ firebase-BYHGo2S7.js:1
+
+Kn @ firebase-BYHGo2S7.js:9
+
+Zn @ firebase-BYHGo2S7.js:9
+
+St.Y @ firebase-BYHGo2S7.js:5
+
+St.ba @ firebase-BYHGo2S7.js:5
+
+Be @ firebase-BYHGo2S7.js:1
+
+ze @ firebase-BYHGo2S7.js:1
+
+Mn @ firebase-BYHGo2S7.js:8
+
+e.Xa @ firebase-BYHGo2S7.js:8
+
+e.Ca @ firebase-BYHGo2S7.js:8
+
+Tn @ firebase-BYHGo2S7.js:7
+
+wn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Pa @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+e.send @ firebase-BYHGo2S7.js:6
+
+e.ea @ firebase-BYHGo2S7.js:8
+
+Dt @ firebase-BYHGo2S7.js:5
+
+Yn @ firebase-BYHGo2S7.js:9
+
+e.Da @ firebase-BYHGo2S7.js:9
+
+ue @ firebase-BYHGo2S7.js:1
+
+Promise.then
+
+oe @ firebase-BYHGo2S7.js:1
+
+Kn @ firebase-BYHGo2S7.js:9
+
+Zn @ firebase-BYHGo2S7.js:9
+
+St.Y @ firebase-BYHGo2S7.js:5
+
+St.ba @ firebase-BYHGo2S7.js:5
+
+Be @ firebase-BYHGo2S7.js:1
+
+ze @ firebase-BYHGo2S7.js:1
+
+Mn @ firebase-BYHGo2S7.js:8
+
+e.Xa @ firebase-BYHGo2S7.js:8
+
+e.Ca @ firebase-BYHGo2S7.js:8
+
+Tn @ firebase-BYHGo2S7.js:7
+
+wn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Pa @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+e.send @ firebase-BYHGo2S7.js:6
+
+e.ea @ firebase-BYHGo2S7.js:8
+
+Dt @ firebase-BYHGo2S7.js:5
+
+Yn @ firebase-BYHGo2S7.js:9
+
+e.Da @ firebase-BYHGo2S7.js:9
+
+ue @ firebase-BYHGo2S7.js:1
+
+Promise.then
+
+oe @ firebase-BYHGo2S7.js:1
+
+Kn @ firebase-BYHGo2S7.js:9
+
+Zn @ firebase-BYHGo2S7.js:9
+
+St.Y @ firebase-BYHGo2S7.js:5
+
+St.ba @ firebase-BYHGo2S7.js:5
+
+Be @ firebase-BYHGo2S7.js:1
+
+ze @ firebase-BYHGo2S7.js:1
+
+Mn @ firebase-BYHGo2S7.js:8
+
+e.Xa @ firebase-BYHGo2S7.js:8
+
+e.Ca @ firebase-BYHGo2S7.js:8
+
+Tn @ firebase-BYHGo2S7.js:7
+
+wn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Pa @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+e.send @ firebase-BYHGo2S7.js:6
+
+e.ea @ firebase-BYHGo2S7.js:8
+
+Dt @ firebase-BYHGo2S7.js:5
+
+Yn @ firebase-BYHGo2S7.js:9
+
+e.Da @ firebase-BYHGo2S7.js:9
+
+ue @ firebase-BYHGo2S7.js:1
+
+Promise.then
+
+oe @ firebase-BYHGo2S7.js:1
+
+Kn @ firebase-BYHGo2S7.js:9
+
+Zn @ firebase-BYHGo2S7.js:9
+
+St.Y @ firebase-BYHGo2S7.js:5
+
+St.ba @ firebase-BYHGo2S7.js:5
+
+Be @ firebase-BYHGo2S7.js:1
+
+ze @ firebase-BYHGo2S7.js:1
+
+Mn @ firebase-BYHGo2S7.js:8
+
+e.Xa @ firebase-BYHGo2S7.js:8
+
+e.Ca @ firebase-BYHGo2S7.js:8
+
+Tn @ firebase-BYHGo2S7.js:7
+
+wn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Pa @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+e.send @ firebase-BYHGo2S7.js:6
+
+e.ea @ firebase-BYHGo2S7.js:8
+
+Dt @ firebase-BYHGo2S7.js:5
+
+Yn @ firebase-BYHGo2S7.js:9
+
+e.Da @ firebase-BYHGo2S7.js:9
+
+ue @ firebase-BYHGo2S7.js:1
+
+Promise.then
+
+oe @ firebase-BYHGo2S7.js:1
+
+Kn @ firebase-BYHGo2S7.js:9
+
+Zn @ firebase-BYHGo2S7.js:9
+
+St.Y @ firebase-BYHGo2S7.js:5
+
+St.ba @ firebase-BYHGo2S7.js:5
+
+Be @ firebase-BYHGo2S7.js:1
+
+ze @ firebase-BYHGo2S7.js:1
+
+Mn @ firebase-BYHGo2S7.js:8
+
+e.Xa @ firebase-BYHGo2S7.js:8
+
+e.Ca @ firebase-BYHGo2S7.js:8
+
+Tn @ firebase-BYHGo2S7.js:7
+
+wn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+Promise.then
+
+Cn @ firebase-BYHGo2S7.js:6
+
+e.Ma @ firebase-BYHGo2S7.js:6
+
+برمت يحلها
+
+الخطأ الظاهر في السجل (Console) يرجع إلى مشكلتين رئيسيتين:
+
+الخطأ الأساسي: net::ERR_QUIC_PROTOCOL_ERROR.QUIC_TOO_MANY_RTOS
+
+وهذا يعني أن الاتصال الفوري المباشر (Long-Polling / WebSockets) بين تطبيقك وسيرفرات Firestore واجه انقطاعاً أو بطئاً في الشبكة أثناء استخدام بروتوكول HTTP/3 (QUIC)، مما أدى لتجاوز وقت الانتظار المسموح به (Retransmission Timeouts).
+
+رسائل التحذير: [OrphanCleanup] Skipped... هي مجرد تحذيرات تنظيف داخلي من المتصفح أو مكتبات إضافية، ولا تسبب خللاً في التطبيق.
+
+🛠️ الحلول البرمجية والسريعة
+1. الحل على مستوى الكود (تعديل تهيئة Firestore)
+لحل مشكلة بروتوكول QUIC والمقبض المباشر في Firestore بشكل جذري، يمكنك إجبار Firestore على استخدام بروتوكول Long-Polling العادي لمنع مشاكل بروتوكول QUIC/HTTP3 على بعض الشبكات:
+
+إذا كنت تستخدم Firebase Web SDK v9 / v10 / v11 (Modular):
+استبدل getFirestore(app) بـ initializeFirestore مع تفعيل خيار experimentalAutoDetectLongPolling:
+
+JavaScript
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
+
+// بدلاً من getFirestore(app)
+const db = initializeFirestore(app, {
+  experimentalAutoDetectLongPolling: true, // يكتشف الشبكات المتقطعة ويعود لـ Long-Polling تلقائياً
+});
+إذا كنت تستخدم Firebase v8 (Compat / Legacy):
+
+JavaScript
+firebase.firestore().settings({
+  experimentalAutoDetectLongPolling: true
+});
+2. تفعيل التخزين المؤقت (Offline Persistence)
+لضمان عدم توقف التطبيق أو ظهور شاشة بيضاء للستخدم عند حدوث هبوط مفاجئ في الشبكة، تأكد من تفعيل المزامنة المحلية:
+
+JavaScript
+import { initializeFirestore, persistentLocalCache } from "firebase/firestore";
+
+const db = initializeFirestore(app, {
+  localCache: persistentLocalCache()
+});
+3. حلول سريعة أثناء التطوير (على متصفحك)
+إذا كانت المشكلة تظهر لك فقط أثناء التجربة والتطوير:
+
+إيقاف QUIC في Chrome: افتح chrome://flags/#enable-quic في متصفحك واجعل خيار Experimental QUIC protocol مستعداً كـ Disabled، ثم أعد تشغيل المتصفح.
+
+تغيير الشبكة / أدوات Vpn: أحياناً يكون مزود خدمة الإنترنت المحلي يفرض قيوداً أو يحدث فقدان للباقات (Packet Loss) على حزم HTTP/3.
+
+كل اللي عملته مش ظاهر في التغيرات قبل ما اعمل بابلش كانه مش عدل حتاجه
+
+هذه المشكلة تحدث عادةً بسبب إما عدم حفظ التغييرات في ذاكرة المتصفح/الكاش (Cache Issue)، أو لأن الاتصال بـ Firebase انقطع أثناء التعديل فما اتسجلتش التغيرات في الـ State، أو بسبب خيار الـ Draft/Drafts في منصة التطوير (مثل Replit أو Vercel).
+
+إليك الخطوات بالترتيب لتشخيص المشكلة واسترجاع التعديلات:
+
+1. افحص حالة المزامنة (Auto-Save / Working Directory)
+على Replit: تأكد أن الملفات التي عدلتها لا يوجد بجانبها علامة نقطة برتقالية/زرقاء أو كلمة (Unsaved). أحياناً يكون المجلد أو الملف مفتوحاً في تبويب آخر أو تم فتح جلسة ثانية (Session) في متصفح مختلف.
+
+على Git / Version Control: افتح الـ Terminal واكتب:
+
+Bash
+git status
+شوف هل الملفات المعدلة طالعة باللون الأحمر (Unstaged) أو الأخضر (Staged)؟ إذا كانت باللون الأحمر، فالتعديلات موجودة محلياً فقط ولم تدخل في الـ Commit الذي يُبنى منه الـ Publish/Deploy.
+
+2. مشكلة الـ Cache وتفريغ ذاكرة المتصفح
+في كثير من الأحيان، التطبيق يعرض النسخة القديمة المحفوظة في الـ Browser Cache خاصة بعد مشاكل network/QUIC التي ظهرت في الـ Console:
+
+افتح صفحة المعاينة (Preview).
+
+اضغط Ctrl + Shift + R (أو Cmd + Shift + R على Mac) لإجراء Hard Reload لتجاوز الكاش.
+
+أو افتح النافذة المخفية (Incognito Mode) وجرب الخدمة مجدداً.
+
+3. تأكد من مسار البناء (Build Command & Entry Point)
+إذا كنت تسحب التعديلات من ملفات معينة:
+
+تأكد أن الملف الذي قمت بالتعديل عليه هو نفسه الملف الذي يستدعيه الـ Router أو الـ Main Component (مثلاً App.jsx أو index.js).
+
+أحياناً يتم التعديل على ملف نُسخة قديمة أو ملف داخل مجلد مختلف دون انتباه.
+
+4. حيلة سريعة لاسترجاع أحدث نسخة (الحفظ اليدوي)
+إذا شككت أن المحرر (IDE) لم يمرر التغيرات:
+
+اذهب للملف الرئيسي الذي عدلت فيه.
+
+أضف سطر فارغ أو تعليق بسيط (مثال: // test update).
+
+اضغط Ctrl + S يدويًا للحفظ.
+
+افحص مجدداً في الـ Preview أو اكتب في الـ Terminal:
+
+Bash
+npm run build
+أو npm run dev لمعرفة ما إذا كانت هناك أخطاء تمنع تحديث الملفات (Build Errors).
+
+بص انا بكتب اللي بتبعته على جوجل ايه اي استديو بعدين بدخل اعمل نشر على جيت هاب بس كل مرة بلاقي التغيرات اللي عملها دلوقتي مش لاقي تغيرات خالص وبالتالي مفيش حاجه هتحصل على فيرسل لاني مفيش حاجه راحت لجيت هاب
+
+السبب الحقيقي لمشكلتك أصبح واضحاً جداً الآن!
+
+عندما تطلب من Google AI Studio تعديل الكود أو إنشاء شفرات برمجية، فإن Google AI Studio لا يقدم لك بيئة تطوير متكاملة (IDE) متصلة مباشرة بمشروعك أو بـ Git؛ هو مجرد نموذج ذكاء اصطناعي (أو واجهة دردشة) يقدم لك الأكواد، ولكن التعديلات لا تُحفظ تلقائياً في ملفات مشروعك الحقيقية على جهازك أو على Replit/VS Code.
+
+لذلك عندما تذهب إلى Git/GitHub لعمل git commit و git push لرفعها إلى Vercel، يخبرك Git أنه لا توجد أي تغييرات جديدة (Nothing to commit, working tree clean)، لأن التغييرات موجودة فقط داخل شاشة المحادثة في Google AI Studio ولم تنتقل بعد إلى ملفات المشروع!
+
+🔄 الحل والخطوات الصحيحة لنقل التعديلات من AI Studio إلى GitHub و Vercel:
+الخطوة 1: نسخ التعديلات يدوياً إلى بيئة التطوير (VS Code أو Replit)
+بعد أن يقدم لك Google AI Studio الأكواد والتعديلات الجديدة، قم بنسخ الكود المعدل.
+
+افتح محرر الأكواد الذي تستخدمه (سواء VS Code على اللابتوب أو Replit).
+
+افتح الملف المعني (مثلاً App.jsx أو firebase.js أو غيرها) وألصق الكود الجديد ثم احفظ الملف (Ctrl + S).
+
+الخطوة 2: التأكد من أن Git شعر بالتغييرات
+افتح الـ Terminal في VS Code أو Replit واكتب الأمر التالي:
+
+Bash
+git status
+سيتغير لون اسم الملفات المعدلة إلى الأحمر، وهذا يعني أن Git لاحظ التغييرات التي أضفتها من AI Studio!
+
+الخطوة 3: رفع التغييرات إلى GitHub
+اكتب الأوامر التالية بالترتيب في الـ Terminal:
+
+تجهيز التغييرات:
+
+Bash
+git add .
+تسجيل التعديلات بحفظ رسمي (Commit):
+
+Bash
+git commit -m "إضافة الميزات والتعديلات الجديدة من AI Studio"
+رفع الكود إلى GitHub:
+
+Bash
+git push origin main
+(ملاحظة: استبدل main بـ master إذا كان اسم الفرع الرئيسي لديك master).
+
+الخطوة 4: التحديث التلقائي على Vercel
+بمجرد النجاح في أمر git push إلى GitHub، سيقوم Vercel تلقائياً باكتشاف الـ Commit الجديد وبدء عملية الـ Build والـ Deploy تلقائياً خلال ثوانٍ، وتظهر التعديلات على موقعك المباشر!
+
+مش عارف اعمل حاجة من دول
+
+ولا يهمك إطلاقاً، الحل بسيط جداً وبدون تعقيد أو استخدام أوامر برمجية طويلة!
+
+إذا كنت تستخدم Google AI Studio مع Replit و GitHub و Vercel، فالسبب هو أن الأكواد الموجودة في AI Studio لا تنتقل بنفسها لـ GitHub.
+
+إليك أسهل طريقة خطوة بخطوة لتطبيق التعديلات ونشرها فوراً:
+
+الخطوة 1: انسخ الكود من Google AI Studio
+اذهب للشات في Google AI Studio عند الكود الذي تم تعديله.
+
+اضغط على زر Copy Code (نسخ الكود) الموجود فوق مربع الكود مباشرة.
+
+الخطوة 2: الصق الكود في Replit (أو المكان الذي تبني فيه مشروعك)
+افتح مشروعك على Replit (أو VS Code).
+
+افتح الملف المعني بالتعديل (مثلاً: index.js أو App.jsx أو firebase.js).
+
+امسح الكود القديم في هذا الملف، وانسخ الكود الجديد مكانه.
+
+اضغط على حفظ (Ctrl + S).
+
+الخطوة 3: اربط التغييرات بـ GitHub بدون أوامر!
+إذا كنت تستخدم Replit:
+من القائمة الجانبية في اليسار/اليمين داخل Replit، ابحث عن آيقونة Git (تكون على شكل شجرة صغيرة أو خريطة أغصان).
+
+ستجد قائمة بالملفات التي عدلتها مكتوب بجانبها التغييرات.
+
+اكتب أي كلمة في مربع الوصف (مثل: تحديث جديد).
+
+اضغط على زر Commit & Push أو Stage & Commit.
+
+إذا كنت ترفع يدويًا من موقع GitHub مباشر:
+افتح مستودع مشروعك على موقع GitHub.
+
+ادخل على الملف الذي تريد تعديله.
+
+اضغط على آيقونة القلم Edit this file.
+
+حدد الكود القديم واستبدله بالكود الجديد.
+
+اضغط على الزر الأخضر Commit changes بأسفل الصفحة.
+
+🚀 ماذا يحدث بعد ذلك؟
+بمجرد حفظ التعديل على GitHub، موقع Vercel متصل بـ GitHub تلقائياً، وسيقوم ببناء النسخة الجديدة ونشرها على موقعك في خلال دقيقة واحدة بدون أي تدخل منك!
+
+إذا توقفت عند أي خطوة محددة، أخبرني فقط بالمنصة التي تكتب عليها الكود (Replit أو غيرها) وسأمشي معك خطوة بخطوة!
+
+اكتبلي امر اقوله لجوجل ايه اي استديو يرفع كل التعديلات على جيت هاب او يعمل التغيرات دي وانا انشرها يديوا
+
+عظيم جداً! لنوضح نقطة مهمة أولاً: Google AI Studio لا يملك صلاحية الوصول المباشر لحسابك على GitHub ليرفع الكود بنفسه (ولا يستطيع تنفيذ أوامر Terminal على جهازك تلقائياً).
+
+ولكن، يمكنك أن تطلب منه أن يعطيك الملفات الكاملة والمعدلة جاهزة لتنسخها وتضعها في مشروعك، أو يكتب لك الأوامر البرمجية البسيطة التي تنفذها بضغطة زر.
+
+إليك أمرين (Prompts) يمكنك نسخ أحدهما ولصقه في Google AI Studio حسب الطريقة التي تفضلها:
+
+الخيار الأول: إذا كنت تريد منه أن يعطيك الكود كاملاً لرفعه يدوياً (الأسهل)
+انسخ هذا النص وأرسله لـ Google AI Studio:
+
+"من فضلك اعطني الكود الكامل والمعدل للملفات التي قمت بتغييرها (مع ذكر اسم كل ملف بوضوح). أريد نسخ الكود كاملاً ولصقه في مشروعي يدويًا ثم رفعه إلى GitHub."
+
+ماذا تفعل بعد أن يرد عليك؟
+
+تنسخ الكود لكل ملف من AI Studio.
+
+تفتح الملف نفسه في مشروعك (سواء على Replit أو GitHub مباشرة أو VS Code) واستبدل الكود القديم بالجديد واكتم Ctrl + S للحفظ.
+
+الخيار الثاني: إذا كنت تستخدم Replit أو VS Code وتريد منه إعطاءك أوامر Git جاهزة
+انسخ هذا النص وأرسله لـ Google AI Studio:
+
+"اعطني الأكواد المعدلة بشكل كامل، واكتب لي في النهاية أوامر Git (Terminal Commands) جاهزة للنسخ لكي أقوم برفع التعديلات فوراً إلى GitHub من خلال الـ Terminal."
+
+الأوامر التي سيعطيك إياها وستنسخها للـ Terminal ستكون كالتالي:
+
+Bash
+git add .
+git commit -m "تحديث التعديلات الجديدة"
+git push origin main
+💡 تذكر دائماً: بمجرد أن تصل التعديلات إلى GitHub (سواء عدلت الملفات يدوياً على موقع GitHub أو رفعتها من Replit/VS Code)، سيقوم Vercel بنشر التحديثات على موقعك تلقائياً خلال ثوانٍ!
+
+تطبيق كافة التعديلات والميزات المطلوبة وتحديث ملفات المشروع بشكل كامل ومباشر:
+
+إدارة المجموعات والطلاب: نموذج إضافة مجموعة مع التحقق (Validation)، البحث والفلترة المتقدمة، تذكيرات واتساب، وتسجيل الحضور وحفظه في Firestore.
+التحليلات والرسوم البيانية: لوحة المالية مع Recharts وأقسام قابلة للطي (Accordion).
+تهيئة Firebase: تحسين الاتصال مع persistentLocalCache و experimentalAutoDetectLongPolling.
+مستودع Git: تهيئة وتثبيت كافة التعديلات (git commit) لتكون جاهزة تماماً للرفع إلى GitHub.
+التطبيق يعمل بكفاءة تامة وبدون أي أخطاء!
+
+lightbulb_tips
+
+Suggestions
+
+يا أستاذ شريف، لكي تتأكد من أن كل هذه التعديلات تنتقل بالفعل إلى تطبيقك (سند المعلم) وتصل إلى GitHub ومنها إلى Vercel، عليك تنفيذ الخطوات التالية بنفسك في بيئة العمل الخاصة بك (Replit أو VS Code)، لأن Google AI Studio لا يمكنه تعديل الملفات مباشرة على جهازك أو كتابة Commits في Git.
+
+إليك الكود المحدث لكل ملف جاهزاً للنسخ، يليها أوامر Git لرفعها فوراً.
+
+1. ملف تهيئة Firebase (src/firebase.js أو src/lib/firebase.js)
+أضف هذه التهيئة لحل مشاكل الاتصال ومزامنة البيانات دون أخطاء:
+
+JavaScript
+import { initializeApp } from "firebase/app";
+import { 
+  initializeFirestore, 
+  persistentLocalCache, 
+  persistentMultipleTabManager 
+} from "firebase/firestore";
+
+const firebaseConfig = {
+  // بيانات تهيئة مشروعك الخاص بـ سند المعلم (Firebase Config)
+  apiKey: "YOUR_API_KEY",
+  authDomain: "sanadak-3cc89.firebaseapp.com",
+  projectId: "sanadak-3cc89",
+  storageBucket: "sanadak-3cc89.firebasestorage.app",
+  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+
+const app = initializeApp(firebaseConfig);
+
+// تهيئة Firestore مع دعم التخزين المحلي والتعامل مع الشبكة المتقطعة
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager()
+  }),
+  experimentalAutoDetectLongPolling: true
+});
+2. نموذج إضافة مجموعة ومتابعة الحضور (src/components/GroupsManager.jsx)
+JavaScript
+import React, { useState } from 'react';
+import { collection, addDoc, doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { db } from '../firebase';
+
+export default function GroupsManager({ groups, students }) {
+  const [groupName, setGroupName] = useState('');
+  const [schedule, setSchedule] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [error, setError] = useState('');
+
+  // 1. إضافة مجموعة جديدة مع التحقق (Validation)
+  const handleAddGroup = async (e) => {
+    e.preventDefault();
+    if (!groupName.trim() || !schedule.trim()) {
+      setError('يرجى ملء جميع الحقول المطلوبة');
+      return;
+    }
+    try {
+      await addDoc(collection(db, 'groups'), {
+        name: groupName,
+        schedule: schedule,
+        createdAt: new Date()
+      });
+      setGroupName('');
+      setSchedule('');
+      setError('');
+      alert('تمت إضافة المجموعة بنجاح');
+    } catch (err) {
+      console.error("خطأ أثناء إضافة المجموعة:", err);
+      setError('حدث خطأ أثناء حفظ البيانات');
+    }
+  };
+
+  // 2. إرسال تذكير واتساب للطلاب
+  const sendWhatsAppReminder = (phone, studentName, groupName) => {
+    const message = `أهلاً ${studentName}، نود تذكيرك بموعد الحصة القادمة لمجموعة (${groupName}).`;
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank');
+  };
+
+  // 3. تسجيل الحضور في Firestore
+  const handleAttendance = async (studentId, status) => {
+    try {
+      const studentRef = doc(db, 'students', studentId);
+      await updateDoc(studentRef, {
+        attendanceHistory: arrayUnion({
+          date: new Date().toISOString().split('T')[0],
+          status: status
+        })
+      });
+      alert('تم تسجيل الحضور بنجاح');
+    } catch (err) {
+      console.error("خطأ في تسجيل الحضور:", err);
+    }
+  };
+
+  // 4. الفلترة والبحث المتقدم
+  const filteredStudents = students.filter(s => 
+    s.name.includes(searchQuery) || (s.phone && s.phone.includes(searchQuery))
+  );
+
+  return (
+    <div className="p-4 space-y-6" dir="rtl">
+      {/* نموذج إدخال مجموعة جديدة */}
+      <form onSubmit={handleAddGroup} className="bg-white p-4 rounded-xl shadow border space-y-3">
+        <h3 className="font-bold text-lg">إضافة مجموعة جديدة</h3>
+        {error && <p className="text-red-500 text-sm">{error}</p>}
+        <input 
+          type="text" 
+          placeholder="اسم المجموعة" 
+          value={groupName} 
+          onChange={(e) => setGroupName(e.target.value)}
+          className="w-full border p-2 rounded-lg"
+        />
+        <input 
+          type="text" 
+          placeholder="المواعيد (مثال: السبت والأربعاء 4 مساءً)" 
+          value={schedule} 
+          onChange={(e) => setSchedule(e.target.value)}
+          className="w-full border p-2 rounded-lg"
+        />
+        <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-lg w-full font-bold">
+          حفظ المجموعة
+        </button>
+      </form>
+
+      {/* البحث والفلترة */}
+      <div className="bg-white p-4 rounded-xl shadow border">
+        <input 
+          type="text" 
+          placeholder="ابحث باسم الطالب أو رقم الهاتف..." 
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full border p-2 rounded-lg mb-4"
+        />
+
+        <h4 className="font-bold mb-2">قائمة الطلاب والتأكيد عبر واتساب:</h4>
+        <div className="space-y-2">
+          {filteredStudents.map((student) => (
+            <div key={student.id} className="flex items-center justify-between border-b pb-2">
+              <div>
+                <p className="font-semibold">{student.name}</p>
+                <p className="text-xs text-gray-500">{student.groupName || 'بدون مجموعة'}</p>
+              </div>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => handleAttendance(student.id, 'حضور')}
+                  className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs"
+                >
+                  حاضر
+                </button>
+                <button 
+                  onClick={() => handleAttendance(student.id, 'غياب')}
+                  className="bg-red-100 text-red-700 px-2 py-1 rounded text-xs"
+                >
+                  غائب
+                </button>
+                {student.phone && (
+                  <button 
+                    onClick={() => sendWhatsAppReminder(student.phone, student.name, student.groupName)}
+                    className="bg-emerald-600 text-white px-2 py-1 rounded text-xs"
+                  >
+                    واتساب
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+3. لوحة المالية والرسوم البيانية (src/components/FinancialAnalytics.jsx)
+JavaScript
+import React, { useState } from 'react';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+
+export default function FinancialAnalytics({ data }) {
+  const [isAccordionOpen, setIsAccordionOpen] = useState(true);
+
+  // بيانات توضيحية للإيرادات والمصروفات
+  const chartData = data || [
+    { month: 'يناير', إيرادات: 4000, مصروفات: 2400 },
+    { month: 'فبراير', إيرادات: 3000, مصروفات: 1398 },
+    { month: 'مارس', إيرادات: 9800, مصروفات: 2000 },
+    { month: 'أبريل', إيرادات: 3908, مصروفات: 2780 },
+  ];
+
+  return (
+    <div className="bg-white p-4 rounded-xl shadow border space-y-4" dir="rtl">
+      {/* القسم القابل للطي Accordion Header */}
+      <button 
+        onClick={() => setIsAccordionOpen(!isAccordionOpen)}
+        className="w-full flex justify-between items-center text-lg font-bold py-2 border-b"
+      >
+        <span>📊 التحليلات والتقرير المالي</span>
+        <span>{isAccordionOpen ? '▲' : '▼'}</span>
+      </button>
+
+      {/* Accordion Content */}
+      {isAccordionOpen && (
+        <div className="pt-4 h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="month" />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="إيرادات" fill="#10B981" />
+              <Bar dataKey="مصروفات" fill="#EF4444" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
+}
+🚀 خطوات الرفع وتحديث GitHub و Vercel:
+انسخ الكود لكل ملف بالأعلى وضعه في ملفاته الخاصة في بيئة التطوير (Replit أو VS Code).
+
+احفظ كافة الملفات (Ctrl + S).
+
+افتح الـ Terminal واكتب الأوامر التالية بالترتيب:
+
+Bash
+git add .
+git commit -m "تحديث الميزات: إدارة المجموعات، التسجيل المالي، وتحسين اتصال Firebase"
+git push origin main
+بمجرد تنفيذ أمر git push بنجاح، سيقوم موقع Vercel بنشر الأكواد والتعديلات الجديدة فوراً تلقائياً!
+
+Skip to content
+
+
+
+
+
+moniskacadmy-cyber
+sanad-almoallem
+
+
+Repository navigation
+
+
+Code
+
+Issues
+
+Pull requests
+1
+ (1)
+
+Agents
+
+Actions
+
+Projects
+
+Wiki
+
+Security and quality
+1
+ (1)
+
+Insights
+
+Settings
+
+
+Commit 96fa193
+
+
+
+moniskacadmy-cyber
+
+committed
+
+2 hours ago
+
+feat: enhance filtering and attendance reporting
+
+Add attendance statistics and visualization to FinancialDashboard
+Implement robust Arabic text normalization for consistent data handling
+Add advanced status and subject filters to the Students management view
+
+
+1 parent 061dbcc
+
+commit 96fa193
+
+5 files changed
+
++923
+
+-95
+
+Lines changed: 923 additions & 95 deletions
+
+File tree
+
+
+
+
+
+
+
+
+
+src
+
+
+components
+
+FinancialDashboard.tsx
+
+GroupManagementTab.tsx
+
+StudentsTab.tsx
+
+firebase.ts
+
+types.ts
+
+
+ 
+
+‎src/components/FinancialDashboard.tsx‎
+
++127
+
+Lines changed: 127 additions & 0 deletions
+
+Original file line numberDiff line numberDiff line change
+
+@@ -16,7 +16,20 @@ import {
+
+X,
+
+Send,
+
+FileText,
+
+UserCheck,
+
+} from 'lucide-react';
+
+import {
+
+ResponsiveContainer,
+
+BarChart,
+
+Bar,
+
+XAxis,
+
+YAxis,
+
+Tooltip,
+
+Legend,
+
+CartesianGrid,
+
+Cell,
+
+} from 'recharts';
+
+import { useTheme } from '../context/ThemeContext';
+
+
+
+interface FinancialDashboardProps {
+
+profile: TeacherProfile;
+
+@@ -114,6 +127,49 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
+
+};
+
+
+
+const isAllTime = selectedMonthKey === 'all';
+
+const { isDark } = useTheme();
+
+// Attendance & Absence stats for the selected/current month
+
+const monthAttendanceStats = React.useMemo(() => {
+
+let presentCount = 0;
+
+let absentCount = 0;
+
+let excusedCount = 0;
+
+Object.values(lessonsMap).forEach((lessons) => {
+
+lessons.forEach((l) => {
+
+if (!l.date) return;
+
+if (!isAllTime && !l.date.startsWith(selectedMonthKey)) return;
+
+if (l.attendance === 'present') {
+
+presentCount++;
+
+} else if (l.attendance === 'absent') {
+
+absentCount++;
+
+} else if (l.attendance === 'excused' || l.attendance === 'late') {
+
+excusedCount++;
+
+}
+
+});
+
+});
+
+const total = presentCount + absentCount + excusedCount;
+
+const attendanceRate = total > 0 ? Math.round((presentCount / total) * 100) : 100;
+
+const absenceRate = total > 0 ? Math.round(((absentCount + excusedCount) / total) * 100) : 0;
+
+const chartData = [
+
+{ name: 'حاضر', count: presentCount, fill: '#10b981' },
+
+{ name: 'غائب', count: absentCount, fill: '#f43f5e' },
+
+{ name: 'معتذر/متأخر', count: excusedCount, fill: '#f59e0b' },
+
+];
+
+return {
+
+presentCount,
+
+absentCount,
+
+excusedCount,
+
+total,
+
+attendanceRate,
+
+absenceRate,
+
+chartData,
+
+};
+
+}, [lessonsMap, selectedMonthKey, isAllTime]);
+
+
+
+// Calculate statistics per student
+
+const studentFinancials = students.map((st) => {
+
+@@ -522,6 +578,77 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
+
+</p>
+
+</div>
+
+
+
+{/* Attendance & Absence Recharts Analytics for Selected Month */}
+
+<div className="rounded-3xl bg-slate-900/90 border border-purple-500/30 p-4 sm:p-5 shadow-xl space-y-3">
+
+<div className="flex items-center justify-between flex-wrap gap-2">
+
+<div className="flex items-center gap-2">
+
+<div className="w-9 h-9 rounded-2xl bg-emerald-600/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30">
+
+<UserCheck className="w-5 h-5 text-emerald-400" />
+
+</div>
+
+<div>
+
+<h3 className="text-sm font-bold text-white">إحصائيات حضور وغياب الطلاب</h3>
+
+<p className="text-[11px] text-slate-400">نسبة الحضور والغياب خلال ({selectedMonthInfo.label})</p>
+
+</div>
+
+</div>
+
+<div className="flex items-center gap-2 text-xs">
+
+<span className="px-2.5 py-1 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold">
+
+نسبة الحضور: {monthAttendanceStats.attendanceRate}% 🟢
+
+</span>
+
+<span className="px-2.5 py-1 rounded-xl bg-rose-950/80 border border-rose-500/40 text-rose-300 font-bold">
+
+نسبة الغياب: {monthAttendanceStats.absenceRate}% 🔴
+
+</span>
+
+</div>
+
+</div>
+
+{/* Recharts Bar */}
+
+<div className="h-56 w-full bg-slate-950/60 rounded-2xl border border-slate-800 p-3 pt-4" dir="ltr">
+
+{monthAttendanceStats.total === 0 ? (
+
+<div className="h-full flex items-center justify-center text-xs text-slate-400">
+
+لا توجد حصص أو بيانات حضور مسجلة في هذه الفترة
+
+</div>
+
+) : (
+
+<ResponsiveContainer width="100%" height="100%">
+
+<BarChart
+
+data={monthAttendanceStats.chartData}
+
+margin={{ top: 10, right: 10, left: -25, bottom: 5 }}
+
+>
+
+<CartesianGrid
+
+strokeDasharray="3 3"
+
+stroke={isDark ? '#334155' : '#cbd5e1'}
+
+opacity={isDark ? 0.3 : 0.6}
+
+vertical={false}
+
+/>
+
+<XAxis
+
+dataKey="name"
+
+stroke={isDark ? '#94a3b8' : '#64748b'}
+
+tick={{ fontSize: 11, fill: isDark ? '#94a3b8' : '#64748b' }}
+
+/>
+
+<YAxis
+
+stroke={isDark ? '#94a3b8' : '#64748b'}
+
+tick={{ fontSize: 11, fill: isDark ? '#94a3b8' : '#64748b' }}
+
+allowDecimals={false}
+
+/>
+
+<Tooltip
+
+contentStyle={{
+
+backgroundColor: isDark ? '#0f172a' : '#ffffff',
+
+borderColor: isDark ? '#334155' : '#e2e8f0',
+
+borderRadius: '12px',
+
+fontSize: '11px',
+
+color: isDark ? '#f8fafc' : '#0f172a',
+
+}}
+
+/>
+
+<Bar dataKey="count" name="عدد الحصص" radius={[8, 8, 0, 0]}>
+
+{monthAttendanceStats.chartData.map((entry, index) => (
+
+<Cell key={`cell-${index}`} fill={entry.fill} />
+
+))}
+
+</Bar>
+
+</BarChart>
+
+</ResponsiveContainer>
+
+)}
+
+</div>
+
+</div>
+
+{/* Search & Filters */}
+
+<div className="space-y-2">
+
+<div className="flex items-center gap-2">
+
+‎src/components/GroupManagementTab.tsx‎
+
++2
+
+-1
+
+Lines changed: 2 additions & 1 deletion
+
+Original file line numberDiff line numberDiff line change
+
+@@ -16,6 +16,7 @@ import {
+
+addCenter,
+
+addStudent,
+
+archiveGroup,
+
+normalizeArabicText,
+
+} from '../firebase';
+
+import { GroupDetailsModal } from './GroupDetailsModal';
+
+import {
+
+@@ -365,7 +366,7 @@ export const GroupManagementTab: React.FC<GroupManagementTabProps> = ({
+
+try {
+
+// 1. Ensure Center exists
+
+let targetCenter = centers.find(
+
+(c) => c.name.trim().toLowerCase() === cleanCenter.toLowerCase()
+
+(c) => !c.archived && normalizeArabicText(c.name || '') === normalizeArabicText(cleanCenter)
+
+);
+
+let centerId = targetCenter?.id;
+
+if (!centerId) {
+
+
+
+0 commit comments
+
+Comments
+
+0
+
+ (0)
+
+
+
+2 files remain
+
+مرحباً أستاذ شريف! ممتاز جداً، أرى من خلال سجل التحديثات (Commit) أنك قمت بنجاح بإضافة ميزات رائعة لتطبيق سند المعلم، وتتضمن:
+
+إضافة إحصائيات الحضور والغياب والرسوم البيانية باستخدام Recharts في FinancialDashboard.
+
+تحسين دالة تطبيع النص العربي (normalizeArabicText) للتعامل الدقيق مع الأسماء والمراكز.
+
+تحديث إدارة المجموعات والطلاب.
+
+هل تحتاج إلى مساعدة في تطوير ميزة جديدة، أو تعديل إضافي على الكود، أو مواجهة أي مشكلة برمجية حالياً؟
+
+96fa1938039611e02a9f555a703c01349e0f8cef
+
+هذا هو رمز الـ Commit الهاش (Commit Hash) الخاص بالتحديث الأخير الذي نشرته على GitHub:
+
+96fa1938039611e02a9f555a703c01349e0f8cef (أو الاختصار الخاص به 96fa193).
+
+📌 تفاصيل هذا الـ Commit كما ظهرت في مستودعك:
+اسم المشروع: sanad-almoallem
+
+الحساب: moniskacadmy-cyber
+
+عنوان التحديث (Message): feat: enhance filtering and attendance reporting
+
+الملفات المحدثة (5 ملفات):
+
+src/components/FinancialDashboard.tsx
+
+src/components/GroupManagementTab.tsx
+
+src/components/StudentsTab.tsx
+
+src/firebase.ts
+
+src/types.ts
+
+هل تحتاج مساعدة في مراجعة هذا التحديث، أو اختبار أي جزء في الكود، أو إضافة ميزة جديدة على هذا الـ Commit؟
+
+عاوز برمت انه يظبط كل حاجه بين الوضع الفاتح والداكن يعنى تكون كل كلمة واضحة في الوضعين
+
+لضبط التباين وتأكيد أن كل كلمة وعنصر مرئي وواضح تماماً في الوضع الفاتح (Light Mode) والوضع الداكن (Dark Mode) بدون أي نصوص مختفية أو غير واضحة، أفضل طريقة هي اعتماد نظام متغيرات الألوان (CSS Variables أو Tailwind Classes) المربوطة بـ ThemeContext في مشروعك.
+
+إليك دليل ومجموعة الأكواد الجاهزة لتطبيقها مباشرة في مكونات تطبيقك لضمان توافق مثالي 100%:
+
+1. ضبط ألوان الخلفيات والنصوص العامة (Tailwind Classes القياسية)
+احرص دائماً على ربط الألوان بالوضع الداكن باستخدام بادئة dark:، واستخدام الألوان ذات التباين العالي:
+
+الخلفيات العامة:
+
+الفاتح: bg-slate-50 أو bg-white
+
+الداكن: dark:bg-slate-950 أو dark:bg-slate-900
+
+النصوص الأساسية (العناوين):
+
+الفاتح: text-slate-900
+
+الداكن: dark:text-slate-100 (أو dark:text-white)
+
+النصوص الفرعية (الوصف):
+
+الفاتح: text-slate-600
+
+الداكن: dark:text-slate-400
+
+البطاقات (Cards) والمربعات:
+
+الفاتح: bg-white border-slate-200 shadow-sm
+
+الداكن: dark:bg-slate-900/90 dark:border-slate-800 dark:shadow-xl
+
+2. نموذج مكون جاهز ومحسّن للوضعَين (CardTemplate.tsx)
+يمكنك تطبيق هذا النمط الموحد على بطاقاتك في المشروع (مثل لوحة التحكم أو الحصص):
+
+TypeScript
+import React from 'react';
+import { useTheme } from '../context/ThemeContext';
+
+interface CardProps {
+  title: string;
+  description: string;
+}
+
+export const AdaptiveCard: React.FC<CardProps> = ({ title, description }) => {
+  const { isDark } = useTheme();
+
+  return (
+    <div className={`p-5 rounded-2xl border transition-all duration-200 ${
+      isDark 
+        ? 'bg-slate-900 border-slate-800 text-slate-100 shadow-lg shadow-black/40' 
+        : 'bg-white border-slate-200 text-slate-900 shadow-md'
+    }`}>
+      {/* العنوان واضح في الوضعين */}
+      <h3 className={`font-bold text-base ${isDark ? 'text-white' : 'text-slate-900'}`}>
+        {title}
+      </h3>
+      
+      {/* النص الفرعي واضح وغير باهت */}
+      <p className={`text-xs mt-1 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+        {description}
+      </p>
+    </div>
+  );
+};
+3. إعدادات الـ Tooltips والرسوم البيانية (Recharts) لتعمل بوضوح
+بما أنك أضفت مؤخراً FinancialDashboard، فتأكد أن تلميحات الرسوم البيانية (Tooltip) تتكيف مع الثيم تماماً كما فعلت في الكود السابق، لتفادي ظهور خلفية بيضاء نصها أبيض في الوضع الداكن:
+
+JavaScript
+<Tooltip
+  contentStyle={{
+    backgroundColor: isDark ? '#0f172a' : '#ffffff', // خلفية داكنة أو فاتحة
+    borderColor: isDark ? '#334155' : '#e2e8f0',     // إطار متناسق
+    borderRadius: '12px',
+    fontSize: '11px',
+    color: isDark ? '#f8fafc' : '#0f172a',           // لون النص التلقائي واضح
+  }}
+/>
+💡 نصيحة سريعة للفحص:
+بعد تطبيق هذه التنسيقات على مكوناتك الرئيسية، جرب التبديل السريع بين الوضعين من زر الثيم في تطبيقك وتأكد من الآتي:
+
+لا يوجد نص رمادي غامق جداً على خلفية داكنة (مثل استخدام text-gray-900 بالخطأ في الوضع الداكن).
+
+الحدود (Borders) واضحة وليست مخفية (استخدم slate-800 للداكن و slate-200 للفاتح).
+
+مش عاوز كود عاوز كلام يقوله انه يكون فيه تيوب تحت الاحصائيات والمعلم يفتحها بمزاجة بحيث متبقاش زحمة سواء في الرىيسه او في الطلاب
+
+فكرة ممتازة جداً ومريحة للعين، وتعتمد على إخفاء التفاصيل غير الضرورية في أزرار أو قوائم منسدلة (أو أقسام قابلة للطي والفتح) يضغط عليها المعلم وقت ما يحتاج يقرأ التفاصيل، وبكدا الواجهة تفضل نظيفة ومرتبة ومن غير أي زحمة.
+
+إليك الكلمات والصياغات المقترحة لوصف هذه الفكرة أو طلبها، سواء كنت تريد كتابتها في ملاحظات التطوير، أو توجيهها كفكرة تصميمية لنفسك أثناء بناء الواجهة:
+
+💡 الصياغة المقترحة للفكرة (لتوضيحها في التصميم):
+"تصميم واجهة ذكية ومرنة (Collapsible Sections):"
+
+الهدف: منع زحمة الشاشة وجعل الواجهة الرئيسية أو شاشة الطلاب خفيفة ومرتاحة للعين.
+
+آلية العمل: تظهر الإحصائيات أو القوائم بشكل مختصر ومبسط جداً في البداية، ومع وجود زر تفاعلي واضح (مثل: "عرض التفاصيل الإضافية" أو "توسيع الإحصائيات")، يستطيع المعلم بضغطة زر فتح القسم ورؤية كل التفاصيل وقتما أراد، وإغلاقه مرة أخرى متى شاء لتعود الشاشة نظيفة.
+
+🎛️ أمثلة لنصوص الأزرار والعناوين التي يمكن وضعها في الواجهة:
+في قسم الإحصائيات:
+
+زر الفتح/الإغلاق: [ 📊 عرض تفاصيل الإحصائيات والرسوم البيانية ] (وعند الفتح يتحول الزر إلى: [ إخفاء الإحصائيات ▲ ]).
+
+في قائمة الطلاب أو المجموعات:
+
+زر التحكم: [ سجل الحضور والغياب المفصل 👁️ ] أو [ عرض الملاحظات والتقارير الكاملة ].
+
+بهذه الطريقة، تضمن أن الواجهة تكون هادئة ومنظمة (Clean UI)، والمعلم هو من يتحكم في ظهور البيانات التفصيلية متى احتاج إليها فقط!
+
+(index):120 [OrphanCleanup] Skipped: orphan cleanup is disabled / no-op.
+
+(index):120 محاولة 1 فشلت في تحديث التوكن، جاري إعادة المحاولة...
+
+console.<computed> @ (index):120
+
+fr @ index-zLGwe1SQ.js:128
+
+await in fr
+
+pr @ index-zLGwe1SQ.js:128
+
+xr @ index-zLGwe1SQ.js:128
+
+r @ index-zLGwe1SQ.js:132
+
+index-zLGwe1SQ.js:128  POST https://sanad-almoallem-three.vercel.app/api/reminders/check net::ERR_CONNECTION_CLOSED
+
+xr @ index-zLGwe1SQ.js:128
+
+await in xr
+
+r @ index-zLGwe1SQ.js:132
+
+(index):120 checkRemindersApi error (network/other): Failed to fetch
+
+console.<computed> @ (index):120
+
+xr @ index-zLGwe1SQ.js:128
+
+await in xr
+
+r @ index-zLGwe1SQ.js:132
+
+index-zLGwe1SQ.js:128  POST https://sanad-almoallem-three.vercel.app/api/reminders/check net::ERR_CONNECTION_CLOSED
+
+xr @ index-zLGwe1SQ.js:128
+
+await in xr
+
+r @ index-zLGwe1SQ.js:132
+
+(index):120 checkRemindersApi error (network/other): Failed to fetch
+
+console.<computed> @ (index):120
+
+xr @ index-zLGwe1SQ.js:128
+
+await in xr
+
+r @ index-zLGwe1SQ.js:132
+
+معناه ايه
+
+هذا الخطأ يعني أن التطبيق يحاول الاتصال بخدمة التذكيرات المباشرة (API) على مسار:
+[https://sanad-almoallem-three.vercel.app/api/reminders/check](https://sanad-almoallem-three.vercel.app/api/reminders/check)
+
+لكن الاتصال بالخادم (Server) ينقطع قبل إتمام الطلب (ERR_CONNECTION_CLOSED و Failed to fetch).
+
+🔍 تحليل المشكلة والتفاصيل:
+الخطأ الأول (net::ERR_CONNECTION_CLOSED):
+
+المتصفح أرسل طلب POST لفحص التذكيرات (checkRemindersApi) ولكن خادم Vercel أغلق الاتصال فجأة دون رد.
+
+السبب الأغلب: إما أن دالة التذكيرات في Vercel (Serverless Function / API Route) حدث بها خطأ غير متوقع أثناء التشغيل (Crash / Timeout)، أو أن الخدمة غير موجودة بهذا المسار بالتحديد على المستودع المستضيف.
+
+الخطأ الثاني (checkRemindersApi error (network/other): Failed to fetch):
+
+كود التطبيق في الجافاسكريبت حاول التعامل مع انقطاع الشبكة ووضع رسالة خطأ تنبيهية، وتكرار المحاولة أكثر من مرة دون فائدة.
+
+الخطأ الثالث (محاولة 1 فشلت في تحديث التوكن):
+
+التطبيق يحاول تحديث رمز المصادقة (Token) أو إشعارات الـ Web Push/FCM ولكن الاتصال انقطع أثناء ذلك.
+
+🛠️ طريقة الحل والإصلاح:
+1. التأكد من وجود مسار الـ API في المشروع
+تأكد من وجود الملف المسار التالي داخل مجلد المشروعات الخاص بك:
+
+إذا كنت تستخدم Next.js: أصل المسار يكون pages/api/reminders/check.ts أو app/api/reminders/check/route.ts.
+
+إذا كنت تستخدم Vercel Serverless Functions: يجب أن تكون داخل مجلد api/reminders/check.js.
+
+2. فحص سجلات Vercel (Vercel Logs)
+افتح لوحة التحكم في Vercel Dashboard لمشروع sanad-almoallem-three.
+
+اذهب لتبويب Logs أو Functions.
+
+ستجد هناك السبب الدقيق وراء إغلاق الـ API (مثل: غياب متغيرات البيئة Environment Variables الخاص بـ Firebase Admin أو مفاتيح الإشعارات).
+
+3. معالجة خطأ الاتصال في كود checkRemindersApi
+لضمان ألا تظهر رسائل مزعجة للمستخدم في حال انقطاع الإنترنت أو الخادم، يمكن إضافة شرط حماية بسيط باستخدام try/catch لمنع إعادة الطلب المتكرر في حالة الـ Connection Closed.
+
+اكتب برمت ابعته لجوجل ايه اي استديو يحل المشكله
+
+إليك برومبت (Prompt) متكامل وجاهز للنسخ لترسله مباشرة إلى Google AI Studio.
+
+البرومبت مصمم ليشخص سبب الانقطاع في Vercel Serverless Function، ويضيف حماية من التكرار اللانهائي، ويعالج خطأ تحديث التوكن تلقائياً:
+
+📋 البرومبت للنسخ واللصق:
+"لدي مشكلة في تطبيقي (سند المعلم) المرفوع على Vercel، حيث تظهر الأخطاء التالية في Console المتصفح أثناء استدعاء API التذكيرات وتحديث التوكن:
+
+Plaintext
+1. محاولة 1 فشلت في تحديث التوكن، جاري إعادة المحاولة...
+2. POST https://sanad-almoallem-three.vercel.app/api/reminders/check net::ERR_CONNECTION_CLOSED
+3. checkRemindersApi error (network/other): Failed to fetch
+المطلوب منك:
+
+مراجعة كود دالة التذكيرات api/reminders/check (أو دالة الـ API الخاصة بالتذكيرات): معالجة الاستجابة لضمان إرجاع استجابة JSON صحيحة (مثل res.status(200).json({ success: true })) وتجنب انهيار الخادم (Crash) أو انتهاء الوقت المحدد (Timeout) في Vercel Serverless Functions.
+
+تحديث دالة استدعاء الـ API في الواجهة الأمامية (checkRemindersApi):
+
+إحاطتها بـ try/catch قوي لمنع الـ Unhandled Rejections.
+
+وضع حد أقصى لإعادة المحاولة (Max Retries = 2) لمنع التكرار اللانهائي والإزعاج في الـ Console.
+
+عدم إعادة الطلب إذا كان الخطأ انقطاعاً في الاتصال (net::ERR_CONNECTION_CLOSED / Failed to fetch).
+
+معالجة تحديث التوكن (Token Refresh): إضافة شرط تحقق للـ Token قبل إرساله لمنع الفشل المتكرر عند انتهاء الجلسة أو انقطاع الشبكة.
+
+من فضلك أعطني الكود المكتمل والمعدل للملفات المعنية مع توضيح اسم كل ملف بوضوح."
+
+💡 ماذا تفعل بعد أن يعطيك الكود؟
+انسخ الكود المعدل لكل ملف من AI Studio.
+
+ألصقه في مشروعي ببيئة التطوير الخاصة بك (VS Code أو Replit).
+
+احفظ الملفات واعمل git push ليرتفع التحديث تلقائياً إلى Vercel وتختفي المشكلة!
+
+(index):120 [OrphanCleanup] Skipped: orphan cleanup is disabled / no-op.
+
+(index):120 محاولة 1 فشلت في تحديث التوكن، جاري إعادة المحاولة...
+
+console.<computed> @ (index):120
+
+fr @ index-zLGwe1SQ.js:128
+
+await in fr
+
+pr @ index-zLGwe1SQ.js:128
+
+xr @ index-zLGwe1SQ.js:128
+
+r @ index-zLGwe1SQ.js:132
+
+index-zLGwe1SQ.js:128  POST https://sanad-almoallem-three.vercel.app/api/reminders/check net::ERR_CONNECTION_CLOSED
+
+xr @ index-zLGwe1SQ.js:128
+
+await in xr
+
+r @ index-zLGwe1SQ.js:132
+
+(index):120 checkRemindersApi error (network/other): Failed to fetch
+
+console.<computed> @ (index):120
+
+xr @ index-zLGwe1SQ.js:128
+
+await in xr
+
+r @ index-zLGwe1SQ.js:132
+
+index-zLGwe1SQ.js:128  POST https://sanad-almoallem-three.vercel.app/api/reminders/check net::ERR_CONNECTION_CLOSED
+
+xr @ index-zLGwe1SQ.js:128
+
+await in xr
+
+r @ index-zLGwe1SQ.js:132
+
+(index):120 checkRemindersApi error (network/other): Failed to fetch
+
+console.<computed> @ (index):120
+
+xr @ index-zLGwe1SQ.js:128
+
+await in xr
+
+r @ index-zLGwe1SQ.js:132
+
+index-zLGwe1SQ.js:128  POST https://sanad-almoallem-three.vercel.app/api/reminders/check 500 (Internal Server Error)
+
+xr @ index-zLGwe1SQ.js:128
+
+await in xr
+
+r @ index-zLGwe1SQ.js:132
+
+(index):120 Auth token issue in checkRemindersApi: 500
+
+console.<computed> @ (index):120
+
+xr @ index-zLGwe1SQ.js:128
+
+await in xr
+
+r @ index-zLGwe1SQ.js:132
+
+firebase-1LSiqeot.js:6  GET https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?gsessionid=KcbgjS2YLks4IfltgJF67Xn7DMMfbj8wXenfSd3UZHoxd6WR_CtH4A&VER=8&database=projects%2Fsanadak-3cc89%2Fdatabases%2F(default)&RID=rpc&SID=uZ2V0vzqsnArVXqLV4qm1Q&AID=0&CI=0&TYPE=xmlhttp&zx=sgw0p1d9arbv&t=1 net::ERR_QUIC_PROTOCOL_ERROR.QUIC_TOO_MANY_RTOS 200 (OK)
+
+e.send @ firebase-1LSiqeot.js:6
+
+e.ea @ firebase-1LSiqeot.js:8
+
+Dt @ firebase-1LSiqeot.js:5
+
+Yn @ firebase-1LSiqeot.js:9
+
+e.Da @ firebase-1LSiqeot.js:9
+
+ue @ firebase-1LSiqeot.js:1
+
+Promise.then
+
+oe @ firebase-1LSiqeot.js:1
+
+Kn @ firebase-1LSiqeot.js:9
+
+It @ firebase-1LSiqeot.js:6
+
+St.Y @ firebase-1LSiqeot.js:5
+
+St.ba @ firebase-1LSiqeot.js:5
+
+Be @ firebase-1LSiqeot.js:1
+
+ze @ firebase-1LSiqeot.js:1
+
+Mn @ firebase-1LSiqeot.js:8
+
+e.Xa @ firebase-1LSiqeot.js:8
+
+e.Ca @ firebase-1LSiqeot.js:8
+
+Tn @ firebase-1LSiqeot.js:7
+
+e.Ma @ firebase-1LSiqeot.js:6
+
+Promise.then
+
+Cn @ firebase-1LSiqeot.js:6
+
+e.Pa @ firebase-1LSiqeot.js:6
+
+Promise.then
+
+e.send @ firebase-1LSiqeot.js:6
+
+e.ea @ firebase-1LSiqeot.js:8
+
+Dt @ firebase-1LSiqeot.js:5
+
+Et @ firebase-1LSiqeot.js:5
+
+e.Ea @ firebase-1LSiqeot.js:9
+
+ue @ firebase-1LSiqeot.js:1
+
+Promise.then
+
+oe @ firebase-1LSiqeot.js:1
+
+Vn @ firebase-1LSiqeot.js:9
+
+e.connect @ firebase-1LSiqeot.js:9
+
+ar.m @ firebase-1LSiqeot.js:9
+
+ot @ firebase-1LSiqeot.js:25
+
+send @ firebase-1LSiqeot.js:25
+
+nn @ firebase-1LSiqeot.js:25
+
+Pn @ firebase-1LSiqeot.js:25
+
+yS @ firebase-1LSiqeot.js:28
+
+(anonymous) @ firebase-1LSiqeot.js:28
+
+ES @ firebase-1LSiqeot.js:28
+
+(anonymous) @ firebase-1LSiqeot.js:25
+
+(anonymous) @ firebase-1LSiqeot.js:25
+
+(anonymous) @ firebase-1LSiqeot.js:31
+
+(anonymous) @ firebase-1LSiqeot.js:31
+
+Promise.then
+
+Zc @ firebase-1LSiqeot.js:31
+
+enqueue @ firebase-1LSiqeot.js:31
+
+enqueueAndForget @ firebase-1LSiqeot.js:31
+
+(anonymous) @ firebase-1LSiqeot.js:25
+
+(anonymous) @ firebase-1LSiqeot.js:25
+
+At @ firebase-1LSiqeot.js:25
+
+(anonymous) @ firebase-1LSiqeot.js:25
+
+setTimeout
+
+vt @ firebase-1LSiqeot.js:25
+
+En @ firebase-1LSiqeot.js:25
+
+un @ firebase-1LSiqeot.js:25
+
+(anonymous) @ firebase-1LSiqeot.js:25
+
+Promise.then
+
+auth @ firebase-1LSiqeot.js:25
+
+start @ firebase-1LSiqeot.js:25
+
+xS @ firebase-1LSiqeot.js:28
+
+(anonymous) @ firebase-1LSiqeot.js:28
+
+mS @ firebase-1LSiqeot.js:28
+
+await in mS
+
+BS @ firebase-1LSiqeot.js:28
+
+await in BS
+
+(anonymous) @ firebase-1LSiqeot.js:31
+
+(anonymous) @ firebase-1LSiqeot.js:31
+
+r @ firebase-1LSiqeot.js:25
+
+(anonymous) @ firebase-1LSiqeot.js:25
+
+Xc @ firebase-1LSiqeot.js:31
+
+(anonymous) @ firebase-1LSiqeot.js:31
+
+(anonymous) @ firebase-1LSiqeot.js:31
+
+(anonymous) @ firebase-1LSiqeot.js:31
+
+Promise.then
+
+Zc @ firebase-1LSiqeot.js:31
+
+enqueue @ firebase-1LSiqeot.js:31
+
+enqueueAndForget @ firebase-1LSiqeot.js:31
+
+enqueueRetryable @ firebase-1LSiqeot.js:31
+
+Ce @ firebase-1LSiqeot.js:25
+
+(anonymous) @ firebase-1LSiqeot.js:1
+
+(anonymous) @ firebase-1LSiqeot.js:1
+
+(anonymous) @ firebase-1LSiqeot.js:1
+
+Promise.then
+
+sendOne @ firebase-1LSiqeot.js:1
+
+forEachObserver @ firebase-1LSiqeot.js:1
+
+next @ firebase-1LSiqeot.js:1
+
+notifyAuthListeners @ firebase-1LSiqeot.js:1
+
+_notifyListenersIfCurrent @ firebase-1LSiqeot.js:1
+
+getIdToken @ firebase-1LSiqeot.js:1
+
+await in getIdToken
+
+fr @ index-zLGwe1SQ.js:128
+
+pr @ index-zLGwe1SQ.js:128
+
+xr @ index-zLGwe1SQ.js:128
+
+r @ index-zLGwe1SQ.js:132
+
+firebase-1LSiqeot.js:1  POST https://securetoken.googleapis.com/v1/token?key=AIzaSyBOWJa3xUpdSJIfT1MwDO5UP9LJvC41WkY net::ERR_NAME_NOT_RESOLVED
+
+(anonymous) @ firebase-1LSiqeot.js:1
+
+await in (anonymous)
+
+Yn @ firebase-1LSiqeot.js:1
+
+yr @ firebase-1LSiqeot.js:1
+
+refresh @ firebase-1LSiqeot.js:1
+
+getToken @ firebase-1LSiqeot.js:1
+
+getIdToken @ firebase-1LSiqeot.js:1
+
+fr @ index-zLGwe1SQ.js:128
+
+pr @ index-zLGwe1SQ.js:128
+
+xr @ index-zLGwe1SQ.js:128
+
+r @ index-zLGwe1SQ.js:132
+
+(index):120 محاولة 1 فشلت في تحديث التوكن، جاري إعادة المحاولة...
+
+console.<computed> @ (index):120
+
+fr @ index-zLGwe1SQ.js:128
+
+await in fr
+
+pr @ index-zLGwe1SQ.js:128
+
+xr @ index-zLGwe1SQ.js:128
+
+r @ index-zLGwe1SQ.js:132
+
+firebase-1LSiqeot.js:6  GET https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?gsessionid=KcbgjS2YLks4IfltgJF67Xn7DMMfbj8wXenfSd3UZHoxd6WR_CtH4A&VER=8&database=projects%2Fsanadak-3cc89%2Fdatabases%2F(default)&RID=rpc&SID=uZ2V0vzqsnArVXqLV4qm1Q&AID=31&CI=0&TYPE=xmlhttp&zx=llykzj3dn34z&t=1 net::ERR_NAME_NOT_RESOLVED
+
+e.send @ firebase-1LSiqeot.js:6
+
+e.ea @ firebase-1LSiqeot.js:8
+
+Dt @ firebase-1LSiqeot.js:5
+
+Yn @ firebase-1LSiqeot.js:9
+
+e.Da @ firebase-1LSiqeot.js:9
+
+ue @ firebase-1LSiqeot.js:1
+
+Promise.then
+
+oe @ firebase-1LSiqeot.js:1
+
+Kn @ firebase-1LSiqeot.js:9
+
+Zn @ firebase-1LSiqeot.js:9
+
+St.Y @ firebase-1LSiqeot.js:5
+
+St.ba @ firebase-1LSiqeot.js:5
+
+Be @ firebase-1LSiqeot.js:1
+
+ze @ firebase-1LSiqeot.js:1
+
+Mn @ firebase-1LSiqeot.js:8
+
+e.Xa @ firebase-1LSiqeot.js:8
+
+e.Ca @ firebase-1LSiqeot.js:8
+
+Tn @ firebase-1LSiqeot.js:7
+
+wn @ firebase-1LSiqeot.js:6
+
+e.ga @ firebase-1LSiqeot.js:6
+
+Promise.catch
+
+Cn @ firebase-1LSiqeot.js:6
+
+e.Ma @ firebase-1LSiqeot.js:6
+
+Promise.then
+
+Cn @ firebase-1LSiqeot.js:6
+
+e.Ma @ firebase-1LSiqeot.js:6
+
+Promise.then
+
+Cn @ firebase-1LSiqeot.js:6
+
+e.Ma @ firebase-1LSiqeot.js:6
+
+Promise.then
+
+Cn @ firebase-1LSiqeot.js:6
+
+e.Pa @ firebase-1LSiqeot.js:6
+
+Promise.then
+
+e.send @ firebase-1LSiqeot.js:6
+
+e.ea @ firebase-1LSiqeot.js:8
+
+Dt @ firebase-1LSiqeot.js:5
+
+Yn @ firebase-1LSiqeot.js:9
+
+e.Da @ firebase-1LSiqeot.js:9
+
+ue @ firebase-1LSiqeot.js:1
+
+Promise.then
+
+oe @ firebase-1LSiqeot.js:1
+
+Kn @ firebase-1LSiqeot.js:9
+
+It @ firebase-1LSiqeot.js:6
+
+St.Y @ firebase-1LSiqeot.js:5
+
+St.ba @ firebase-1LSiqeot.js:5
+
+Be @ firebase-1LSiqeot.js:1
+
+ze @ firebase-1LSiqeot.js:1
+
+Mn @ firebase-1LSiqeot.js:8
+
+e.Xa @ firebase-1LSiqeot.js:8
+
+e.Ca @ firebase-1LSiqeot.js:8
+
+Tn @ firebase-1LSiqeot.js:7
+
+e.Ma @ firebase-1LSiqeot.js:6
+
+Promise.then
+
+Cn @ firebase-1LSiqeot.js:6
+
+e.Pa @ firebase-1LSiqeot.js:6
+
+Promise.then
+
+e.send @ firebase-1LSiqeot.js:6
+
+e.ea @ firebase-1LSiqeot.js:8
+
+Dt @ firebase-1LSiqeot.js:5
+
+Et @ firebase-1LSiqeot.js:5
+
+e.Ea @ firebase-1LSiqeot.js:9
+
+ue @ firebase-1LSiqeot.js:1
+
+Promise.then
+
+oe @ firebase-1LSiqeot.js:1
+
+Vn @ firebase-1LSiqeot.js:9
+
+e.connect @ firebase-1LSiqeot.js:9
+
+ar.m @ firebase-1LSiqeot.js:9
+
+ot @ firebase-1LSiqeot.js:25
+
+send @ firebase-1LSiqeot.js:25
+
+nn @ firebase-1LSiqeot.js:25
+
+Pn @ firebase-1LSiqeot.js:25
+
+yS @ firebase-1LSiqeot.js:28
+
+(anonymous) @ firebase-1LSiqeot.js:28
+
+ES @ firebase-1LSiqeot.js:28
+
+(anonymous) @ firebase-1LSiqeot.js:25
+
+(anonymous) @ firebase-1LSiqeot.js:25
+
+(anonymous) @ firebase-1LSiqeot.js:31
+
+(anonymous) @ firebase-1LSiqeot.js:31
+
+Promise.then
+
+Zc @ firebase-1LSiqeot.js:31
+
+enqueue @ firebase-1LSiqeot.js:31
+
+enqueueAndForget @ firebase-1LSiqeot.js:31
+
+(anonymous) @ firebase-1LSiqeot.js:25
+
+(anonymous) @ firebase-1LSiqeot.js:25
+
+At @ firebase-1LSiqeot.js:25
+
+(anonymous) @ firebase-1LSiqeot.js:25
+
+setTimeout
+
+vt @ firebase-1LSiqeot.js:25
+
+En @ firebase-1LSiqeot.js:25
+
+un @ firebase-1LSiqeot.js:25
+
+(anonymous) @ firebase-1LSiqeot.js:25
+
+Promise.then
+
+auth @ firebase-1LSiqeot.js:25
+
+start @ firebase-1LSiqeot.js:25
+
+xS @ firebase-1LSiqeot.js:28
+
+(anonymous) @ firebase-1LSiqeot.js:28
+
+mS @ firebase-1LSiqeot.js:28
+
+await in mS
+
+BS @ firebase-1LSiqeot.js:28
+
+await in BS
+
+(anonymous) @ firebase-1LSiqeot.js:31
+
+(anonymous) @ firebase-1LSiqeot.js:31
+
+r @ firebase-1LSiqeot.js:25
+
+(anonymous) @ firebase-1LSiqeot.js:25
+
+Xc @ firebase-1LSiqeot.js:31
+
+(anonymous) @ firebase-1LSiqeot.js:31
+
+(anonymous) @ firebase-1LSiqeot.js:31
+
+(anonymous) @ firebase-1LSiqeot.js:31
+
+Promise.then
+
+Zc @ firebase-1LSiqeot.js:31
+
+enqueue @ firebase-1LSiqeot.js:31
+
+enqueueAndForget @ firebase-1LSiqeot.js:31
+
+enqueueRetryable @ firebase-1LSiqeot.js:31
+
+Ce @ firebase-1LSiqeot.js:25
+
+(anonymous) @ firebase-1LSiqeot.js:1
+
+(anonymous) @ firebase-1LSiqeot.js:1
+
+(anonymous) @ firebase-1LSiqeot.js:1
+
+Promise.then
+
+sendOne @ firebase-1LSiqeot.js:1
+
+forEachObserver @ firebase-1LSiqeot.js:1
+
+next @ firebase-1LSiqeot.js:1
+
+notifyAuthListeners @ firebase-1LSiqeot.js:1
+
+_notifyListenersIfCurrent @ firebase-1LSiqeot.js:1
+
+getIdToken @ firebase-1LSiqeot.js:1
+
+await in getIdToken
+
+fr @ index-zLGwe1SQ.js:128
+
+pr @ index-zLGwe1SQ.js:128
+
+xr @ index-zLGwe1SQ.js:128
+
+r @ index-zLGwe1SQ.js:132
+
+السجل الجديد أظهر السبب الحقيقي والجذري لكل هذه الأخطاء المتتالية!
+
+السبب المباشر هو انقطاع شبكة الإنترنت أو وجود مشكلة في الـ DNS على جهازك/شبكتك في هذه اللحظة، وهذا ما يوضحه السطر التالي:
+net::ERR_NAME_NOT_RESOLVED
+
+🔍 تفكيك الأخطاء الظاهرة في السجل:
+net::ERR_NAME_NOT_RESOLVED عند الاتصال بـ Google Auth:
+
+المتصفح لم يستطع الوصول إلى سيرفرات تسجيل الدخول والتوكن الخاصة بـ Google (securetoken.googleapis.com).
+
+بسبب هذا الانقطاع، فشلت عملية تحديث توكن المصادقة (محاولة 1 فشلت في تحديث التوكن).
+
+net::ERR_NAME_NOT_RESOLVED عند الاتصال بـ Firestore:
+
+التطبيق لم يستطع فتح قناة البث المباشر (Listen Channel) مع قواعد بيانات Firebase.
+
+500 (Internal Server Error) في Vercel:
+
+لأن التطبيق حاول إرسال طلب التذكيرات بدون توكن مصادقة صحيح (Auth Token Issue)، قامت دالة الـ API في Vercel بإرجاع خطأ 500 لأنها لم تتعرف على المستخدم.
+
+🛠️ خطوات الحل السريعة:
+1. حل مشكلة الاتصال على جهازك (مريح وسريع)
+افحص الإنترنت: أعد تشغيل الراوتر أو جرب التوصيل من شبكة أخرى (مثلاً نقطة اتصال الموبايل Mobile Hotspot).
+
+تغيير الـ DNS: قم بتغيير الـ DNS في جهازك إلى Google DNS (8.8.8.8 و 8.8.4.4) لحل مشاكل ERR_NAME_NOT_RESOLVED.
+
+2. تحسين كود Firebase لمنع الانهيار عند انقطاع الشبكة
+تأكد من تفعيل التخزين المحلي offline persistence وإلغاء محاولات التكرار اللانهائي لتحديث التوكن بدون إنترنت.
+
+إليك برومبت (Prompt) معدل لإرساله لـ Google AI Studio ليعالج لك الكود برمجياً للتعامل مع حالات أوفلاين (Offline Graceful Degradation):
+
+"لدي مشكلة في الكود عند انقطاع الإنترنت أو بطئه، حيث تظهر أخطاء ERR_NAME_NOT_RESOLVED من سيرفرات Firebase مما يسبب تكراراً لانهائياً لمحاولة تحديث التوكن وإرسال طلبات الـ API إلى Vercel فتظهر أخطاء 500.
+
+المطلوب منك:
+
+تعديل دالة استدعاء التذكيرات checkRemindersApi لتقوم بفحص حالة الإنترنت (navigator.onLine) أولاً قبل إجراء أي طلب fetch، وفي حالة الأوفلاين لا يتم إرسال طلب وتُسترجع النتيجة بهدوء دون إظهار أخطاء في الـ Console.
+
+إضافة حماية عند جلب توكن المصادقة getIdToken() بحيث إذا فشل الاتصال بخدمات Google لا يدخل التطبيق في دالة تكرار متصلة (Infinite Retry Loop).
+
+التأكد من ضبط Firestore لاستخدام persistentLocalCache.
+
+أعطني الكود الكامل للملفات المعدلة مع توضيح اسم كل ملف."
+
+قوله انه بضيف مجموعه في معاد طالب بتتضاف عادي ودي حاجه غلط عاوزه يقولي انه فيه موعد طالب فاهمني
+
+قصدك أنك لما بتيجي تضيف طالب لمجموعة معينة في "سند المعلم"، التطبيق بيقبل إضافته عادي جداً حتى لو كان عنده تعارض في المواعيد (يعني في نفس الموعد عنده مجموعة تانية أو حصة أخرى)، ودي مشكلة لأن النظام مش بينبهك إن الطالب عنده حصة في نفس الوقت ده!
+
+فهمت عليك تماماً، أنت عاوز تطلب من الذكاء الاصطناعي يبرمج ميزة "التحقق من تعارض المواعيد" (Schedule Conflict Detection) بحيث لما تختار طالب مضاف مسبقاً في مجموعة بنفس الموعد، التطبيق يمنع الإضافة أو يطلع لك تحذير واضح يقولك: "فيموعد طالب / هذا الطالب لديه تعارض في الموعد".
+
+إليك البرومبت (Prompt) الجاهز اللي تقدر تنسخه وتبعتها لـ Google AI Studio عشان يعملها لك صح:
+
+📋 البرومبت للنسخ واللصق:
+"أريد تعديل نظام إضافة الطلاب إلى المجموعات في تطبيق (سند المعلم) لمنع تداخل المواعيد (Schedule Conflict Detection):
+
+المشكلة الحالية:
+حالياً عندما أقوم بإضافة طالب إلى مجموعة جديدة، يقبل التطبيق إضافته بشكل عادي حتى لو كان مسجلاً في مجموعة أخرى لديها نفس موعد الحصة أو اليوم تماماً، ولا يوجد أي تحذير يفيد بوجود تعارض في مواعيد الطالب.
+
+المطلوب برمجياً:
+
+عند محاولة إضافة طالب إلى مجموعة معينة، يجب على النظام فحص جدول مواعيد الطالب الحالية (من بيانات المجموعات أو الحصص المسجلة له).
+
+إذا كان الطالب لديه مجموعة أو حصة أخرى في نفس الموعد (اليوم والوقت)، يجب أن يظهر تحذير واضح للمعلم (Alert/Error Message) يوضح أن هناك تعارضاً في الموعد (مثلاً: "لا يمكن إضافة الطالب، لديه حصة أخرى في نفس الموعد").
+
+التأكد من تطبيق هذا الفحص والتحقق بشكل دقيق وسلس قبل حفظ بيانات الطالب في المجموعة داخل Firestore.
+
+من فضلك أعطني الكود المعدل والكامل للملفات المسؤولة عن إضافة الطلاب للمجموعات مع توضيح أسماء الملفات بوضوح."
+
+فقط انسخ هذا النص وأرسله لـ AI Studio، وسيكتب لك الكود البرمجي الذي يفحص المواعيد وينبهك فوراً قبل إضافة الطالب!
+
+بص بضيف مجموعه في ميعاد طالب وبيقبل بس كدا المعلم هيكون عندة مجموعه وطالب ودي حاجة غلط
+
+فهمت قصدك تماماً! المشكلة هنا إن المعلم نفسه بيكون عنده حصة فردية مع طالب وفي نفس الموعد بيضيف مجموعة ثانية، والتطبيق بيقبل الإضافة عادي من غير ما ينبه المعلم إنه مرتبط بحصة في الوقت ده.
+
+عشان تطلب من الذكاء الاصطناعي (Google AI Studio) يحل المشكلة دي ويمنع أي تداخل في جدول المعلم نفسه، إليك البرومبت (Prompt) المباشر والدقيق جاهز للنسخ:
+
+📋 البرومبت للنسخ واللصق:
+"أريد تعديل نظام إضافة المجموعات والحصص في تطبيق (سند المعلم) للتحقق من تعارض جدول المعلم (Teacher Schedule Conflict Detection):
+
+المشكلة الحالية:
+عندما يقوم المعلم بإضافة مجموعة جديدة في ميعاد معين، يقبل التطبيق الإضافة حتى لو كان المعلم مرتبطاً بالفعل بـ حصة مع طالب آخر أو مجموعة أخرى في نفس اليوم والوقت، مما يسبب تضارباً في جدول المعلم.
+
+المطلوب برمجياً:
+
+قبل إضافة أي مجموعة جديدة أو حصة فردية، يجب على النظام إجراء فحص شامل (Validation) لجدول المعلم الحالي داخل Firestore.
+
+إذا وجد النظام أي حصة أو مجموعة مسجلة للمعلم في نفس اليوم ونفس الوقت، يجب منع الإضافة فوراً وإظهار تنبيه/تحذير واضح للمعلم (مثال: "عفواً، لديك حصة/مجموعة أخرى في هذا الموعد برّجاء اختيار وقت آخر").
+
+التأكد من أن الفحص يشمل جميع أنواع الحصص (سواء كانت مجموعة أو حصة فردية لطالب) لتجنب أي تداخل في المواعيد.
+
+من فضلك اعطني الكود المعدل والكامل للملفات المسؤولة عن إضافة المجموعات والحصص مع كتابة اسم كل ملف بوضوح."
+
+بمجرد نسخ الكود الجديد منه ولصقه في مشروعك ورفعه على GitHub، سيقوم التطبيق بفتح تنبيه يمنعك من إضافة أي مجموعة إذا كان لديك طالب آخر في نفس الوقت.
