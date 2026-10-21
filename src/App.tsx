@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, User, signOut, getRedirectResult } from 'firebase/auth';
 import {
   auth,
@@ -125,7 +125,8 @@ export default function App() {
   // Active Tab for teacher application
   const [activeTab, setActiveTab] = useState<number>(0);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
+  const [exitToastMessage, setExitToastMessage] = useState<string | null>(null);
+  const lastBackPressTimeRef = useRef<number>(0);
   const [showFinancialDashboard, setShowFinancialDashboard] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
 
@@ -185,7 +186,6 @@ export default function App() {
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
 
   // Register top-level modals & subviews on back handler stack
-  useBackHandler(showExitConfirmModal, () => setShowExitConfirmModal(false), 'exit_confirm_modal', false);
   useBackHandler(showUpgradeModal, () => setShowUpgradeModal(false), 'upgrade_modal');
   useBackHandler(showFinancialDashboard, () => setShowFinancialDashboard(false), 'financial_dashboard');
   useBackHandler(showAdminView, () => setShowAdminView(false), 'admin_view');
@@ -255,14 +255,19 @@ export default function App() {
       }
 
       // 6. If user is ALREADY at the Main Dashboard (Tab 0) and pressed Back:
-      // Show confirmation dialog: "هل تريد الخروج من التطبيق؟"
-      setShowExitConfirmModal(true);
-      pushAppHistoryState({ modal: 'exit_confirm' });
+      const now = Date.now();
+      if (now - lastBackPressTimeRef.current < 2000) {
+        return; // default exit behavior
+      }
+      lastBackPressTimeRef.current = now;
+      setExitToastMessage('اضغط مرة أخرى للخروج');
+      setTimeout(() => setExitToastMessage(null), 2000);
+      pushAppHistoryState({ tab: 0 });
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [activeTab, showAdminView, showUpgradeModal, showExitConfirmModal, showFinancialDashboard]);
+  }, [activeTab, showAdminView, showUpgradeModal, showFinancialDashboard]);
 
   const handleSelectTab = (idx: number) => {
     if (idx === activeTab) return;
@@ -270,14 +275,7 @@ export default function App() {
     pushAppHistoryState({ tab: idx });
   };
 
-  const handleConfirmExit = () => {
-    setShowExitConfirmModal(false);
-    exitApplication();
-  };
 
-  const handleCancelExit = () => {
-    setShowExitConfirmModal(false);
-  };
 
   const navigateTo = (path: string) => {
     if (window.location.pathname !== path) {
@@ -719,10 +717,18 @@ export default function App() {
               <span>{profile.subscriptionStatus === 'active' ? 'مشترك 💎' : 'تجريبي 🎁'}</span>
             </div>
 
-            {/* Exit Application Trigger Button (Shows confirmation modal on Main Dashboard) */}
+            {/* Exit Application Trigger Button */}
             <button
               type="button"
-              onClick={() => setShowExitConfirmModal(true)}
+              onClick={() => {
+                const now = Date.now();
+                if (now - lastBackPressTimeRef.current < 2000) {
+                  return;
+                }
+                lastBackPressTimeRef.current = now;
+                setExitToastMessage('اضغط مرة أخرى للخروج');
+                setTimeout(() => setExitToastMessage(null), 2000);
+              }}
               className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 hover:bg-rose-100 dark:hover:bg-rose-950/60 border border-slate-300 dark:border-slate-800 hover:border-rose-400 dark:hover:border-rose-500/40 text-slate-600 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-300 transition cursor-pointer"
               title="خروج من التطبيق"
             >
@@ -923,43 +929,10 @@ export default function App() {
           />
         )}
 
-        {/* Exit Application Confirmation Modal */}
-        {showExitConfirmModal && (
-          <div
-            className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 text-right"
-            dir="rtl"
-          >
-            <div className="w-full max-w-sm bg-gradient-to-b from-slate-900 to-slate-950 border border-purple-500/40 rounded-3xl p-6 shadow-2xl relative space-y-4 animate-in fade-in zoom-in-95 duration-200">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30 flex-shrink-0">
-                  <AlertCircle className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white">هل تريد الخروج من التطبيق؟</h3>
-                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                    هل أنت متأكد أنك تريد الخروج؟
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 pt-2">
-                <button
-                  type="button"
-                  autoFocus
-                  onClick={handleCancelExit}
-                  className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition cursor-pointer shadow-lg shadow-purple-950/50 active:scale-98"
-                >
-                  البقاء في التطبيق
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmExit}
-                  className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-rose-950/80 hover:text-rose-200 text-slate-300 font-bold text-xs border border-slate-700 hover:border-rose-500/50 transition cursor-pointer active:scale-98"
-                >
-                  نعم، خروج
-                </button>
-              </div>
-            </div>
+        {/* Exit Toast Notification */}
+        {exitToastMessage && (
+          <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 text-white px-4 py-2 rounded-2xl border border-purple-500/40 text-xs shadow-2xl animate-in fade-in slide-in-from-bottom-3">
+            {exitToastMessage}
           </div>
         )}
       </div>

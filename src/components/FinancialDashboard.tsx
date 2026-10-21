@@ -174,7 +174,9 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
   // Calculate statistics per student
   const studentFinancials = students.map((st) => {
     const studentLessons = lessonsMap[st.id] || [];
-    const hourlyRate = st.hourlyRate || (st.monthlyFee ? Math.round(st.monthlyFee / 4) : 100);
+    const hourlyRate = st.hourlyRate || 100;
+    const isMonthly = st.billingType === 'monthly' || (!st.billingType && ((st.groupIds && st.groupIds.length > 0) || st.classType === 'center'));
+    const monthlyDue = st.monthlyFee || (st.customFees && st.groupIds && st.groupIds[0] ? st.customFees[st.groupIds[0]] : 300);
 
     // 1. Filter lessons for the Selected Month / Period
     const periodLessons = isAllTime
@@ -187,24 +189,44 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
     let pendingAmount = 0;
     let collectedAmount = 0;
 
-    periodLessons.forEach((l) => {
-      const dur = l.duration || 60;
-      const rate = l.hourlyRate || hourlyRate;
-      const isCounted = isLessonFinanciallyCounted(l);
-      const cost = isCounted ? (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate)) : 0;
-
-      if (isCounted) {
-        periodMinutes += dur;
-        periodAmount += cost;
-
-        if (l.settled) {
-          collectedAmount += cost;
-        } else {
-          pendingMinutes += dur;
-          pendingAmount += cost;
-        }
+    if (isMonthly) {
+      // Group / Monthly students: fixed monthly fee, strictly unaffected by attendance or absence
+      periodAmount = monthlyDue;
+      const isSettled = st.paymentStatus === 'paid' || (periodLessons.length > 0 && periodLessons.every((l) => l.settled));
+      if (isSettled) {
+        collectedAmount = monthlyDue;
+        pendingAmount = 0;
+      } else {
+        collectedAmount = 0;
+        pendingAmount = monthlyDue;
       }
-    });
+
+      periodLessons.forEach((l) => {
+        const dur = l.duration || 60;
+        if (isLessonFinanciallyCounted(l)) {
+          periodMinutes += dur;
+        }
+      });
+    } else {
+      periodLessons.forEach((l) => {
+        const dur = l.duration || 60;
+        const rate = l.hourlyRate || hourlyRate;
+        const isCounted = isLessonFinanciallyCounted(l);
+        const cost = isCounted ? (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate)) : 0;
+
+        if (isCounted) {
+          periodMinutes += dur;
+          periodAmount += cost;
+
+          if (l.settled) {
+            collectedAmount += cost;
+          } else {
+            pendingMinutes += dur;
+            pendingAmount += cost;
+          }
+        }
+      });
+    }
 
     const periodHours = Number((periodMinutes / 60).toFixed(1));
 
@@ -212,7 +234,7 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
     const todayLessons = studentLessons.filter((l) => l.date === todayKey && isLessonFinanciallyCounted(l));
     const todayMinutes = todayLessons.reduce((sum, l) => sum + (l.duration || 60), 0);
     const todayHours = Number((todayMinutes / 60).toFixed(1));
-    const todayEarnings = todayLessons.reduce((sum, l) => {
+    const todayEarnings = isMonthly ? 0 : todayLessons.reduce((sum, l) => {
       const dur = l.duration || 60;
       const rate = l.hourlyRate || hourlyRate;
       return sum + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
@@ -231,6 +253,7 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
       todayLessonsCount: todayLessons.length,
       todayHours,
       todayEarnings,
+      isMonthly,
     };
   });
 
@@ -304,18 +327,30 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
       )
       .join('\n');
 
-    const text =
-      `السلام عليكم ورحمة الله وبركاته 🌷\n` +
-      `🧾 كشف حساب ومطالبة مالية (${selectedMonthInfo.label}) - مادة (${st.subject})\n\n` +
-      `👤 الطالب/ـة: ${st.name}\n` +
-      `👨‍🏫 إعداد المعلم: أ. ${profile.name}\n` +
-      `📅 الفترة: ${selectedMonthInfo.label}\n\n` +
-      `📊 تفاصيل الحساب:\n` +
-      `• سعر الساعة: ${item.hourlyRate} ${currency}\n` +
-      `• عدد الساعات المنفذة: ${item.pendingMinutes / 60} ساعة\n` +
-      `• إجمالي المستحقات المطلوبة: ${item.pendingAmount} ${currency} 💰\n\n` +
-      (lessonsListText ? `📋 تفاصيل الحصص:\n${lessonsListText}\n\n` : '') +
-      `شاكرين حسن تعاملك 🌟`;
+    const isMonthly = item.isMonthly;
+    const text = isMonthly
+      ? `السلام عليكم ورحمة الله وبركاته 🌷\n` +
+        `🧾 كشف حساب واشتراك شهري (${selectedMonthInfo.label}) - مادة (${st.subject})\n\n` +
+        `👤 الطالب/ـة: ${st.name}\n` +
+        `👨‍🏫 إعداد المعلم: أ. ${profile.name}\n` +
+        `📅 الفترة: ${selectedMonthInfo.label}\n\n` +
+        `📊 تفاصيل الاشتراك:\n` +
+        `• نظام الحساب: اشتراك شهري ثابت (مجموعة)\n` +
+        `• قيمة الاشتراك الشهري: ${item.periodAmount} ${currency}\n` +
+        `• إجمالي المستحقات المطلوبة: ${item.pendingAmount} ${currency} 💰\n\n` +
+        `شاكرين حسن تعاونكم 🌟`
+      : `السلام عليكم ورحمة الله وبركاته 🌷\n` +
+        `🧾 كشف حساب ومطالبة مالية (${selectedMonthInfo.label}) - مادة (${st.subject})\n\n` +
+        `👤 الطالب/ـة: ${st.name}\n` +
+        `👨‍🏫 إعداد المعلم: أ. ${profile.name}\n` +
+        `📅 الفترة: ${selectedMonthInfo.label}\n\n` +
+        `📊 تفاصيل الحساب:\n` +
+        `• نظام الحساب: حصص فردية (سعر الساعة)\n` +
+        `• سعر الساعة: ${item.hourlyRate} ${currency}\n` +
+        `• عدد الساعات المنفذة: ${(item.pendingMinutes / 60).toFixed(1)} ساعة\n` +
+        `• إجمالي المستحقات المطلوبة: ${item.pendingAmount} ${currency} 💰\n\n` +
+        (lessonsListText ? `📋 تفاصيل الحصص:\n${lessonsListText}\n\n` : '') +
+        `شاكرين حسن تعاملك 🌟`;
 
     setEditableInvoiceText(text);
     setShowInvoiceModal(st);
@@ -358,9 +393,9 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
                 <th>#</th>
                 <th>اسم الطالب</th>
                 <th>المادة</th>
-                <th>سعر الساعة</th>
+                <th>نظام الحساب / السعر</th>
                 <th>حصص الفترة</th>
-                <th>ساعات الفترة</th>
+                <th>ساعات التدريس</th>
                 <th>المستحقات المعلقة</th>
                 <th>المحصل</th>
               </tr>
@@ -371,11 +406,11 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
                   <td>${idx + 1}</td>
                   <td><strong>${item.student.name}</strong></td>
                   <td>${item.student.subject}</td>
-                  <td>${item.hourlyRate}${currency}</td>
+                  <td>${item.isMonthly ? `شهري ثابت (${item.periodAmount} ${currency})` : `${item.hourlyRate} ${currency}/س`}</td>
                   <td>${item.lessonsCount}</td>
-                  <td>${item.periodHours} س</td>
-                  <td>${item.pendingAmount}${currency}</td>
-                  <td>${item.collectedAmount}${currency}</td>
+                  <td>${item.isMonthly ? '—' : `${item.periodHours} س`}</td>
+                  <td>${item.pendingAmount} ${currency}</td>
+                  <td>${item.collectedAmount} ${currency}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -570,11 +605,11 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
         </div>
       </div>
 
-      {/* Hourly Rate Rule Notice */}
+      {/* Billing Model Rule Notice */}
       <div className="rounded-2xl bg-slate-900/90 border border-purple-500/30 p-3 text-xs flex items-center gap-2.5">
         <Sparkles className="w-4 h-4 text-amber-300 flex-shrink-0" />
         <p className="text-[11px] text-purple-200">
-          <strong className="text-white">نظام الحساب الأوتوماتيكي:</strong> قيمة الحصة = (الدقائق ÷ 60) × سعر الساعة.
+          <strong className="text-white">نظام الحساب المعتمد:</strong> لطلاب المجموعات اشتراك شهري ثابت (Monthly Fee) لا يتأثر بالحضور أو الغياب، ولطلاب الحصص الفردية يُحسب المستحق حسب سعر الساعة والحصص المنفذة.
         </p>
       </div>
 
@@ -709,14 +744,27 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
               >
                 <div className="flex items-start justify-between">
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h4 className="text-sm font-bold text-white">{st.name}</h4>
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-950 border border-purple-500/30 text-purple-300">
                         {st.subject}
                       </span>
+                      {item.isMonthly ? (
+                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-600/30 border border-purple-400/40 text-purple-200 font-bold">
+                          مجموعة • شهري ثابت 🏫
+                        </span>
+                      ) : (
+                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-sky-600/30 border border-sky-400/40 text-sky-200 font-bold">
+                          فردي • بالساعة 👤
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      سعر الساعة: <span className="font-bold text-amber-300 font-mono">{item.hourlyRate} {currency}</span>
+                      {item.isMonthly ? (
+                        <>الاشتراك الشهري: <span className="font-bold text-amber-300 font-mono">{item.periodAmount} {currency}</span></>
+                      ) : (
+                        <>سعر الساعة: <span className="font-bold text-amber-300 font-mono">{item.hourlyRate} {currency}</span></>
+                      )}
                       {st.whatsapp && ` • ${st.whatsapp}`}
                     </p>
                   </div>
@@ -736,8 +784,12 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
 
                 <div className="grid grid-cols-3 gap-2 bg-slate-950/70 p-2 rounded-xl border border-slate-800 text-center text-xs">
                   <div>
-                    <span className="text-[10px] text-slate-400 block">ساعات الفترة</span>
-                    <span className="font-bold text-white font-mono">{item.periodHours} س ({item.lessonsCount})</span>
+                    <span className="text-[10px] text-slate-400 block">
+                      {item.isMonthly ? 'حساب الاشتراك' : 'ساعات الفترة'}
+                    </span>
+                    <span className="font-bold text-white font-mono">
+                      {item.isMonthly ? 'شهري ثابت' : `${item.periodHours} س (${item.lessonsCount})`}
+                    </span>
                   </div>
                   <div>
                     <span className="text-[10px] text-slate-400 block">المعلق</span>

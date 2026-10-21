@@ -5,6 +5,14 @@ export type AttendanceStatus = 'present' | 'absent' | 'excused';
 export type PaymentStatus = 'paid' | 'unpaid' | 'partial';
 export type RecurrenceType = 'daily' | 'weekly' | 'monthly' | 'once';
 
+export interface PaymentItem {
+  id: string;
+  amount: number;
+  date: string; // YYYY-MM-DD
+  method?: string; // cash, instapay, etc.
+  notes?: string;
+}
+
 export interface StudentPaymentRecord {
   id: string; // `${studentId}_${groupId || 'individual'}_${month}`
   teacherId?: string;
@@ -16,6 +24,7 @@ export interface StudentPaymentRecord {
   status: PaymentStatus;
   amountPaid: number;
   amountDue: number;
+  payments?: PaymentItem[];
   paidAt?: any;
   updatedAt?: any;
   notes?: string;
@@ -180,6 +189,7 @@ export interface Student {
   active?: boolean;
   archived?: boolean;
   isIndividual?: boolean;
+  billingType?: 'monthly' | 'hourly';
   createdAt: any;
   updatedAt: any;
 }

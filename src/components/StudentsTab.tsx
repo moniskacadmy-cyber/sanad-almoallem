@@ -292,7 +292,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const [formWhatsapp, setFormWhatsapp] = useState('');
   const [formSubject, setFormSubject] = useState(profile.subject || 'رياضيات');
   const [formClassType, setFormClassType] = useState<ClassType>('private');
+  const [formBillingType, setFormBillingType] = useState<'monthly' | 'hourly'>('hourly');
   const [formHourlyRate, setFormHourlyRate] = useState<number>(100);
+  const [formMonthlyFee, setFormMonthlyFee] = useState<number>(300);
   const [formRemainingPaidLessons, setFormRemainingPaidLessons] = useState<string>('');
   const [formTotalPrepaidLessons, setFormTotalPrepaidLessons] = useState<string>('');
   const [formLearningStyle, setFormLearningStyle] = useState('');
@@ -377,6 +379,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     subject?: string;
     classType?: string;
     hourlyRate?: string;
+    billingType?: string;
+    monthlyFee?: string;
   }>({});
 
   const checkScheduleConflict = (dayOfWeek: number, timeStr: string, durationMin: number, excludeScheduleId?: string): string | null => {
@@ -606,7 +610,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     setFormWhatsapp('');
     setFormSubject(profile.subject || 'رياضيات');
     setFormClassType('in_person');
+    setFormBillingType('hourly');
     setFormHourlyRate(100);
+    setFormMonthlyFee(300);
     setFormRemainingPaidLessons('');
     setFormTotalPrepaidLessons('');
     setFormLearningStyle('');
@@ -625,7 +631,10 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     setFormWhatsapp(student.whatsapp || '');
     setFormSubject(student.subject || profile.subject || 'رياضيات');
     setFormClassType(student.classType || 'in_person');
+    const isMonthlyStudent = student.billingType === 'monthly' || (student.groupIds && student.groupIds.length > 0) || student.classType === 'center';
+    setFormBillingType(student.billingType || (isMonthlyStudent ? 'monthly' : 'hourly'));
     setFormHourlyRate(student.hourlyRate || (student.monthlyFee ? Math.round(student.monthlyFee / 4) : 100));
+    setFormMonthlyFee(student.monthlyFee || (student.hourlyRate ? student.hourlyRate * 4 : 300));
     setFormRemainingPaidLessons(
       student.remainingPaidLessons !== undefined && student.remainingPaidLessons !== null
         ? String(student.remainingPaidLessons)
@@ -659,8 +668,11 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     if (!formClassType) {
       errors.classType = 'يرجى اختيار تصنيف نوع الحصة';
     }
-    if (formHourlyRate === undefined || formHourlyRate === null || isNaN(formHourlyRate) || Number(formHourlyRate) < 0) {
+    if (formBillingType === 'hourly' && (formHourlyRate === undefined || formHourlyRate === null || isNaN(formHourlyRate) || Number(formHourlyRate) < 0)) {
       errors.hourlyRate = 'يرجى إدخال سعر الساعة بشكل صحيح';
+    }
+    if (formBillingType === 'monthly' && (formMonthlyFee === undefined || formMonthlyFee === null || isNaN(formMonthlyFee) || Number(formMonthlyFee) < 0)) {
+      errors.monthlyFee = 'يرجى إدخال قيمة الاشتراك الشهري بشكل صحيح';
     }
 
     if (Object.keys(errors).length > 0) {
@@ -686,6 +698,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
     try {
       const rate = Math.max(0, Number(formHourlyRate) || 100);
+      const mFee = formBillingType === 'monthly' ? Math.max(0, Number(formMonthlyFee) || 300) : (Number(formMonthlyFee) || rate * 4);
       const remPaid =
         formRemainingPaidLessons.trim() !== '' && !isNaN(Number(formRemainingPaidLessons))
           ? Math.max(0, Number(formRemainingPaidLessons))
@@ -701,8 +714,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
         whatsapp: formWhatsapp.trim() || '',
         subject: formSubject.trim(),
         classType: formClassType,
+        billingType: formBillingType,
         hourlyRate: rate,
-        monthlyFee: rate * 4,
+        monthlyFee: mFee,
         remainingPaidLessons: remPaid,
         totalPrepaidLessons: totPrepaid,
         learningStyle: formLearningStyle.trim() || '',
@@ -1082,11 +1096,14 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   // Payment Reminder WhatsApp Generator (Hourly Rate & Dues Statement)
   const handleSendPaymentReminder = () => {
     if (!selectedProfileStudent) return;
-    const hourlyRate = selectedProfileStudent.hourlyRate || (selectedProfileStudent.monthlyFee ? Math.round(selectedProfileStudent.monthlyFee / 4) : 100);
+    const isMonthly = selectedProfileStudent.billingType === 'monthly' || (!selectedProfileStudent.billingType && ((selectedProfileStudent.groupIds && selectedProfileStudent.groupIds.length > 0) || selectedProfileStudent.classType === 'center'));
+    const monthlyDue = selectedProfileStudent.monthlyFee || (selectedProfileStudent.customFees && selectedProfileStudent.groupIds && selectedProfileStudent.groupIds[0] ? selectedProfileStudent.customFees[selectedProfileStudent.groupIds[0]] : 300);
+    const hourlyRate = selectedProfileStudent.hourlyRate || 100;
     const unsettledLessons = studentLessons.filter((l) => !l.settled && isLessonFinanciallyCounted(l));
     const pendingMinutes = unsettledLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
     const pendingHours = (pendingMinutes / 60).toFixed(1);
-    const pendingAmount = unsettledLessons.reduce((acc, l) => {
+    const isPaid = selectedProfileStudent.paymentStatus === 'paid';
+    const pendingAmount = isMonthly ? (isPaid ? 0 : monthlyDue) : unsettledLessons.reduce((acc, l) => {
       const dur = l.duration || 60;
       const rate = l.hourlyRate || hourlyRate;
       return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
@@ -1099,19 +1116,34 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
       )
       .join('\n');
 
-    const template = profile.whatsappTemplates?.payment || DEFAULT_WHATSAPP_TEMPLATES.payment;
-    const msg = renderTemplate(template, {
-      studentName: selectedProfileStudent.name,
-      subject: selectedProfileStudent.subject,
-      teacherName: profile.name,
-      date: new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()),
-      hourlyRate: hourlyRate,
-      currency: currency,
-      pendingHours: pendingHours,
-      unsettledCount: unsettledLessons.length,
-      pendingAmount: pendingAmount,
-      lessonsList: lessonsListText ? `📋 تفاصيل الحصص المنفذة غير المصفاة:\n${lessonsListText}` : '',
-    });
+    let msg = '';
+    if (isMonthly) {
+      msg =
+        `السلام عليكم ورحمة الله وبركاته 🌷\n` +
+        `🧾 كشف حساب واشتراك شهري - مادة (${selectedProfileStudent.subject})\n\n` +
+        `👤 الطالب/ـة: ${selectedProfileStudent.name}\n` +
+        `👨‍🏫 إعداد المعلم: أ. ${profile.name}\n` +
+        `📅 التاريخ: ${new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}\n\n` +
+        `📊 تفاصيل الاشتراك:\n` +
+        `• نظام الحساب: اشتراك شهري ثابت (مجموعة)\n` +
+        `• قيمة الاشتراك الشهري: ${monthlyDue} ${currency}\n` +
+        `• إجمالي المستحقات المطلوبة: ${pendingAmount} ${currency} 💰\n\n` +
+        `شاكرين ومقدرين لكم حسن التعاون والاهتمام الدائم 🌟`;
+    } else {
+      const template = profile.whatsappTemplates?.payment || DEFAULT_WHATSAPP_TEMPLATES.payment;
+      msg = renderTemplate(template, {
+        studentName: selectedProfileStudent.name,
+        subject: selectedProfileStudent.subject,
+        teacherName: profile.name,
+        date: new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()),
+        hourlyRate: hourlyRate,
+        currency: currency,
+        pendingHours: pendingHours,
+        unsettledCount: unsettledLessons.length,
+        pendingAmount: pendingAmount,
+        lessonsList: lessonsListText ? `📋 تفاصيل الحصص المنفذة غير المصفاة:\n${lessonsListText}` : '',
+      });
+    }
 
     const cleanPhone = selectedProfileStudent.whatsapp ? selectedProfileStudent.whatsapp.replace(/[^0-9]/g, '') : '';
     const phoneParam = cleanPhone ? (cleanPhone.startsWith('0') ? '2' + cleanPhone : cleanPhone) : '';
@@ -1210,16 +1242,23 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     }
 
     if (type === 'dues') {
+      const isMonthly = student.billingType === 'monthly' || (!student.billingType && ((student.groupIds && student.groupIds.length > 0) || student.classType === 'center'));
+      const monthlyDue = student.monthlyFee || (student.customFees && student.groupIds && student.groupIds[0] ? student.customFees[student.groupIds[0]] : 300);
       const sLessons = allLessonsMap[student.id] || [];
-      const hourlyRate = student.hourlyRate || (student.monthlyFee ? Math.round(student.monthlyFee / 4) : 100);
+      const hourlyRate = student.hourlyRate || 100;
       const unsettledLessons = sLessons.filter((l) => !l.settled && isLessonFinanciallyCounted(l));
       const pendingMinutes = unsettledLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
       const pendingHours = (pendingMinutes / 60).toFixed(1);
-      const pendingAmount = unsettledLessons.reduce((acc, l) => {
+      const isPaid = student.paymentStatus === 'paid';
+      const pendingAmount = isMonthly ? (isPaid ? 0 : monthlyDue) : unsettledLessons.reduce((acc, l) => {
         const dur = l.duration || 60;
         const rate = l.hourlyRate || hourlyRate;
         return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
       }, 0);
+
+      if (isMonthly) {
+        return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر الطالب/ة: *${studentName}*،\n\nنود إحاطتكم علماً ببيان الاشتراك الشهري لمادة *${subject}*:\n🏫 *نظام الحساب:* اشتراك شهري ثابت (مجموعة)\n💰 *المبلغ المستحق:* ${pendingAmount} ${currency}\n\nنرجو التكرم بسداد الاشتراك في أقرب وقت مناسب لكم. شاكرين تعاونكم ودعمكم المستمر لتقدم الطالب ✨\n\nمع تحيات: *أستاذ ${teacherName}*`;
+      }
 
       const lessonsListText = unsettledLessons
         .slice(0, 5)
@@ -1587,14 +1626,22 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
           {filteredStudents.map((s) => {
             const sLessons = allLessonsMap[s.id] || [];
             const hourlyRate = s.hourlyRate || (s.monthlyFee ? Math.round(s.monthlyFee / 4) : 100);
+            const isMonthly = s.billingType === 'monthly' || (!s.billingType && ((s.groupIds && s.groupIds.length > 0) || s.classType === 'center'));
+            const monthlyDue = s.monthlyFee || (s.customFees && s.groupIds && s.groupIds[0] ? s.customFees[s.groupIds[0]] : 300);
             const unsettledLessons = sLessons.filter((l) => !l.settled && isLessonFinanciallyCounted(l));
             const pendingMinutes = unsettledLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
             const pendingHours = (pendingMinutes / 60).toFixed(1);
-            const pendingAmount = unsettledLessons.reduce((acc, l) => {
-              const dur = l.duration || 60;
-              const rate = l.hourlyRate || hourlyRate;
-              return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
-            }, 0);
+
+            // Group students: fixed monthly fee unaffected by attendance/lessons
+            // Individual students: hourly rate * attended classes
+            const isPaid = s.paymentStatus === 'paid';
+            const pendingAmount = isMonthly
+              ? (isPaid ? 0 : monthlyDue)
+              : unsettledLessons.reduce((acc, l) => {
+                  const dur = l.duration || 60;
+                  const rate = l.hourlyRate || hourlyRate;
+                  return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
+                }, 0);
             const totalMinutes = sLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
             const totalHours = (totalMinutes / 60).toFixed(1);
 
@@ -1650,7 +1697,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                       <input type="date" defaultValue={new Date().toISOString().split('T')[0]} className="bg-slate-800 text-[10px] text-white rounded px-1 py-0.5 border border-slate-700 cursor-pointer mx-1" title="تعديل تاريخ الحصة" />
                       •{' '}
                       <span className="text-amber-300 font-bold font-mono">
-                        المستحقات: {pendingAmount} {currency} ({pendingHours} ساعة)
+                        {isMonthly
+                          ? `المستحقات: ${pendingAmount} ${currency} (اشتراك شهري)`
+                          : `المستحقات: ${pendingAmount} ${currency} (${pendingHours} ساعة)`}
                       </span>
                       {s.learningStyle && (
                         <span className="mr-2 text-[11px] text-purple-300/80 truncate max-w-[150px] inline-block align-middle">
@@ -1659,7 +1708,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                       )}
                     </p>
                     <p className="text-[10px] text-slate-500 mt-0.5 font-mono">
-                      سعر الساعة: {hourlyRate} {currency} • إجمالي الساعات: {totalHours} س ({sLessons.length} حصص)
+                      {isMonthly
+                        ? `نظام الحساب: اشتراك شهري ثابت (${monthlyDue} ${currency}/شهر) • الحصص: ${sLessons.length}`
+                        : `سعر الساعة: ${hourlyRate} ${currency} • إجمالي الساعات: ${totalHours} س (${sLessons.length} حصص)`}
                     </p>
                   </div>
 
@@ -1956,36 +2007,112 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                 )}
               </div>
 
+              {/* Billing Type Selector */}
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center justify-between">
-                  <span>سعر الساعة (Hourly Rate) *</span>
-                  <span className="text-[10px] text-amber-300 font-normal">تُحسب قيمة كل حصة تلقائياً</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    value={formHourlyRate}
-                    onChange={(e) => {
-                      setFormHourlyRate(Number(e.target.value));
-                      if (formErrors.hourlyRate) setFormErrors((prev) => ({ ...prev, hourlyRate: undefined }));
-                    }}
-                    placeholder="100"
-                    min={0}
-                    className={`w-full rounded-xl bg-slate-800 border px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 ${
-                      formErrors.hourlyRate ? 'border-rose-500' : 'border-slate-700'
-                    }`}
-                  />
-                  <span className="absolute left-3 top-2 text-xs text-slate-400 pointer-events-none">
-                    {currency} / ساعة
+                <label className="block text-xs font-medium text-slate-300 mb-1.5 flex items-center justify-between">
+                  <span>نظام الحساب والفوترة *</span>
+                  <span className="text-[10px] text-purple-300 font-normal">
+                    {formBillingType === 'monthly' ? 'اشتراك شهري ثابت (مجموعة)' : 'حساب بالساعة / الحصة (فردي)'}
                   </span>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormBillingType('monthly');
+                      if (formErrors.billingType) setFormErrors((prev) => ({ ...prev, billingType: undefined }));
+                    }}
+                    className={`p-2.5 rounded-2xl text-xs font-bold border transition cursor-pointer flex flex-col items-center justify-center gap-1 text-center ${
+                      formBillingType === 'monthly'
+                        ? 'bg-purple-600/30 border-purple-400 text-purple-200 ring-2 ring-purple-400/40 shadow-lg scale-[1.02]'
+                        : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span>اشتراك شهري ثابت 🏫</span>
+                    <span className="text-[9px] opacity-75 font-normal">طالب مجموعة / سنتر</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormBillingType('hourly');
+                      if (formErrors.billingType) setFormErrors((prev) => ({ ...prev, billingType: undefined }));
+                    }}
+                    className={`p-2.5 rounded-2xl text-xs font-bold border transition cursor-pointer flex flex-col items-center justify-center gap-1 text-center ${
+                      formBillingType === 'hourly'
+                        ? 'bg-sky-600/30 border-sky-400 text-sky-200 ring-2 ring-sky-400/40 shadow-lg scale-[1.02]'
+                        : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span>حساب بالساعة / الحصة 👤</span>
+                    <span className="text-[9px] opacity-75 font-normal">طالب فردي / خاص</span>
+                  </button>
                 </div>
-                {formErrors.hourlyRate && (
-                  <p className="text-[10px] text-rose-400 font-bold mt-1 flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3 shrink-0" />
-                    <span>{formErrors.hourlyRate}</span>
-                  </p>
-                )}
               </div>
+
+              {formBillingType === 'monthly' ? (
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center justify-between">
+                    <span>الاشتراك الشهري الثابت (Monthly Fee) *</span>
+                    <span className="text-[10px] text-amber-300 font-normal">ثابت ولا يتأثر بالحضور أو الغياب</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value={formMonthlyFee}
+                      onChange={(e) => {
+                        setFormMonthlyFee(Number(e.target.value));
+                        if (formErrors.monthlyFee) setFormErrors((prev) => ({ ...prev, monthlyFee: undefined }));
+                      }}
+                      placeholder="300"
+                      min={0}
+                      className={`w-full rounded-xl bg-slate-800 border px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 ${
+                        formErrors.monthlyFee ? 'border-rose-500' : 'border-slate-700'
+                      }`}
+                    />
+                    <span className="absolute left-3 top-2 text-xs text-slate-400 pointer-events-none">
+                      {currency} / شهرياً
+                    </span>
+                  </div>
+                  {formErrors.monthlyFee && (
+                    <p className="text-[10px] text-rose-400 font-bold mt-1 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3 shrink-0" />
+                      <span>{formErrors.monthlyFee}</span>
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center justify-between">
+                    <span>سعر الساعة (Hourly Rate) *</span>
+                    <span className="text-[10px] text-amber-300 font-normal">تُحسب قيمة كل حصة تلقائياً بالحضور</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value={formHourlyRate}
+                      onChange={(e) => {
+                        setFormHourlyRate(Number(e.target.value));
+                        if (formErrors.hourlyRate) setFormErrors((prev) => ({ ...prev, hourlyRate: undefined }));
+                      }}
+                      placeholder="100"
+                      min={0}
+                      className={`w-full rounded-xl bg-slate-800 border px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 ${
+                        formErrors.hourlyRate ? 'border-rose-500' : 'border-slate-700'
+                      }`}
+                    />
+                    <span className="absolute left-3 top-2 text-xs text-slate-400 pointer-events-none">
+                      {currency} / ساعة
+                    </span>
+                  </div>
+                  {formErrors.hourlyRate && (
+                    <p className="text-[10px] text-rose-400 font-bold mt-1 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3 shrink-0" />
+                      <span>{formErrors.hourlyRate}</span>
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Prepaid Class Balance (Optional) */}
               <div>
@@ -2491,22 +2618,32 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
               </div>
             </div>
 
-            {/* SECTION 1: SECTION "حسابات ومستحقات الطالب (نظام سعر الساعة)" */}
+            {/* SECTION 1: SECTION "حسابات ومستحقات الطالب" */}
             {(() => {
+              const isMonthly = selectedProfileStudent.billingType === 'monthly' || (!selectedProfileStudent.billingType && ((selectedProfileStudent.groupIds && selectedProfileStudent.groupIds.length > 0) || selectedProfileStudent.classType === 'center'));
+              const monthlyDue = selectedProfileStudent.monthlyFee || (selectedProfileStudent.customFees && selectedProfileStudent.groupIds && selectedProfileStudent.groupIds[0] ? selectedProfileStudent.customFees[selectedProfileStudent.groupIds[0]] : 300);
               const hourlyRate = selectedProfileStudent.hourlyRate || (selectedProfileStudent.monthlyFee ? Math.round(selectedProfileStudent.monthlyFee / 4) : 100);
               const unsettledLessons = studentLessons.filter((l) => !l.settled && isLessonFinanciallyCounted(l));
               const pendingMinutes = unsettledLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
               const pendingHours = (pendingMinutes / 60).toFixed(1);
-              const pendingAmount = unsettledLessons.reduce((acc, l) => {
-                const dur = l.duration || 60;
-                const rate = l.hourlyRate || hourlyRate;
-                return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
-              }, 0);
-              const collectedAmount = studentLessons.filter((l) => l.settled).reduce((acc, l) => {
-                const dur = l.duration || 60;
-                const rate = l.hourlyRate || hourlyRate;
-                return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
-              }, 0);
+              const isPaid = selectedProfileStudent.paymentStatus === 'paid';
+
+              const pendingAmount = isMonthly
+                ? (isPaid ? 0 : monthlyDue)
+                : unsettledLessons.reduce((acc, l) => {
+                    const dur = l.duration || 60;
+                    const rate = l.hourlyRate || hourlyRate;
+                    return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
+                  }, 0);
+
+              const collectedAmount = isMonthly
+                ? (isPaid ? monthlyDue : 0)
+                : studentLessons.filter((l) => l.settled).reduce((acc, l) => {
+                    const dur = l.duration || 60;
+                    const rate = l.hourlyRate || hourlyRate;
+                    return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
+                  }, 0);
+
               const totalMinutes = studentLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
               const totalHours = (totalMinutes / 60).toFixed(1);
 
@@ -2519,7 +2656,11 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                       </div>
                       <div>
                         <span className="text-xs font-bold text-white block">حسابات ومستحقات الطالب</span>
-                        <span className="text-[10px] text-emerald-300 font-semibold">سعر الساعة: {hourlyRate} {currency}/ساعة</span>
+                        <span className="text-[10px] text-emerald-300 font-semibold">
+                          {isMonthly
+                            ? `نظام الحساب: اشتراك شهري ثابت (${monthlyDue} ${currency}/شهر)`
+                            : `سعر الساعة: ${hourlyRate} ${currency}/ساعة`}
+                        </span>
                       </div>
                     </div>
 
@@ -2542,7 +2683,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                       <span className="font-bold text-amber-300 font-mono text-sm block mt-0.5">
                         {pendingAmount} {currency}
                       </span>
-                      <span className="text-[9px] text-slate-400">({pendingHours} ساعة غير مصفاة)</span>
+                      <span className="text-[9px] text-slate-400">
+                        {isMonthly ? '(اشتراك شهري ثابت)' : `(${pendingHours} ساعة غير مصفاة)`}
+                      </span>
                     </div>
 
                     <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
@@ -2550,15 +2693,21 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                       <span className="font-bold text-emerald-400 font-mono text-sm block mt-0.5">
                         {collectedAmount} {currency}
                       </span>
-                      <span className="text-[9px] text-emerald-300/80">تم تصفيتها سابقاً</span>
+                      <span className="text-[9px] text-emerald-300/80">
+                        {isMonthly ? (isPaid ? 'تم السداد بالكامل' : 'لم يسدد بعد') : 'تم تصفيتها سابقاً'}
+                      </span>
                     </div>
 
                     <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
-                      <span className="text-[10px] text-slate-400 block">إجمالي الساعات</span>
-                      <span className="font-bold text-white font-mono text-sm block mt-0.5">
-                        {totalHours} س
+                      <span className="text-[10px] text-slate-400 block">
+                        {isMonthly ? 'إجمالي الحصص' : 'إجمالي الساعات'}
                       </span>
-                      <span className="text-[9px] text-purple-300">{studentLessons.length} حصة كلية</span>
+                      <span className="font-bold text-white font-mono text-sm block mt-0.5">
+                        {isMonthly ? `${studentLessons.length} حصص` : `${totalHours} س`}
+                      </span>
+                      <span className="text-[9px] text-purple-300">
+                        {isMonthly ? `${totalHours} س منفذة` : `${studentLessons.length} حصة كلية`}
+                      </span>
                     </div>
                   </div>
 
