@@ -10,6 +10,7 @@ const triggerConfetti = (opts: Record<string, any>) => {
 };
 import { ThemeSettingsSection } from './ThemeToggle';
 import { useSettings } from '../context/SettingsContext';
+import { NotificationCenter } from './NotificationCenter';
 
 import {
   getStoredReminderSettings,
@@ -941,6 +942,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           <span>تصدير قائمة الطلاب كملف Excel (CSV)</span>
         </button>
       </div>
+
+      {/* Notification Center (مركز الإشعارات) */}
+      <NotificationCenter profile={profile} />
 
       {/* Automated Class Reminders Card */}
       <div className="rounded-2xl bg-gradient-to-r from-purple-950/50 via-slate-900 to-indigo-950/50 border border-purple-500/30 p-4 space-y-4 shadow-xl">

@@ -28,6 +28,8 @@ import { LoadingFallback } from './components/LoadingFallback';
 import { Sidebar } from './components/Sidebar';
 import { ThemeToggleCompact } from './components/ThemeToggle';
 import { OnboardingModal } from './components/OnboardingModal';
+import { ActiveReminderAlert, ActiveReminderAlertData } from './components/ActiveReminderAlert';
+import { getStoredNotificationPrefs } from './components/NotificationCenter';
 
 // Code-split heavy screen tabs with React.lazy to accelerate initial load time
 const StudentsTab = React.lazy(() => import('./components/StudentsTab').then((m) => ({ default: m.StudentsTab })));
@@ -173,14 +175,8 @@ export default function App() {
   const [schedules, setSchedules] = useState<ScheduleSlot[]>([]);
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
 
-  // Automated 15-Minute Class Reminders Alert Banner State
-  const [activeReminderAlert, setActiveReminderAlert] = useState<{
-    studentName: string;
-    classTime: string;
-    whatsappUrl?: string;
-    studentPhone?: string;
-    subject?: string;
-  } | null>(null);
+  // Automated Class Reminders Alert Banner State
+  const [activeReminderAlert, setActiveReminderAlert] = useState<ActiveReminderAlertData | null>(null);
 
   // AI Assistant Chat state (Header Icon trigger)
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
@@ -425,18 +421,35 @@ export default function App() {
           minutesBefore: settings.minutesBefore || 15,
         });
 
-        if (isMounted && res.matchedReminders && res.matchedReminders.length > 0) {
+        const notifPrefs = getStoredNotificationPrefs(profile);
+
+        if (isMounted && res.matchedReminders && res.matchedReminders.length > 0 && notifPrefs.classReminders !== false) {
           const first = res.matchedReminders[0];
-          setActiveReminderAlert({
-            studentName: first.studentName,
-            classTime: first.classTime,
-            whatsappUrl: first.whatsappUrl,
-            studentPhone: first.recipientPhone,
-            subject: first.subject,
-          });
+          const now = new Date();
+          const [hStr, mStr] = (first.classTime || '').split(':');
+          const target = new Date();
+          if (hStr !== undefined && mStr !== undefined) {
+            target.setHours(parseInt(hStr, 10), parseInt(mStr, 10), 0, 0);
+            if (now.getTime() - target.getTime() > 6 * 60 * 60 * 1000) {
+              target.setDate(target.getDate() + 1);
+            }
+          } else {
+            target.setTime(now.getTime() + (settings.minutesBefore || 15) * 60 * 1000);
+          }
+
+          if (notifPrefs.inAppBanner !== false) {
+            setActiveReminderAlert({
+              studentName: first.studentName,
+              classTime: first.classTime,
+              whatsappUrl: first.whatsappUrl,
+              studentPhone: first.recipientPhone,
+              subject: first.subject,
+              targetTime: target,
+            });
+          }
 
           // Automatically open WhatsApp API link with populated class details if enabled
-          if (settings.autoOpenWhatsApp && first.whatsappUrl) {
+          if ((settings.autoOpenWhatsApp || notifPrefs.whatsappAlerts) && first.whatsappUrl) {
             try {
               window.open(first.whatsappUrl, '_blank');
             } catch (e) {
@@ -444,10 +457,10 @@ export default function App() {
             }
           }
 
-          if (settings.soundEnabled) {
+          if (settings.soundEnabled && notifPrefs.soundChime !== false) {
             playNotificationChime();
           }
-          if (settings.notifyTeacher) {
+          if (settings.notifyTeacher && notifPrefs.browserPush !== false) {
             showBrowserNotification(
               '🔔 تذكير بحصة قادمة!',
               `حصة الطالب/ـة ${first.studentName} تبدأ بعد ${settings.minutesBefore || 15} دقيقة (الساعة ${first.classTime}).`
@@ -456,7 +469,7 @@ export default function App() {
         }
 
         // Automatic End-of-Day Summary check
-        if (settings.endOfDaySummaryEnabled !== false && isMounted) {
+        if (settings.endOfDaySummaryEnabled !== false && notifPrefs.dailySummaryReport !== false && isMounted) {
           const nowTime = new Date();
           const currentHour = nowTime.getHours();
           const currentMinute = nowTime.getMinutes();
@@ -737,44 +750,12 @@ export default function App() {
           </div>
         </header>
 
-        {/* Active Class 15-Minute Reminder Banner */}
+        {/* Active Class Dynamic Reminder Banner with Countdown */}
         {activeReminderAlert && (
-          <div className="bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-900 border-b border-emerald-500/50 px-3.5 py-2.5 flex items-center justify-between text-xs text-white shadow-xl">
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/40 flex-shrink-0 animate-bounce">
-                <Bell className="w-4 h-4" />
-              </div>
-              <div>
-                <p className="font-bold text-emerald-300">
-                  حصة {activeReminderAlert.studentName} تبدأ بعد 15 دقيقة! ⏰
-                </p>
-                <p className="text-[10px] text-slate-300">
-                  الساعة {activeReminderAlert.classTime} {activeReminderAlert.subject ? `• ${activeReminderAlert.subject}` : ''}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5">
-              {activeReminderAlert.whatsappUrl && (
-                <a
-                  href={activeReminderAlert.whatsappUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] transition flex items-center gap-1 shadow"
-                >
-                  <MessageCircle className="w-3.5 h-3.5" />
-                  <span>تذكير واتساب 💬</span>
-                </a>
-              )}
-              <button
-                type="button"
-                onClick={() => setActiveReminderAlert(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white transition cursor-pointer"
-                title="إخفاء التنبيه"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
+          <ActiveReminderAlert
+            alert={activeReminderAlert}
+            onClose={() => setActiveReminderAlert(null)}
+          />
         )}
 
         {/* Persistent Warning Bar for Near Expiry (when popup was dismissed) */}

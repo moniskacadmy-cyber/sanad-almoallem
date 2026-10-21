@@ -83,6 +83,7 @@ export interface TeacherProfile {
   };
   focusModeEnabled?: boolean;
   onboardingCompleted?: boolean;
+  notificationPreferences?: NotificationPreferences;
   createdAt: any;
   updatedAt: any;
 }
@@ -321,6 +322,35 @@ export interface ReminderSettings {
   endOfDaySummaryTime?: string; // e.g. "21:00"
   timezone?: string;
 }
+
+export interface NotificationPreferences {
+  // Event types
+  newStudentRegistered: boolean; // تسجيل طالب جديد
+  subscriptionNearExpiry: boolean; // قرب انتهاء الاشتراك
+  classReminders: boolean; // تذكيرات مواعيد الحصص
+  studentAbsenceRecorded: boolean; // تسجيل غياب أو اعتذار طالب
+  paymentRecorded: boolean; // تسجيل دفعة مالية أو تصفية
+  dailySummaryReport: boolean; // تقرير ملخص نهاية اليوم
+
+  // Delivery channels
+  browserPush: boolean; // إشعارات المتصفح والنظام
+  inAppBanner: boolean; // أشرطة التنبيه داخل التطبيق
+  soundChime: boolean; // نغمة التنبيه الصوتية
+  whatsappAlerts: boolean; // تنبيهات واتساب
+}
+
+export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
+  newStudentRegistered: true,
+  subscriptionNearExpiry: true,
+  classReminders: true,
+  studentAbsenceRecorded: true,
+  paymentRecorded: true,
+  dailySummaryReport: true,
+  browserPush: true,
+  inAppBanner: true,
+  soundChime: true,
+  whatsappAlerts: false,
+};
 
 export const DEFAULT_WHATSAPP_TEMPLATES = {
   welcome: `السلام عليكم ورحمة الله وبركاته 🌷\nمرحباً بك معنا في رحلتنا التعليمية لمادة ({subject})! يسعدني جداً انضمام الطالب/ـة: {studentName} معنا.\nسنبذل قصارى جهدنا لتحقيق التفوق والتميز الدراسي إن شاء الله. 📚✨`,
