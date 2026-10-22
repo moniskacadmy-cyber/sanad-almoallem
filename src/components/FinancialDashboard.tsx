@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { TeacherProfile, Student, LessonLog, isLessonFinanciallyCounted, SUPPORTED_CURRENCIES } from '../types';
-import { fetchAllStudentLessons, settleStudentAccount, updateTeacherProfile } from '../firebase';
+import { TeacherProfile, Student, LessonLog, isLessonFinanciallyCounted, SUPPORTED_CURRENCIES, ReminderLog } from '../types';
+import { fetchAllStudentLessons, settleStudentAccount, updateTeacherProfile, fetchReminderLogs } from '../firebase';
 import { useBackHandler } from '../services/backHandler';
 import {
   Clock,
@@ -50,11 +50,26 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
   const [isUpdatingCurrency, setIsUpdatingCurrency] = useState(false);
   const [currencySuccessToast, setCurrencySuccessToast] = useState<string | null>(null);
 
+  const [reminderLogs, setReminderLogs] = useState<ReminderLog[]>([]);
+  const loadReminderLogs = useCallback(async () => {
+    try {
+      const logs = await fetchReminderLogs(profile.id);
+      setReminderLogs(logs);
+    } catch (err) {
+      console.error('Error fetching reminder logs:', err);
+    }
+  }, [profile.id]);
+
+  useEffect(() => {
+    loadReminderLogs();
+  }, [loadReminderLogs]);
+
   useEffect(() => {
     if (profile.currency) {
       setCurrency(profile.currency);
     }
   }, [profile.currency]);
+
 
   const handleUpdateCurrency = async (newCurrency: string) => {
     if (newCurrency === currency) return;
@@ -572,21 +587,44 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
       </div>
 
       {/* TODAY'S QUICK STATS (ساعات وأرباح اليوم الواحد) */}
-      <div className="rounded-2xl bg-gradient-to-r from-blue-950/80 via-slate-900 to-indigo-950/80 border border-blue-500/40 p-3.5 shadow-md flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-blue-600/30 text-blue-300 flex items-center justify-center border border-blue-400/30">
-            <Clock className="w-4 h-4" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="rounded-2xl bg-gradient-to-r from-blue-950/80 via-slate-900 to-indigo-950/80 border border-blue-500/40 p-3.5 shadow-md flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-blue-600/30 text-blue-300 flex items-center justify-center border border-blue-400/30">
+              <Clock className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="text-xs font-bold text-white block">إنجاز اليوم ({todayKey})</span>
+              <span className="text-[10px] text-blue-200/80">
+                {totalTodayLessonsCount > 0 ? `${totalTodayLessonsCount} حصص منفذة اليوم` : 'لا توجد حصص مسجلة اليوم'}
+              </span>
+            </div>
           </div>
-          <div>
-            <span className="text-xs font-bold text-white block">إنجاز اليوم ({todayKey})</span>
-            <span className="text-[10px] text-blue-200/80">
-              {totalTodayLessonsCount > 0 ? `${totalTodayLessonsCount} حصص منفذة اليوم` : 'لا توجد حصص مسجلة اليوم'}
-            </span>
+          <div className="text-left">
+            <span className="text-sm font-black text-amber-300 font-mono">{totalTodayHours} ساعة</span>
+            <span className="block text-[10px] text-slate-300 font-mono">({totalTodayEarnings} {currency})</span>
           </div>
         </div>
-        <div className="text-left">
-          <span className="text-sm font-black text-amber-300 font-mono">{totalTodayHours} ساعة</span>
-          <span className="block text-[10px] text-slate-300 font-mono">({totalTodayEarnings} {currency})</span>
+
+        {/* WhatsApp Reminder Stats */}
+        <div className="rounded-2xl bg-gradient-to-r from-emerald-950/80 via-slate-900 to-teal-950/80 border border-emerald-500/40 p-3.5 shadow-md flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-emerald-600/30 text-emerald-300 flex items-center justify-center border border-emerald-400/30">
+              <MessageCircle className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="text-xs font-bold text-white block">تنبيهات واتساب ({selectedMonthInfo.label})</span>
+              <span className="text-[10px] text-emerald-200/80">
+                إجمالي التذكيرات المرسلة هذا الشهر
+              </span>
+            </div>
+          </div>
+          <div className="text-left">
+            <span className="text-sm font-black text-emerald-300 font-mono">
+              {reminderLogs.filter(log => log.sentAt.startsWith(selectedMonthKey)).length}
+            </span>
+            <span className="block text-[10px] text-slate-300">تذكير مرسل</span>
+          </div>
         </div>
       </div>
 

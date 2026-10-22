@@ -2492,6 +2492,23 @@ export function subscribeToAdminNotifications(callback: (notifications: AdminNot
   });
 }
 
+export async function fetchReminderLogs(teacherId: string): Promise<ReminderLog[]> {
+  const collRef = collection(db, 'teachers', teacherId, 'reminderLogs');
+  const q = query(collRef, orderBy('sentAt', 'desc'), limit(100));
+  try {
+    const snapshot = await getDocs(q);
+    const logs: ReminderLog[] = [];
+    snapshot.forEach((docSnap) => {
+      logs.push({ id: docSnap.id, ...docSnap.data() } as ReminderLog);
+    });
+    return logs;
+  } catch (err) {
+    console.error('Error fetching reminder logs:', err);
+    return [];
+  }
+}
+
+
 
 
 

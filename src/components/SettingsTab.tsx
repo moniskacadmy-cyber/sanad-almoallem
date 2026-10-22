@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { TeacherProfile, Student, ScheduleSlot, LibraryItem, BackupData, ReminderLog, ReminderSettings, DEFAULT_WHATSAPP_TEMPLATES, SUPPORTED_CURRENCIES } from '../types';
+import { TeacherProfile, Student, ScheduleSlot, LibraryItem, BackupData, ReminderLog, ReminderSettings, DEFAULT_WHATSAPP_TEMPLATES, SUPPORTED_CURRENCIES, NotificationPreferences, DEFAULT_NOTIFICATION_PREFERENCES } from '../types';
+import { getStoredNotificationPrefs } from './NotificationCenter';
 import { updateTeacherProfile, auth, fetchAllStudentLessons, importFullTeacherBackup, requestAndSaveFCMToken } from '../firebase';
 import { useBackHandler } from '../services/backHandler';
 import { signOut } from 'firebase/auth';
@@ -128,8 +129,27 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [fcmNotice, setFcmNotice] = useState<string | null>(null);
   const [fcmError, setFcmError] = useState<string | null>(null);
 
+  // Notification Preferences State
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPreferences>(() => getStoredNotificationPrefs(profile));
+  const [savingNotifPrefs, setSavingNotifPrefs] = useState(false);
+  const [notifPrefsNotice, setNotifPrefsNotice] = useState<string | null>(null);
+
+  const handleToggleNotifPref = async (key: keyof NotificationPreferences) => {
+    const updated = { ...notifPrefs, [key]: !notifPrefs[key] };
+    setNotifPrefs(updated);
+    setSavingNotifPrefs(true);
+    try {
+      localStorage.setItem('sanad_notification_preferences', JSON.stringify(updated));
+      await updateTeacherProfile(profile.id, { notificationPreferences: updated });
+      setNotifPrefsNotice('تم حفظ تفضيلات الإشعارات بنجاح ✅');
+      setTimeout(() => setNotifPrefsNotice(null), 2500);
+    } catch (e) {
+      console.error('Failed to save notification preferences:', e);
+    } finally {
+      setSavingNotifPrefs(false);
+    }
+  };
   const handleEnablePhoneNotifications = async () => {
-    setIsEnablingFcm(true);
     setFcmNotice(null);
     setFcmError(null);
     try {
@@ -825,6 +845,133 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               {curCode}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Notification Preferences Section */}
+      <div className="p-4 sm:p-5 rounded-3xl bg-slate-900/90 border border-purple-500/30 shadow-xl space-y-4">
+        <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-2xl bg-purple-600/20 text-purple-300 flex items-center justify-center border border-purple-500/30">
+              <Bell className="w-5 h-5 text-purple-400" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>تفضيلات الإشعارات والتنبيهات</span>
+                {savingNotifPrefs && <RefreshCw className="w-3 h-3 text-purple-400 animate-spin" />}
+              </h4>
+              <p className="text-xs text-slate-400">تحكم كامل في الإشعارات وقنوات التنبيه في التطبيق</p>
+            </div>
+          </div>
+
+          {notifPrefsNotice && (
+            <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 animate-in fade-in">
+              {notifPrefsNotice}
+            </span>
+          )}
+        </div>
+
+        {/* Preferences Toggles List */}
+        <div className="space-y-3">
+          {/* 1. Class Reminders */}
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
+            <div className="flex items-center gap-2.5">
+              <Clock className="w-4 h-4 text-blue-400" />
+              <div>
+                <span className="text-xs font-bold text-white block">تذكيرات مواعيد الحصص</span>
+                <span className="text-[10px] text-slate-400">تنبيه قبل موعد الحصة القادمة</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleToggleNotifPref('classReminders')}
+              className={`w-11 h-6 rounded-full transition-colors flex items-center p-1 cursor-pointer ${
+                notifPrefs.classReminders ? 'bg-purple-600 justify-end' : 'bg-slate-700 justify-start'
+              }`}
+            >
+              <div className="w-4 h-4 rounded-full bg-white shadow" />
+            </button>
+          </div>
+
+          {/* 2. WhatsApp Alerts */}
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
+            <div className="flex items-center gap-2.5">
+              <MessageCircle className="w-4 h-4 text-emerald-400" />
+              <div>
+                <span className="text-xs font-bold text-white block">تنبيهات ورسائل الواتساب</span>
+                <span className="text-[10px] text-slate-400">فتح روابط واتساب لتذكير أولياء الأمور</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleToggleNotifPref('whatsappAlerts')}
+              className={`w-11 h-6 rounded-full transition-colors flex items-center p-1 cursor-pointer ${
+                notifPrefs.whatsappAlerts ? 'bg-purple-600 justify-end' : 'bg-slate-700 justify-start'
+              }`}
+            >
+              <div className="w-4 h-4 rounded-full bg-white shadow" />
+            </button>
+          </div>
+
+          {/* 3. Daily Summary Report */}
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
+            <div className="flex items-center gap-2.5">
+              <Sparkles className="w-4 h-4 text-amber-300" />
+              <div>
+                <span className="text-xs font-bold text-white block">تقرير ملخص نهاية اليوم</span>
+                <span className="text-[10px] text-slate-400">إشعار تلخيص الحصص المنجزة والأرباح نهاية اليوم</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleToggleNotifPref('dailySummaryReport')}
+              className={`w-11 h-6 rounded-full transition-colors flex items-center p-1 cursor-pointer ${
+                notifPrefs.dailySummaryReport ? 'bg-purple-600 justify-end' : 'bg-slate-700 justify-start'
+              }`}
+            >
+              <div className="w-4 h-4 rounded-full bg-white shadow" />
+            </button>
+          </div>
+
+          {/* 4. Browser Push Notifications */}
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
+            <div className="flex items-center gap-2.5">
+              <Bell className="w-4 h-4 text-purple-400" />
+              <div>
+                <span className="text-xs font-bold text-white block">إشعارات المتصفح والنظام</span>
+                <span className="text-[10px] text-slate-400">تفعيل الإشعارات المنبثقة عبر متصفح الويب</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleToggleNotifPref('browserPush')}
+              className={`w-11 h-6 rounded-full transition-colors flex items-center p-1 cursor-pointer ${
+                notifPrefs.browserPush ? 'bg-purple-600 justify-end' : 'bg-slate-700 justify-start'
+              }`}
+            >
+              <div className="w-4 h-4 rounded-full bg-white shadow" />
+            </button>
+          </div>
+
+          {/* 5. Sound Chime */}
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
+            <div className="flex items-center gap-2.5">
+              <Volume2 className="w-4 h-4 text-teal-400" />
+              <div>
+                <span className="text-xs font-bold text-white block">نغمة التنبيه الصوتية</span>
+                <span className="text-[10px] text-slate-400">تشغيل نغمة صوتية عند وصول إشعار أو تذكير</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleToggleNotifPref('soundChime')}
+              className={`w-11 h-6 rounded-full transition-colors flex items-center p-1 cursor-pointer ${
+                notifPrefs.soundChime ? 'bg-purple-600 justify-end' : 'bg-slate-700 justify-start'
+              }`}
+            >
+              <div className="w-4 h-4 rounded-full bg-white shadow" />
+            </button>
+          </div>
         </div>
       </div>
 
