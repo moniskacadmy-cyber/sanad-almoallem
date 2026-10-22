@@ -374,6 +374,7 @@ export async function updateTeacherProfile(teacherId: string, updates: {
   };
   onboardingCompleted?: boolean;
   notificationPreferences?: any;
+  dailyGoals?: any;
 }) {
   const path = `teachers/${teacherId}`;
   try {

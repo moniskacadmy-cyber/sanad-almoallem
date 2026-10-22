@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TeacherProfile, Student, ScheduleSlot, LessonLog } from '../types';
 import { VoiceInputButton } from './VoiceInputButton';
+import { DailyFocus } from './DailyFocus';
 import { useBackHandler } from '../services/backHandler';
 import {
   addLessonLog,
@@ -466,6 +467,9 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         </div>
         <div>{getSubscriptionBadge()}</div>
       </div>
+
+      {/* Daily Focus */}
+      <DailyFocus profile={profile} />
 
       {/* 2. كارت بنفسجي كبير عنوانه "جدول اليوم" */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-purple-900 via-indigo-950 to-slate-950 p-4 sm:p-5 shadow-2xl border border-purple-500/30 space-y-3.5">

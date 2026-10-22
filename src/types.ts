@@ -54,6 +54,12 @@ export const DEFAULT_ABSENCE_POLICY: AbsencePolicySettings = {
   autoAbsenceReminder: true,
 };
 
+export interface DailyGoal {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
 export interface TeacherProfile {
   id: string;
   name: string;
@@ -69,6 +75,7 @@ export interface TeacherProfile {
   trialEndDate: any;   // Firestore Timestamp
   subscriptionExpiresAt: any; // Firestore Timestamp
   currency?: string; // العملة المفضلة (مثال: ج.م، ر.س، د.إ)
+  dailyGoals?: DailyGoal[];
   reminderMinutesBefore?: number;
   remindersEnabled?: boolean;
   teacherNotificationsEnabled?: boolean;
