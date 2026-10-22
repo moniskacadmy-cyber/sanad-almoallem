@@ -901,13 +901,21 @@ export async function deleteStudent(teacherId: string, studentId: string) {
 export async function toggleStudentPaymentStatus(
   teacherId: string,
   studentId: string,
-  currentStatus: 'paid' | 'unpaid'
+  currentStatus: PaymentStatus,
+  targetStatus?: PaymentStatus
 ) {
-  const newStatus = currentStatus === 'paid' ? 'unpaid' : 'paid';
+  const nextStatus: PaymentStatus = targetStatus
+    ? targetStatus
+    : currentStatus === 'unpaid'
+    ? 'partial'
+    : currentStatus === 'partial'
+    ? 'paid'
+    : 'unpaid';
+
   const currentMonth = new Intl.DateTimeFormat('ar-EG', { month: 'long', year: 'numeric' }).format(new Date());
   return updateStudent(teacherId, studentId, {
-    paymentStatus: newStatus,
-    lastPaymentMonth: newStatus === 'paid' ? currentMonth : undefined,
+    paymentStatus: nextStatus,
+    lastPaymentMonth: nextStatus === 'paid' ? currentMonth : undefined,
   });
 }
 

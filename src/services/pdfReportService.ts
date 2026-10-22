@@ -8,6 +8,7 @@ export interface ReportOptions {
   endDate?: string;   // YYYY-MM-DD
   teacherNote?: string;
   includeHomework?: boolean;
+  currency?: string;
 }
 
 /**
@@ -38,7 +39,7 @@ export function buildReportHtml(
   lessons: LessonLog[],
   options: ReportOptions
 ): string {
-  const currency = teacher.currency || 'ج.م';
+  const currency = options.currency || teacher.currency || 'ج.م';
   const now = new Date();
   const issueDateStr = new Intl.DateTimeFormat('ar-EG', {
     dateStyle: 'full',

@@ -411,3 +411,33 @@ export function renderTemplate(templateText: string, vars: Record<string, any>):
   });
   return result;
 }
+
+export interface CurrencyOption {
+  code: string;
+  name: string;
+  symbol: string;
+  flag: string;
+}
+
+export const SUPPORTED_CURRENCIES: CurrencyOption[] = [
+  { code: 'ج.م', name: 'جنيه مصري', symbol: 'EGP', flag: '🇪🇬' },
+  { code: 'ر.س', name: 'ريال سعودي', symbol: 'SAR', flag: '🇸🇦' },
+  { code: 'د.إ', name: 'درهم إماراتي', symbol: 'AED', flag: '🇦🇪' },
+  { code: 'د.ك', name: 'دينار كويتي', symbol: 'KWD', flag: '🇰🇼' },
+  { code: 'ر.ق', name: 'ريال قطري', symbol: 'QAR', flag: '🇶🇦' },
+  { code: 'ر.ع', name: 'ريال عماني', symbol: 'OMR', flag: '🇴🇲' },
+  { code: 'د.ب', name: 'دينار بحريني', symbol: 'BHD', flag: '🇧🇭' },
+  { code: 'د.أ', name: 'دينار أردني', symbol: 'JOD', flag: '🇯🇴' },
+  { code: 'د.ع', name: 'دينار عراقي', symbol: 'IQD', flag: '🇮🇶' },
+  { code: 'ل.س', name: 'ليرة سورية', symbol: 'SYP', flag: '🇸🇾' },
+  { code: 'ل.ل', name: 'ليرة لبنانية', symbol: 'LBP', flag: '🇱🇧' },
+  { code: 'د.ت', name: 'دينار تونسي', symbol: 'TND', flag: '🇹🇳' },
+  { code: 'د.ج', name: 'دينار جزائري', symbol: 'DZD', flag: '🇩🇿' },
+  { code: 'د.م', name: 'درهم مغربي', symbol: 'MAD', flag: '🇲🇦' },
+  { code: 'د.ل', name: 'دينار ليبي', symbol: 'LYD', flag: '🇱🇾' },
+  { code: 'ج.س', name: 'جنيه سوداني', symbol: 'SDG', flag: '🇸🇩' },
+  { code: '$', name: 'دولار أمريكي', symbol: 'USD', flag: '🇺🇸' },
+  { code: '€', name: 'يورو', symbol: 'EUR', flag: '🇪🇺' },
+  { code: '£', name: 'جنيه إسترليني', symbol: 'GBP', flag: '🇬🇧' },
+  { code: 'TL', name: 'ليرة تركية', symbol: 'TRY', flag: '🇹🇷' },
+];

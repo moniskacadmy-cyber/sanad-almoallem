@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
-import { Group, EducationalCenter, GroupScheduleItem } from '../types';
-import { addGroup, addCenter } from '../firebase';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Group, EducationalCenter, GroupScheduleItem, ScheduleSlot } from '../types';
+import { addGroup, addCenter, subscribeToGroups, subscribeToSchedules } from '../firebase';
+import { hasConflict } from '../services/conflictService';
 import { useBackHandler } from '../services/backHandler';
 import {
   Users,
@@ -111,6 +112,19 @@ export const AddGroupModal: React.FC<AddGroupModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  const [existingGroups, setExistingGroups] = useState<Group[]>([]);
+  const [existingSchedules, setExistingSchedules] = useState<ScheduleSlot[]>([]);
+
+  useEffect(() => {
+    if (!isOpen || !teacherId) return;
+    const unsubG = subscribeToGroups(teacherId, setExistingGroups);
+    const unsubS = subscribeToSchedules(teacherId, setExistingSchedules);
+    return () => {
+      unsubG();
+      unsubS();
+    };
+  }, [isOpen, teacherId]);
+
   // Suggested center names
   const centerSuggestions = useMemo(() => {
     return Array.from(new Set(existingCenters.map((c) => c.name.trim()))).filter(Boolean);
@@ -157,6 +171,42 @@ export const AddGroupModal: React.FC<AddGroupModalProps> = ({
     if (isNaN(feeNum) || feeNum < 0) {
       setErrorMsg('يرجى كتابة اشتراك الشهر بشكل صحيح (0 أو أكثر)');
       return;
+    }
+
+    // Check for schedule conflicts with teacher's other individual and group classes
+    const groupSlots: ScheduleSlot[] = existingGroups
+      .filter((g) => g.status !== 'archived')
+      .flatMap((g) =>
+        (g.schedule || []).map((slot, idx) => ({
+          id: `group_${g.id}_${idx}`,
+          teacherId,
+          studentId: `group_${g.id}`,
+          studentName: `مجموعة ${g.name}`,
+          dayOfWeek: slot.day,
+          time: slot.time,
+          duration: slot.duration || 90,
+          recurrence: 'weekly' as const,
+          classType: 'center' as const,
+          color: g.color || '#8b5cf6',
+        }))
+      );
+    const allSlots = [...existingSchedules, ...groupSlots];
+
+    for (const slot of scheduleSlots) {
+      const conflictRes = hasConflict(
+        {
+          dayOfWeek: Number(slot.day),
+          time: slot.time,
+          duration: Number(slot.duration) || 90,
+          studentName: cleanName,
+        },
+        allSlots
+      );
+
+      if (conflictRes.hasConflict) {
+        setErrorMsg(conflictRes.message || 'عفواً، لديك حصة أو مجموعة أخرى في نفس هذا الموعد');
+        return;
+      }
     }
 
     setIsSubmitting(true);

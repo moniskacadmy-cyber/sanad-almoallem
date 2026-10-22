@@ -182,6 +182,8 @@ export default function App() {
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
 
   // Register top-level modals & subviews on back handler stack
+  useBackHandler(isSidebarOpen, () => setIsSidebarOpen(false), 'sidebar_drawer');
+  useBackHandler(showOnboarding, () => setShowOnboarding(false), 'onboarding_modal');
   useBackHandler(showUpgradeModal, () => setShowUpgradeModal(false), 'upgrade_modal');
   useBackHandler(showFinancialDashboard, () => setShowFinancialDashboard(false), 'financial_dashboard');
   useBackHandler(showAdminView, () => setShowAdminView(false), 'admin_view');

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Bell, Clock, MessageCircle, X } from 'lucide-react';
 
 export interface ActiveReminderAlertData {

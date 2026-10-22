@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { TeacherProfile, Student, ScheduleSlot, LibraryItem, BackupData, ReminderLog, ReminderSettings, DEFAULT_WHATSAPP_TEMPLATES } from '../types';
+import { TeacherProfile, Student, ScheduleSlot, LibraryItem, BackupData, ReminderLog, ReminderSettings, DEFAULT_WHATSAPP_TEMPLATES, SUPPORTED_CURRENCIES } from '../types';
 import { updateTeacherProfile, auth, fetchAllStudentLessons, importFullTeacherBackup, requestAndSaveFCMToken } from '../firebase';
 import { useBackHandler } from '../services/backHandler';
 import { signOut } from 'firebase/auth';
@@ -52,6 +52,7 @@ import {
   DollarSign,
   ChevronLeft,
   ChevronRight,
+  Coins,
 } from 'lucide-react';
 
 interface SettingsTabProps {
@@ -82,6 +83,23 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [editSubject, setEditSubject] = useState(profile.subject);
   const [editCurrency, setEditCurrency] = useState(profile.currency || 'ج.م');
   const [savingProfile, setSavingProfile] = useState(false);
+  const [updatingCurrency, setUpdatingCurrency] = useState(false);
+
+  const handleQuickCurrencyChange = async (newCurr: string) => {
+    if (newCurr === profile.currency) return;
+    setUpdatingCurrency(true);
+    try {
+      await updateTeacherProfile(profile.id, { currency: newCurr });
+      triggerConfetti({ particleCount: 35, spread: 60, origin: { y: 0.7 } });
+      setExportNotice(`تم تغيير العملة المعتمدة إلى (${newCurr}) بنجاح! 💰`);
+      setTimeout(() => setExportNotice(null), 3500);
+    } catch (e: any) {
+      console.error('Failed to update currency:', e);
+    } finally {
+      setUpdatingCurrency(false);
+    }
+  };
+
   const [exportNotice, setExportNotice] = useState<string | null>(null);
   const { isFocusMode, toggleFocusMode } = useSettings();
 
@@ -753,6 +771,63 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       {/* App Theme (Dark & Light Mode) Selection */}
       <ThemeSettingsSection />
 
+      {/* Teacher Currency Preference Section */}
+      <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/40 via-slate-900 to-purple-950/40 border border-amber-500/30 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30">
+              <Coins className="w-5 h-5 text-amber-400" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>عملة المعلم المعتمدة</span>
+                <span className="text-xs font-mono font-black px-2 py-0.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300">
+                  {profile.currency || 'ج.م'}
+                </span>
+                {updatingCurrency && <RefreshCw className="w-3 h-3 text-amber-300 animate-spin" />}
+              </h4>
+              <p className="text-xs text-slate-400">تُستخدم في كافة الحسابات والتقارير المالية وفواتير أولياء الأمور</p>
+            </div>
+          </div>
+
+          <div className="relative">
+            <select
+              value={profile.currency || 'ج.م'}
+              onChange={(e) => handleQuickCurrencyChange(e.target.value)}
+              disabled={updatingCurrency}
+              className="appearance-none bg-slate-950 border border-amber-500/40 text-amber-300 font-bold rounded-xl pr-7 pl-3 py-1.5 text-xs cursor-pointer focus:outline-none"
+            >
+              {SUPPORTED_CURRENCIES.map((c) => (
+                <option key={c.code} value={c.code} className="bg-slate-900 text-white">
+                  {c.flag} {c.code} - {c.name}
+                </option>
+              ))}
+            </select>
+            <Coins className="w-3.5 h-3.5 text-amber-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+        </div>
+
+        {/* Quick Click Currency Badges */}
+        <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-800/80">
+          <span className="text-[11px] text-slate-400 font-bold ml-1">اختيار سريع:</span>
+          {['ج.م', 'ر.س', 'د.إ', 'د.ك', 'ر.ق', 'د.أ', '$', '€'].map((curCode) => (
+            <button
+              key={curCode}
+              type="button"
+              onClick={() => handleQuickCurrencyChange(curCode)}
+              disabled={updatingCurrency}
+              className={`text-xs font-bold px-2.5 py-1 rounded-xl transition cursor-pointer border ${
+                (profile.currency || 'ج.م') === curCode
+                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-black shadow-sm'
+                  : 'bg-slate-800/90 hover:bg-slate-700 text-slate-200 border-slate-700'
+              }`}
+            >
+              {curCode}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Focus Mode Toggle */}
       <div className="p-4 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-between">
         <div>
@@ -1388,15 +1463,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                   required
                   className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
                 >
-                  <option value="ج.م">ج.م (جنيه مصري)</option>
-                  <option value="ر.س">ر.س (ريال سعودي)</option>
-                  <option value="د.إ">د.إ (درهم إماراتي)</option>
-                  <option value="د.ك">د.ك (دينار كويتي)</option>
-                  <option value="د.أ">د.أ (دينار أردني)</option>
-                  <option value="ر.ق">ر.ق (ريال قطري)</option>
-                  <option value="ر.ع">ر.ع (ريال عماني)</option>
-                  <option value="ب.د">ب.د (دينار بحريني)</option>
-                  <option value="$">$ (دولار أمريكي)</option>
+                  {SUPPORTED_CURRENCIES.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.flag} {c.code} - {c.name}
+                    </option>
+                  ))}
                 </select>
               </div>
 

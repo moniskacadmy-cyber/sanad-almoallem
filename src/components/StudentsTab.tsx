@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { TeacherProfile, Student, LessonLog, ClassType, PaymentStatus, ScheduleSlot, DEFAULT_WHATSAPP_TEMPLATES, renderTemplate, isLessonFinanciallyCounted, ALL_SUBJECTS } from '../types';
@@ -28,6 +28,7 @@ import {
   addLibraryItem,
   fetchAllStudentLessons,
   settleStudentAccount,
+  toggleStudentPaymentStatus,
   normalizeArabicText,
   recordStudentAttendance,
 } from '../firebase';
@@ -431,7 +432,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
       },
       slotsToCheck
     );
-    return res.hasConflict ? res.message || 'تعارض في الموعد' : null;
+    return res.hasConflict ? res.message || 'عفواً، لديك حصة أو مجموعة أخرى في نفس هذا الموعد' : null;
   };
 
   // Actions for managing schedules directly inside Student Details Modal
@@ -1298,14 +1299,18 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
       const pendingMinutes = unsettledLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
       const pendingHours = (pendingMinutes / 60).toFixed(1);
       const isPaid = student.paymentStatus === 'paid';
-      const pendingAmount = isMonthly ? (isPaid ? 0 : monthlyDue) : unsettledLessons.reduce((acc, l) => {
-        const dur = l.duration || 60;
-        const rate = l.hourlyRate || hourlyRate;
-        return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
-      }, 0);
+      const isPartial = student.paymentStatus === 'partial';
+      const pendingAmount = isMonthly
+        ? (isPaid ? 0 : isPartial ? Math.round(monthlyDue / 2) : monthlyDue)
+        : unsettledLessons.reduce((acc, l) => {
+            const dur = l.duration || 60;
+            const rate = l.hourlyRate || hourlyRate;
+            return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
+          }, 0);
 
       if (isMonthly) {
-        return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر الطالب/ة: *${studentName}*،\n\nنود إحاطتكم علماً ببيان الاشتراك الشهري لمادة *${subject}*:\n🏫 *نظام الحساب:* اشتراك شهري ثابت (مجموعة)\n💰 *المبلغ المستحق:* ${pendingAmount} ${currency}\n\nنرجو التكرم بسداد الاشتراك في أقرب وقت مناسب لكم. شاكرين تعاونكم ودعمكم المستمر لتقدم الطالب ✨\n\nمع تحيات: *أستاذ ${teacherName}*`;
+        const partialNote = isPartial ? ' (تم تسجيل دفعة جزئية والمتبقي)' : '';
+        return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر الطالب/ة: *${studentName}*،\n\nنود إحاطتكم علماً ببيان الاشتراك الشهري لمادة *${subject}*:\n🏫 *نظام الحساب:* اشتراك شهري ثابت (مجموعة)\n💰 *المبلغ المستحق${partialNote}:* ${pendingAmount} ${currency}\n\nنرجو التكرم بسداد المبلغ في أقرب وقت مناسب لكم. شاكرين تعاونكم ودعمكم المستمر لتقدم الطالب ✨\n\nمع تحيات: *أستاذ ${teacherName}*`;
       }
 
       const lessonsListText = unsettledLessons
@@ -1391,6 +1396,10 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   };
 
   const handleExportStudentsPdf = () => {
+    if (students.length === 0) {
+      alert('لا يوجد طلاب لتصديرهم حالياً.');
+      return;
+    }
     try {
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       
@@ -1436,6 +1445,10 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   };
 
   const handleExportStudentsExcel = () => {
+    if (students.length === 0) {
+      alert('لا يوجد طلاب لتصديرهم حالياً.');
+      return;
+    }
     try {
       let csvContent = '\uFEFF';
       csvContent += 'ID,Student Name,Subject,Phone,Class Type,Payment Status,Remaining Paid Lessons,Schedules\n';
@@ -1474,33 +1487,56 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
   return (
     <div className="space-y-4 pb-20">
-      {/* Top View Mode Switcher */}
-      <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-900/90 border border-purple-500/30 shadow-inner">
-        <button
-          type="button"
-          onClick={() => setActiveMainView('groups_and_individuals')}
-          className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
-            activeMainView === 'groups_and_individuals'
-              ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-950/50 scale-[1.01]'
-              : 'text-slate-400 hover:text-white'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          <span>المجموعات والطلاب</span>
-        </button>
+      {/* Top View Mode Switcher & Quick Actions */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-900/90 border border-purple-500/30 shadow-inner flex-1">
+          <button
+            type="button"
+            onClick={() => setActiveMainView('groups_and_individuals')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              activeMainView === 'groups_and_individuals'
+                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-950/50 scale-[1.01]'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            <span>المجموعات والطلاب</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveMainView('records')}
-          className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
-            activeMainView === 'records'
-              ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-950/50 scale-[1.01]'
-              : 'text-slate-400 hover:text-white'
-          }`}
-        >
-          <BookOpen className="w-4 h-4" />
-          <span>سجل الطلاب المالي</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setActiveMainView('records')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              activeMainView === 'records'
+                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-950/50 scale-[1.01]'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <BookOpen className="w-4 h-4" />
+            <span>سجل الطلاب المالي</span>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-1.5 justify-end">
+          <button
+            type="button"
+            onClick={handleExportStudentsPdf}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-purple-300 border border-purple-500/30 text-xs font-bold shadow-md transition cursor-pointer"
+            title="تصدير قائمة الطلاب والمواعيد إلى PDF"
+          >
+            <Download className="w-4 h-4 text-purple-400" />
+            <span>تصدير PDF</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleExportStudentsExcel}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-emerald-300 border border-emerald-500/30 text-xs font-bold shadow-md transition cursor-pointer"
+            title="تصدير قائمة الطلاب والمواعيد إلى Excel (CSV)"
+          >
+            <FileText className="w-4 h-4 text-emerald-400" />
+            <span>تصدير Excel</span>
+          </button>
+        </div>
       </div>
 
       {activeMainView === 'groups_and_individuals' ? (
@@ -1783,8 +1819,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
             // Group students: fixed monthly fee unaffected by attendance/lessons
             // Individual students: hourly rate * attended classes
             const isPaid = s.paymentStatus === 'paid';
+            const isPartial = s.paymentStatus === 'partial';
             const pendingAmount = isMonthly
-              ? (isPaid ? 0 : monthlyDue)
+              ? (isPaid ? 0 : isPartial ? Math.round(monthlyDue / 2) : monthlyDue)
               : unsettledLessons.reduce((acc, l) => {
                   const dur = l.duration || 60;
                   const rate = l.hourlyRate || hourlyRate;
@@ -1862,28 +1899,40 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                     </p>
                   </div>
 
-                  {/* Dues Status Badge / Quick Settle Indicator */}
-                  <div
-                    onClick={() => handleOpenStudentProfile(s)}
-                    className="cursor-pointer flex-shrink-0"
-                  >
-                    {pendingAmount > 0 ? (
-                      <span
-                        className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-950/80 border border-amber-500/40 text-amber-300 hover:bg-amber-900/80 transition shadow"
-                        title="مستحقات معلقة - اضغط لتفاصيل الحساب والتصفية"
-                      >
-                        <Clock className="w-3 h-3 text-amber-400" />
-                        <span>مستحق: {pendingAmount} {currency}</span>
-                      </span>
-                    ) : (
-                      <span
-                        className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/80 transition shadow"
-                        title="خالص الحساب - لا توجد مستحقات معلقة"
-                      >
-                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                        <span>خالص الحساب ✅</span>
-                      </span>
-                    )}
+                  {/* Dues Status Badge / Quick Payment Toggle */}
+                  <div className="flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleStudentPaymentStatus(profile.id, s.id, s.paymentStatus || 'unpaid');
+                      }}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold transition shadow cursor-pointer active:scale-95 ${
+                        s.paymentStatus === 'paid'
+                          ? 'bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/80'
+                          : s.paymentStatus === 'partial'
+                          ? 'bg-amber-950/80 border border-amber-500/40 text-amber-300 hover:bg-amber-900/80'
+                          : 'bg-rose-950/80 border border-rose-500/40 text-rose-300 hover:bg-rose-900/80'
+                      }`}
+                      title="حالة الدفع (اضغط للتبديل: دفع كامل / دفع جزئي / لم يدفع)"
+                    >
+                      {s.paymentStatus === 'paid' ? (
+                        <>
+                          <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                          <span>خالص الحساب ✅</span>
+                        </>
+                      ) : s.paymentStatus === 'partial' ? (
+                        <>
+                          <Clock className="w-3 h-3 text-amber-400" />
+                          <span>سداد جزئي ⏳ ({pendingAmount} {currency})</span>
+                        </>
+                      ) : (
+                        <>
+                          <Clock className="w-3 h-3 text-rose-400" />
+                          <span>مستحق: {pendingAmount} {currency} ❌</span>
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
 
@@ -2775,9 +2824,10 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
               const pendingMinutes = unsettledLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
               const pendingHours = (pendingMinutes / 60).toFixed(1);
               const isPaid = selectedProfileStudent.paymentStatus === 'paid';
+              const isPartial = selectedProfileStudent.paymentStatus === 'partial';
 
               const pendingAmount = isMonthly
-                ? (isPaid ? 0 : monthlyDue)
+                ? (isPaid ? 0 : isPartial ? Math.round(monthlyDue / 2) : monthlyDue)
                 : unsettledLessons.reduce((acc, l) => {
                     const dur = l.duration || 60;
                     const rate = l.hourlyRate || hourlyRate;
@@ -2785,7 +2835,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                   }, 0);
 
               const collectedAmount = isMonthly
-                ? (isPaid ? monthlyDue : 0)
+                ? (isPaid ? monthlyDue : isPartial ? Math.round(monthlyDue / 2) : 0)
                 : studentLessons.filter((l) => l.settled).reduce((acc, l) => {
                     const dur = l.duration || 60;
                     const rate = l.hourlyRate || hourlyRate;
@@ -2859,15 +2909,30 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                     </div>
                   </div>
 
-                  {/* Actions: Settle Account Button, PDF Statement & WhatsApp Statement */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                  {/* Actions: Settle Account, Partial Payment, PDF Statement & WhatsApp Statement */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
                     <button
                       type="button"
                       onClick={() => setShowConfirmSettleStudent(selectedProfileStudent)}
                       className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-md active:scale-98"
                     >
                       <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
-                      <span>تصفية الحساب 💰</span>
+                      <span>تصفية كاملة 💰</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!selectedProfileStudent) return;
+                        const next: PaymentStatus = selectedProfileStudent.paymentStatus === 'partial' ? 'unpaid' : 'partial';
+                        await toggleStudentPaymentStatus(profile.id, selectedProfileStudent.id, selectedProfileStudent.paymentStatus || 'unpaid', next);
+                        setSelectedProfileStudent((prev) => prev ? { ...prev, paymentStatus: next } : null);
+                      }}
+                      className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-amber-600/30 hover:bg-amber-600/50 border border-amber-500/40 text-amber-200 text-xs font-bold transition cursor-pointer active:scale-98"
+                      title="تسجيل دفع جزئي للطالب"
+                    >
+                      <Clock className="w-3.5 h-3.5 text-amber-300 flex-shrink-0" />
+                      <span>{selectedProfileStudent.paymentStatus === 'partial' ? 'إلغاء الجزئي ↩️' : 'دفع جزئي ⏳'}</span>
                     </button>
 
                     <button
@@ -2886,7 +2951,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                       className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-xs font-semibold transition cursor-pointer active:scale-98"
                     >
                       <MessageCircle className="w-3.5 h-3.5 text-amber-300 flex-shrink-0" />
-                      <span>مطالبة مالية (واتساب)</span>
+                      <span>مطالبة (واتساب)</span>
                     </button>
                   </div>
                 </div>

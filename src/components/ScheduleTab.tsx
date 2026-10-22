@@ -608,7 +608,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
         );
 
         if (conflictRes.hasConflict) {
-          setConflictError(conflictRes.message || 'تعارض في الموعد مع حصة أخرى!');
+          setConflictError(conflictRes.message || 'عفواً، لديك حصة أو مجموعة أخرى في نفس هذا الموعد');
           return;
         }
 
@@ -698,9 +698,8 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
           );
 
           if (conflictRes.hasConflict) {
-            const dayName = WEEK_DAYS.find((d) => d.dayIndex === slot.dayOfWeek)?.name;
             setConflictError(
-              `تعارض في الموعد رقم (${i + 1}) يوم ${dayName} الساعة ${slot.time}: ${conflictRes.message}`
+              conflictRes.message || 'عفواً، لديك حصة أو مجموعة أخرى في نفس هذا الموعد'
             );
             return;
           }

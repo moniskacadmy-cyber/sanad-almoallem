@@ -644,12 +644,16 @@ export const HomeTab: React.FC<HomeTabProps> = ({
             <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30">
               <TrendingUp className="w-4 h-4" />
             </div>
-            <h3 className="text-sm font-black text-white">
-              الملخص المالي والأرباح (نظام سعر الساعة)
-            </h3>
+            <div>
+              <h3 className="text-sm font-black text-white">
+                الملخص المالي والأرباح
+              </h3>
+              <p className="text-[10px] text-emerald-300/80">العملة المعتمدة: {profile.currency || 'ج.م'}</p>
+            </div>
           </div>
-          <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black shadow-sm">
-            جديد 💰
+          <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-black shadow-sm flex items-center gap-1">
+            <span>العملة:</span>
+            <strong className="text-white font-mono">{profile.currency || 'ج.م'}</strong>
           </span>
         </div>
 
