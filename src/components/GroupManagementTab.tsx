@@ -381,9 +381,9 @@ export const GroupManagementTab: React.FC<GroupManagementTabProps> = ({
 
     // Check for schedule conflicts with teacher's other individual and group classes
     const existingGroupSlots: ScheduleSlot[] = groups
-      .filter((g) => g.status !== 'archived')
+      .filter((g: any) => g.status === 'active' && !g.archived)
       .flatMap((g) =>
-        (g.schedule || []).map((slot, idx) => ({
+        (g.schedule || []).map((slot: any, idx: number) => ({
           id: `group_${g.id}_${idx}`,
           teacherId,
           studentId: `group_${g.id}`,
@@ -394,6 +394,8 @@ export const GroupManagementTab: React.FC<GroupManagementTabProps> = ({
           recurrence: 'weekly' as const,
           classType: 'center' as const,
           color: g.color || '#8b5cf6',
+          createdAt: new Date(),
+          updatedAt: new Date(),
         }))
       );
     const allExistingSlots = [...schedules, ...existingGroupSlots];

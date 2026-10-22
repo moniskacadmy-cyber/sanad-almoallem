@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { TeacherProfile, Student, LessonLog, ClassType, PaymentStatus, ScheduleSlot, DEFAULT_WHATSAPP_TEMPLATES, renderTemplate, isLessonFinanciallyCounted, ALL_SUBJECTS } from '../types';
+import { TeacherProfile, Student, LessonLog, ClassType, PaymentStatus, ScheduleSlot, DEFAULT_WHATSAPP_TEMPLATES, renderTemplate, isLessonFinanciallyCounted, ALL_SUBJECTS, Group } from '../types';
 import { AbsenceDetailsModal, AbsenceDetailsResult } from './AbsenceDetailsModal';
 import { DailyAttendanceModal } from './DailyAttendanceModal';
 import { StudentPdfExportModal } from './StudentPdfExportModal';
@@ -20,6 +20,7 @@ import {
   updateStudent,
   deleteStudent,
   subscribeToStudentLessons,
+  subscribeToGroups,
   addLessonLog,
   deleteLessonLog,
   addSchedule,
@@ -390,9 +391,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   // Combined schedules (individual students + active groups) for conflict checking
   const groupSlots = useMemo(() => {
     const slots: ScheduleSlot[] = [];
-    groups.forEach((g) => {
-      if (g.status !== 'active' || g.archived || !Array.isArray(g.schedule)) return;
-      g.schedule.forEach((item) => {
+    groups.forEach((g: any) => {
+      if (g.status === 'archived' || g.archived || !Array.isArray(g.schedule)) return;
+      g.schedule.forEach((item: any) => {
         slots.push({
           id: `group_slot_${g.id}_day_${item.day}_time_${item.time}`,
           teacherId: profile.id,
