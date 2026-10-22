@@ -1,0 +1,73 @@
+{
+  "app": {
+    "title": "Sanad Teacher",
+    "subtitle": "Smart Teacher Platform",
+    "loading": "Loading...",
+    "error_firebase": "Firebase Connection Error",
+    "error_firebase_sub": "Unable to initialize database and auth. Please check your environment keys."
+  },
+  "nav": {
+    "home": "Home",
+    "students": "Groups & Students",
+    "appointments": "Appointments",
+    "classes": "Lessons",
+    "profits": "Earnings & Finance",
+    "expenses": "Expenses",
+    "reports": "Reports",
+    "reminders": "Reminders",
+    "notifications": "Notifications",
+    "settings": "Settings",
+    "admin": "Admin Dashboard"
+  },
+  "settings": {
+    "title": "Settings & Account",
+    "subtitle": "Manage profile, notification preferences, and language",
+    "language": "Interface Language",
+    "select_language": "Select Application Language",
+    "arabic": "العربية (Arabic)",
+    "english": "English",
+    "currency_title": "Default Teacher Currency",
+    "currency_subtitle": "Used across all accounting, financial reports, and parent invoices",
+    "theme_title": "App Theme (Dark / Light Mode)",
+    "notifications_title": "Notification & Alert Preferences",
+    "notifications_subtitle": "Full control over app notifications and channels",
+    "class_reminders": "Class Schedule Reminders",
+    "whatsapp_alerts": "WhatsApp Alerts & Messages",
+    "daily_summary": "End-of-Day Summary Report",
+    "browser_push": "Browser & System Push Notifications",
+    "sound_chime": "Sound Chime Alert",
+    "focus_mode": "Focus Mode",
+    "focus_mode_desc": "Reduce distractions during classes",
+    "subscription_status": "Subscription Status",
+    "save_changes": "Save Changes",
+    "saving": "Saving..."
+  },
+  "dnd": {
+    "title": "Do Not Disturb (Quiet Hours & Vacation)",
+    "subtitle": "Mute all notifications and reminders during quiet hours or holidays",
+    "active_now": "Do Not Disturb Active Now 🌙",
+    "scheduled": "Scheduled",
+    "disabled": "Disabled",
+    "enable_quiet_hours": "Enable Quiet Hours",
+    "enable_quiet_hours_desc": "Mute sounds and push alerts during specified times",
+    "start_time": "Start Time (Bedtime / Quiet)",
+    "end_time": "End Time (Wakeup)",
+    "mute_weekends": "Mute Weekends (Friday & Saturday)",
+    "mute_weekends_desc": "Pause class alerts during weekly days off",
+    "vacation_mode": "Full Vacation Mode",
+    "vacation_mode_desc": "Completely pause all alerts and reminders during holidays"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "edit": "Edit",
+    "delete": "Delete",
+    "close": "Close",
+    "confirm": "Confirm",
+    "back": "Back",
+    "search": "Search...",
+    "active": "Active",
+    "expired": "Expired",
+    "trial": "Trial"
+  }
+}

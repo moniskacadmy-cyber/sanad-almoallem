@@ -1,0 +1,73 @@
+{
+  "app": {
+    "title": "سند المعلم",
+    "subtitle": "منصة المعلم الذكية",
+    "loading": "جارٍ التحميل...",
+    "error_firebase": "خلل في إعدادات الاتصال بـ Firebase",
+    "error_firebase_sub": "تعذر تهيئة قاعدة البيانات والمصادقة. يرجى التأكد من صحة المفاتيح بملف البيئة."
+  },
+  "nav": {
+    "home": "الرئيسية",
+    "students": "المجموعات والطلاب",
+    "appointments": "المواعيد",
+    "classes": "الحصص",
+    "profits": "الأرباح والمالية",
+    "expenses": "المصروفات",
+    "reports": "التقارير",
+    "reminders": "التذكيرات",
+    "notifications": "الإشعارات",
+    "settings": "الإعدادات",
+    "admin": "لوحة الإدارة"
+  },
+  "settings": {
+    "title": "الإعدادات والحساب",
+    "subtitle": "إدارة الملف الشخصي، تفضيلات الإشعارات، واللغة",
+    "language": "لغة الواجهة (Interface Language)",
+    "select_language": "اختر لغة التطبيق",
+    "arabic": "العربية (Arabic)",
+    "english": "English (الإنجليزية)",
+    "currency_title": "عملة المعلم المعتمدة",
+    "currency_subtitle": "تُستخدم في كافة الحسابات والتقارير المالية وفواتير أولياء الأمور",
+    "theme_title": "مظهر التطبيق (Dark / Light Mode)",
+    "notifications_title": "تفضيلات الإشعارات والتنبيهات",
+    "notifications_subtitle": "تحكم كامل في الإشعارات وقنوات التنبيه في التطبيق",
+    "class_reminders": "تذكيرات مواعيد الحصص",
+    "whatsapp_alerts": "تنبيهات ورسائل الواتساب",
+    "daily_summary": "تقرير ملخص نهاية اليوم",
+    "browser_push": "إشعارات المتصفح والنظام",
+    "sound_chime": "نغمة التنبيه الصوتية",
+    "focus_mode": "وضع التركيز (Focus Mode)",
+    "focus_mode_desc": "تقليل التشتت أثناء الحصص",
+    "subscription_status": "حالة الاشتراك",
+    "save_changes": "حفظ التغييرات",
+    "saving": "جارٍ الحفظ..."
+  },
+  "dnd": {
+    "title": "وضع عدم الإزعاج (Quiet Hours & Vacation)",
+    "subtitle": "إسكات جميع التنبيهات والإشعارات خلال الساعات الهادئة أو العطلات",
+    "active_now": "وضع عدم الإزعاج نشط الآن 🌙",
+    "scheduled": "مجدول",
+    "disabled": "معطل",
+    "enable_quiet_hours": "تفعيل الساعات الهادئة",
+    "enable_quiet_hours_desc": "إيقاف الصوت والتنبيهات المباشرة خلال الأوقات المحددة",
+    "start_time": "ساعة البدء (ميعاد النوم / الهدوء)",
+    "end_time": "ساعة الانتهاء (الاستيقاظ)",
+    "mute_weekends": "إسكات عطلة نهاية الأسبوع (الجمعة والسبت)",
+    "mute_weekends_desc": "إيقاف تنبيهات الحصص في أيام الإجازة الأسبوعية",
+    "vacation_mode": "وضع العطلة الشاملة (Vacation Mode)",
+    "vacation_mode_desc": "تعطيل كافة التنبيهات والتذكيرات كلياً طوال فترة الإجازة"
+  },
+  "common": {
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "edit": "تعديل",
+    "delete": "حذف",
+    "close": "إغلاق",
+    "confirm": "تأكيد",
+    "back": "رجوع",
+    "search": "بحث...",
+    "active": "نشط",
+    "expired": "منتهي",
+    "trial": "تجريبي"
+  }
+}

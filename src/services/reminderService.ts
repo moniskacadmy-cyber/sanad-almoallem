@@ -6,6 +6,7 @@ import {
   ReminderSettings,
   renderTemplate,
   DEFAULT_WHATSAPP_TEMPLATES,
+  isInDoNotDisturbPeriod,
 } from '../types';
 import { getAuthenticatedHeaders } from './authHelper';
 
@@ -132,6 +133,11 @@ export async function checkRemindersApi(
   remindersSent: number;
   matchedReminders: ReminderLog[];
 }> {
+  // Respect Do Not Disturb settings (quiet hours, weekends, or vacation mode)
+  if (isInDoNotDisturbPeriod(params.teacher?.doNotDisturb)) {
+    return { success: true, checkedCount: 0, remindersSent: 0, matchedReminders: [] };
+  }
+
   // فحص حالة الإنترنت أولاً لمنع إرسال طلبات فاشلة وتسجيل أخطاء في الـ Console
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     return { success: false, checkedCount: 0, remindersSent: 0, matchedReminders: [] };

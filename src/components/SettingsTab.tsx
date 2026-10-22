@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { TeacherProfile, Student, ScheduleSlot, LibraryItem, BackupData, ReminderLog, ReminderSettings, DEFAULT_WHATSAPP_TEMPLATES, SUPPORTED_CURRENCIES, NotificationPreferences, DEFAULT_NOTIFICATION_PREFERENCES } from '../types';
+import { useTranslation } from 'react-i18next';
+import { TeacherProfile, Student, ScheduleSlot, LibraryItem, BackupData, ReminderLog, ReminderSettings, DEFAULT_WHATSAPP_TEMPLATES, SUPPORTED_CURRENCIES, NotificationPreferences, DEFAULT_NOTIFICATION_PREFERENCES, DoNotDisturbSettings, DEFAULT_DND_SETTINGS, isInDoNotDisturbPeriod } from '../types';
 import { getStoredNotificationPrefs } from './NotificationCenter';
 import { updateTeacherProfile, auth, fetchAllStudentLessons, importFullTeacherBackup, requestAndSaveFCMToken } from '../firebase';
 import { useBackHandler } from '../services/backHandler';
@@ -54,6 +55,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Coins,
+  Globe,
+  Moon,
+  BellOff,
+  Sun,
+  CalendarOff,
 } from 'lucide-react';
 
 interface SettingsTabProps {
@@ -78,6 +84,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   onOpenFinancialDashboard,
 }) => {
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const { i18n, t } = useTranslation();
+
+  const changeLanguage = (lng: string) => {
+    i18n.changeLanguage(lng);
+    document.documentElement.dir = lng === 'ar' ? 'rtl' : 'ltr';
+  };
+
   const [activeSubScreen, setActiveSubScreen] = useState<'main' | 'whatsapp_templates'>('main');
   const [editName, setEditName] = useState(profile.name);
   const [editWhatsapp, setEditWhatsapp] = useState(profile.whatsapp);
@@ -149,6 +162,28 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       setSavingNotifPrefs(false);
     }
   };
+  // Do Not Disturb State
+  const [dndSettings, setDndSettings] = useState<DoNotDisturbSettings>(() => {
+    return profile.doNotDisturb || DEFAULT_DND_SETTINGS;
+  });
+  const [savingDnd, setSavingDnd] = useState(false);
+  const [dndNotice, setDndNotice] = useState<string | null>(null);
+
+  const handleUpdateDnd = async (updates: Partial<DoNotDisturbSettings>) => {
+    const updated = { ...dndSettings, ...updates };
+    setDndSettings(updated);
+    setSavingDnd(true);
+    try {
+      await updateTeacherProfile(profile.id, { doNotDisturb: updated });
+      setDndNotice('تم حفظ إعدادات وضع عدم الإزعاج بنجاح 🌙');
+      setTimeout(() => setDndNotice(null), 3000);
+    } catch (e) {
+      console.error('Failed to save DND settings:', e);
+    } finally {
+      setSavingDnd(false);
+    }
+  };
+
   const handleEnablePhoneNotifications = async () => {
     setFcmNotice(null);
     setFcmError(null);
@@ -731,9 +766,15 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   return (
     <div className="space-y-4 pb-20">
       {/* Header */}
-      <div>
-        <h2 className="text-lg font-bold text-white">الإعدادات والحساب</h2>
-        <p className="text-xs text-slate-400">إدارة الملف الشخصي، حالة الاشتراك والنسخ الاحتياطي</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-white">{t('settings.title')}</h2>
+          <p className="text-xs text-slate-400">إدارة الملف الشخصي، حالة الاشتراك والنسخ الاحتياطي</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => changeLanguage('ar')} className={`px-2 py-1 rounded text-xs ${i18n.language === 'ar' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400'}`}>العربية</button>
+          <button onClick={() => changeLanguage('en')} className={`px-2 py-1 rounded text-xs ${i18n.language === 'en' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400'}`}>English</button>
+        </div>
       </div>
 
       {exportNotice && (
@@ -790,6 +831,52 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
       {/* App Theme (Dark & Light Mode) Selection */}
       <ThemeSettingsSection />
+
+      {/* Interface Language Preference Section */}
+      <div className="p-4 sm:p-5 rounded-3xl bg-slate-900/90 border border-purple-500/30 shadow-xl space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-2xl bg-indigo-600/20 text-indigo-300 flex items-center justify-center border border-indigo-500/30">
+              <Globe className="w-5 h-5 text-indigo-400" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>{t('settings.language', 'لغة الواجهة (Interface Language)')}</span>
+              </h4>
+              <p className="text-xs text-slate-400">
+                {t('settings.select_language', 'اختر لغة عرض الواجهة والاتجاه (RTL / LTR)')}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-800">
+            <button
+              type="button"
+              onClick={() => changeLanguage('ar')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                i18n.language.startsWith('ar')
+                  ? 'bg-purple-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>🇸🇦</span>
+              <span>العربية</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => changeLanguage('en')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                i18n.language.startsWith('en')
+                  ? 'bg-purple-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>🇬🇧</span>
+              <span>English</span>
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* Teacher Currency Preference Section */}
       <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/40 via-slate-900 to-purple-950/40 border border-amber-500/30 space-y-3">
@@ -973,6 +1060,145 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Do Not Disturb (وضع عدم الإزعاج والهدوء) Section */}
+      <div className="p-4 sm:p-5 rounded-3xl bg-slate-900/90 border border-indigo-500/30 shadow-xl space-y-4">
+        <div className="flex items-center justify-between border-b border-indigo-900/40 pb-3 flex-wrap gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-2xl bg-indigo-600/20 text-indigo-300 flex items-center justify-center border border-indigo-500/30">
+              <BellOff className="w-5 h-5 text-indigo-400" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>{t('dnd.title', 'وضع عدم الإزعاج (Quiet Hours & Vacation)')}</span>
+                {savingDnd && <RefreshCw className="w-3 h-3 text-indigo-400 animate-spin" />}
+              </h4>
+              <p className="text-xs text-slate-400">{t('dnd.subtitle', 'إسكات جميع التنبيهات والإشعارات خلال الساعات الهادئة أو العطلات')}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {isInDoNotDisturbPeriod(dndSettings) ? (
+              <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-amber-950/90 border border-amber-500/40 text-amber-300 flex items-center gap-1.5 animate-pulse">
+                <Moon className="w-3.5 h-3.5 text-amber-400" />
+                <span>{t('dnd.active_now', 'وضع عدم الإزعاج نشط الآن 🌙')}</span>
+              </span>
+            ) : dndSettings.enabled ? (
+              <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5 text-emerald-400" />
+                <span>{t('dnd.scheduled', 'مجدول')}</span>
+              </span>
+            ) : (
+              <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-slate-800 text-slate-400">
+                {t('dnd.disabled', 'معطل')}
+              </span>
+            )}
+
+            {dndNotice && (
+              <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-emerald-950/90 border border-emerald-500/40 text-emerald-300 animate-in fade-in">
+                {dndNotice}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Master Toggle */}
+        <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
+          <div className="flex items-center gap-2.5">
+            <Moon className="w-4 h-4 text-amber-400" />
+            <div>
+              <span className="text-xs font-bold text-white block">{t('dnd.enable_quiet_hours', 'تفعيل الساعات الهادئة')}</span>
+              <span className="text-[10px] text-slate-400">{t('dnd.enable_quiet_hours_desc', 'إيقاف الصوت والتنبيهات المباشرة خلال الأوقات المحددة')}</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleUpdateDnd({ enabled: !dndSettings.enabled })}
+            className={`w-11 h-6 rounded-full transition-colors flex items-center p-1 cursor-pointer ${
+              dndSettings.enabled ? 'bg-indigo-600 justify-end' : 'bg-slate-700 justify-start'
+            }`}
+          >
+            <div className="w-4 h-4 rounded-full bg-white shadow" />
+          </button>
+        </div>
+
+        {/* Time Settings Grid (when enabled) */}
+        {dndSettings.enabled && (
+          <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-indigo-500/20 space-y-3.5 animate-in fade-in duration-200">
+            <div className="grid grid-cols-2 gap-3">
+              {/* Start Time */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                  {t('dnd.start_time', 'ساعة البدء (ميعاد النوم / الهدوء)')}
+                </label>
+                <div className="relative">
+                  <input
+                    type="time"
+                    value={dndSettings.startTime || '22:00'}
+                    onChange={(e) => handleUpdateDnd({ startTime: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-amber-300 font-mono font-bold focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* End Time */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                  {t('dnd.end_time', 'ساعة الانتهاء (الاستيقاظ)')}
+                </label>
+                <div className="relative">
+                  <input
+                    type="time"
+                    value={dndSettings.endTime || '07:00'}
+                    onChange={(e) => handleUpdateDnd({ endTime: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-emerald-300 font-mono font-bold focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Weekend Mute */}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+              <div className="flex items-center gap-2">
+                <Sun className="w-4 h-4 text-amber-300" />
+                <div>
+                  <span className="text-xs font-bold text-slate-200 block">{t('dnd.mute_weekends', 'إسكات عطلة نهاية الأسبوع (الجمعة والسبت)')}</span>
+                  <span className="text-[10px] text-slate-400">{t('dnd.mute_weekends_desc', 'إيقاف تنبيهات الحصص في أيام الإجازة الأسبوعية')}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleUpdateDnd({ muteWeekends: !dndSettings.muteWeekends })}
+                className={`w-10 h-5.5 rounded-full transition-colors flex items-center p-0.5 cursor-pointer ${
+                  dndSettings.muteWeekends ? 'bg-amber-600 justify-end' : 'bg-slate-700 justify-start'
+                }`}
+              >
+                <div className="w-4 h-4 rounded-full bg-white shadow" />
+              </button>
+            </div>
+
+            {/* Vacation Mode */}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+              <div className="flex items-center gap-2">
+                <CalendarOff className="w-4 h-4 text-purple-400" />
+                <div>
+                  <span className="text-xs font-bold text-rose-300 block">{t('dnd.vacation_mode', 'وضع العطلة الشاملة (Vacation Mode)')}</span>
+                  <span className="text-[10px] text-slate-400">{t('dnd.vacation_mode_desc', 'تعطيل كافة التنبيهات والتذكيرات كلياً طوال فترة الإجازة')}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleUpdateDnd({ vacationMode: !dndSettings.vacationMode })}
+                className={`w-10 h-5.5 rounded-full transition-colors flex items-center p-0.5 cursor-pointer ${
+                  dndSettings.vacationMode ? 'bg-rose-600 justify-end' : 'bg-slate-700 justify-start'
+                }`}
+              >
+                <div className="w-4 h-4 rounded-full bg-white shadow" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Focus Mode Toggle */}

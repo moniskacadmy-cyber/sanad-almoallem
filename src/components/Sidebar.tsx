@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   LayoutGrid,
   Users,
@@ -12,6 +13,7 @@ import {
   Settings,
   X,
   ShieldCheck,
+  Globe,
 } from 'lucide-react';
 import { TeacherProfile } from '../types';
 import { ThemeSidebarToggle } from './ThemeToggle';
@@ -25,7 +27,9 @@ interface SidebarProps {
 }
 
 export function Sidebar({ isOpen, onClose, activeItem, onSelect, profile }: SidebarProps) {
+  const { t, i18n } = useTranslation();
   const [showDrawer, setShowDrawer] = useState(false);
+  const isRtl = i18n.language.startsWith('ar');
 
   useEffect(() => {
     if (isOpen) {
@@ -38,16 +42,16 @@ export function Sidebar({ isOpen, onClose, activeItem, onSelect, profile }: Side
   if (!isOpen) return null;
 
   const menuItems = [
-    { id: 'home', label: 'الرئيسية', icon: LayoutGrid },
-    { id: 'students', label: 'المجموعات والطلاب', icon: Users },
-    { id: 'appointments', label: 'المواعيد', icon: Calendar },
-    { id: 'classes', label: 'الحصص', icon: BookOpen },
-    { id: 'profits', label: 'الأرباح', icon: DollarSign },
-    { id: 'expenses', label: 'المصروفات', icon: Wallet },
-    { id: 'reports', label: 'التقارير', icon: BarChart3 },
-    { id: 'reminders', label: 'التذكيرات', icon: CheckSquare, defaultActive: true },
-    { id: 'notifications', label: 'الإشعارات', icon: Bell },
-    { id: 'settings', label: 'الإعدادات', icon: Settings },
+    { id: 'home', label: t('nav.home', 'الرئيسية'), icon: LayoutGrid },
+    { id: 'students', label: t('nav.students', 'المجموعات والطلاب'), icon: Users },
+    { id: 'appointments', label: t('nav.appointments', 'المواعيد'), icon: Calendar },
+    { id: 'classes', label: t('nav.classes', 'الحصص'), icon: BookOpen },
+    { id: 'profits', label: t('nav.profits', 'الأرباح'), icon: DollarSign },
+    { id: 'expenses', label: t('nav.expenses', 'المصروفات'), icon: Wallet },
+    { id: 'reports', label: t('nav.reports', 'التقارير'), icon: BarChart3 },
+    { id: 'reminders', label: t('nav.reminders', 'التذكيرات'), icon: CheckSquare, defaultActive: true },
+    { id: 'notifications', label: t('nav.notifications', 'الإشعارات'), icon: Bell },
+    { id: 'settings', label: t('nav.settings', 'الإعدادات'), icon: Settings },
   ];
 
   const handleClose = () => {
@@ -55,9 +59,14 @@ export function Sidebar({ isOpen, onClose, activeItem, onSelect, profile }: Side
     setTimeout(onClose, 300);
   };
 
+  const toggleLanguage = () => {
+    const nextLang = isRtl ? 'en' : 'ar';
+    i18n.changeLanguage(nextLang);
+  };
+
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden" dir="rtl">
-      {/* Backdrop with professional glass-morphism aesthetic matching design tokens */}
+    <div className="fixed inset-0 z-50 overflow-hidden" dir={isRtl ? 'rtl' : 'ltr'}>
+      {/* Backdrop */}
       <div
         className={`absolute inset-0 bg-slate-900/50 dark:bg-slate-950/80 backdrop-blur-md transition-all duration-300 ease-in-out ${
           showDrawer ? 'opacity-100' : 'opacity-0'
@@ -65,12 +74,18 @@ export function Sidebar({ isOpen, onClose, activeItem, onSelect, profile }: Side
         onClick={handleClose}
       />
 
-      {/* Navigation Drawer (slides smoothly from right with CSS transition properties) */}
-      <div className="absolute inset-y-0 right-0 max-w-full flex pl-10">
+      {/* Navigation Drawer */}
+      <div className={`absolute inset-y-0 ${isRtl ? 'right-0 pl-10' : 'left-0 pr-10'} max-w-full flex`}>
         <div
           style={{ transitionProperty: 'transform, opacity' }}
-          className={`w-80 bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl border-l border-slate-200 dark:border-purple-900/40 shadow-2xl flex flex-col text-slate-800 dark:text-slate-100 transform transition-all duration-300 ease-in-out ${
-            showDrawer ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'
+          className={`w-80 bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl ${
+            isRtl ? 'border-l' : 'border-r'
+          } border-slate-200 dark:border-purple-900/40 shadow-2xl flex flex-col text-slate-800 dark:text-slate-100 transform transition-all duration-300 ease-in-out ${
+            showDrawer
+              ? 'translate-x-0 opacity-100'
+              : isRtl
+              ? 'translate-x-full opacity-0'
+              : '-translate-x-full opacity-0'
           }`}
         >
           {/* Header */}
@@ -80,15 +95,19 @@ export function Sidebar({ isOpen, onClose, activeItem, onSelect, profile }: Side
                 <BookOpen className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-base font-extrabold text-slate-900 dark:text-white tracking-wide">سند المعلم</h2>
-                <p className="text-xs text-purple-600 dark:text-purple-300/80 font-medium">منصة المعلم</p>
+                <h2 className="text-base font-extrabold text-slate-900 dark:text-white tracking-wide">
+                  {t('app.title', 'سند المعلم')}
+                </h2>
+                <p className="text-xs text-purple-600 dark:text-purple-300/80 font-medium">
+                  {t('app.subtitle', 'منصة المعلم')}
+                </p>
               </div>
             </div>
             <button
               type="button"
               onClick={handleClose}
               className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-              title="إغلاق القائمة"
+              title={t('common.close', 'إغلاق')}
             >
               <X className="w-5 h-5" />
             </button>
@@ -96,14 +115,27 @@ export function Sidebar({ isOpen, onClose, activeItem, onSelect, profile }: Side
 
           {/* Teacher Profile Info summary */}
           {profile && (
-            <div className="px-4 py-3 bg-purple-50 dark:bg-purple-950/20 border-b border-purple-100 dark:border-purple-900/20 flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-purple-200 dark:bg-purple-900/50 border border-purple-400/40 dark:border-purple-500/30 flex items-center justify-center text-purple-800 dark:text-purple-200 font-bold text-sm">
-                {profile.name ? profile.name.charAt(0) : 'م'}
+            <div className="px-4 py-3 bg-purple-50 dark:bg-purple-950/20 border-b border-purple-100 dark:border-purple-900/20 flex items-center justify-between">
+              <div className="flex items-center gap-3 overflow-hidden">
+                <div className="w-9 h-9 rounded-xl bg-purple-200 dark:bg-purple-900/50 border border-purple-400/40 dark:border-purple-500/30 flex items-center justify-center text-purple-800 dark:text-purple-200 font-bold text-sm flex-shrink-0">
+                  {profile.name ? profile.name.charAt(0) : 'T'}
+                </div>
+                <div className="overflow-hidden">
+                  <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{profile.name}</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{profile.subject || 'Teacher'}</p>
+                </div>
               </div>
-              <div className="overflow-hidden">
-                <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{profile.name}</p>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{profile.subject || 'معلم عام'}</p>
-              </div>
+
+              {/* Language Switch Button */}
+              <button
+                type="button"
+                onClick={toggleLanguage}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-purple-100 dark:bg-purple-900/40 hover:bg-purple-200 dark:hover:bg-purple-800/60 text-purple-700 dark:text-purple-300 text-xs font-bold transition border border-purple-300 dark:border-purple-700/50 flex-shrink-0 cursor-pointer"
+                title={t('settings.language', 'Language')}
+              >
+                <Globe className="w-3.5 h-3.5" />
+                <span>{isRtl ? 'English' : 'العربية'}</span>
+              </button>
             </div>
           )}
 
@@ -141,7 +173,7 @@ export function Sidebar({ isOpen, onClose, activeItem, onSelect, profile }: Side
                   >
                     <Icon className="w-4 h-4" />
                   </div>
-                  <span className="flex-1 text-right">{item.label}</span>
+                  <span className={`flex-1 ${isRtl ? 'text-right' : 'text-left'}`}>{item.label}</span>
                   {isActive && (
                     <span className="w-2 h-2 rounded-full bg-purple-600 dark:bg-amber-400 animate-pulse" />
                   )}
@@ -154,7 +186,7 @@ export function Sidebar({ isOpen, onClose, activeItem, onSelect, profile }: Side
           <div className="p-3 border-t border-slate-200 dark:border-purple-900/30 text-center bg-slate-50/90 dark:bg-slate-950/60">
             <p className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-center gap-1">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span>سند المعلم الذكي • إصدار آمن</span>
+              <span>{t('app.title', 'سند المعلم')} • {isRtl ? 'إصدار آمن' : 'Secure Version'}</span>
             </p>
           </div>
         </div>
@@ -162,3 +194,4 @@ export function Sidebar({ isOpen, onClose, activeItem, onSelect, profile }: Side
     </div>
   );
 }
+

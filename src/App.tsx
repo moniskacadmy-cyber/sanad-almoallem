@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { onAuthStateChanged, User, signOut, getRedirectResult } from 'firebase/auth';
 import {
   auth,
@@ -16,6 +17,7 @@ import {
   Student,
   ScheduleSlot,
   LibraryItem,
+  isInDoNotDisturbPeriod,
 } from './types';
 import { AuthModal } from './components/AuthModal';
 import { LockScreen } from './components/LockScreen';
@@ -84,6 +86,7 @@ export default function App() {
     );
   }
 
+  const { t } = useTranslation();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<TeacherProfile | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -415,6 +418,7 @@ export default function App() {
     let isMounted = true;
 
     const performCheck = async () => {
+      if (isInDoNotDisturbPeriod(profile?.doNotDisturb)) return;
       try {
         const res = await checkRemindersApi({
           teacher: profile,
@@ -641,11 +645,11 @@ export default function App() {
   }
 
   const tabs = [
-    { label: 'الرئيسية', icon: Home },
-    { label: 'الطلاب', icon: Users, badge: students.length },
-    { label: 'المواعيد', icon: Calendar, badge: schedules.length },
-    { label: 'مكتبتي', icon: BookOpen },
-    { label: 'الإعدادات', icon: Settings },
+    { label: t('nav.home', 'الرئيسية'), icon: Home },
+    { label: t('nav.students', 'الطلاب'), icon: Users, badge: students.length },
+    { label: t('nav.appointments', 'المواعيد'), icon: Calendar, badge: schedules.length },
+    { label: t('nav.classes', 'مكتبتي'), icon: BookOpen },
+    { label: t('nav.settings', 'الإعدادات'), icon: Settings },
   ];
 
   return (

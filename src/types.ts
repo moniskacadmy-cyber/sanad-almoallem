@@ -60,6 +60,51 @@ export interface DailyGoal {
   completed: boolean;
 }
 
+export interface DoNotDisturbSettings {
+  enabled: boolean;
+  startTime: string; // e.g. "22:00"
+  endTime: string;   // e.g. "07:00"
+  muteWeekends?: boolean; // mute Friday & Saturday
+  vacationMode?: boolean; // full pause for all alerts
+}
+
+export const DEFAULT_DND_SETTINGS: DoNotDisturbSettings = {
+  enabled: false,
+  startTime: '22:00',
+  endTime: '07:00',
+  muteWeekends: false,
+  vacationMode: false,
+};
+
+export function isInDoNotDisturbPeriod(dnd?: DoNotDisturbSettings, checkDate: Date = new Date()): boolean {
+  if (!dnd || !dnd.enabled) return false;
+  if (dnd.vacationMode) return true;
+
+  // Check weekend mute (5 = Friday, 6 = Saturday in standard JS Date)
+  if (dnd.muteWeekends) {
+    const day = checkDate.getDay();
+    if (day === 5 || day === 6) return true;
+  }
+
+  if (!dnd.startTime || !dnd.endTime) return false;
+
+  const currentMinutes = checkDate.getHours() * 60 + checkDate.getMinutes();
+  const [startH, startM] = dnd.startTime.split(':').map(Number);
+  const [endH, endM] = dnd.endTime.split(':').map(Number);
+
+  const startMinutes = (startH || 0) * 60 + (startM || 0);
+  const endMinutes = (endH || 0) * 60 + (endM || 0);
+
+  if (startMinutes === endMinutes) return false;
+
+  if (startMinutes < endMinutes) {
+    return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+  } else {
+    // Overnight range e.g. 22:00 to 07:00
+    return currentMinutes >= startMinutes || currentMinutes < endMinutes;
+  }
+}
+
 export interface TeacherProfile {
   id: string;
   name: string;
@@ -80,6 +125,7 @@ export interface TeacherProfile {
   remindersEnabled?: boolean;
   teacherNotificationsEnabled?: boolean;
   timezone?: string;
+  doNotDisturb?: DoNotDisturbSettings;
   absencePolicy?: AbsencePolicySettings;
   whatsappTemplates?: {
     welcome?: string;
