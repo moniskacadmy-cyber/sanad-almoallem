@@ -20,6 +20,8 @@ const DEFAULT_SETTINGS: ReminderSettings = {
   autoOpenWhatsApp: false,
   endOfDaySummaryEnabled: true,
   endOfDaySummaryTime: '21:00',
+  morningSummaryEnabled: true,
+  morningSummaryTime: '07:00',
 };
 
 // Play a pleasant two-tone audio alert using Web Audio API
@@ -240,6 +242,18 @@ export async function fetchCronStatusApi(): Promise<{
       totalDispatched: 0,
       recentLogs: [],
     };
+  }
+}
+
+// Asks the server to push "notifications are on + today's classes" to the teacher's phone right after sign-in.
+// The server sends it at most once per 6 hours and respects Do-Not-Disturb; failures are silent on purpose.
+export async function sendLoginSummaryApi(): Promise<void> {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+  try {
+    const headers = await getAuthenticatedHeaders();
+    await fetch('/api/reminders/login-summary', { method: 'POST', headers });
+  } catch (e) {
+    console.warn('Login summary notification skipped:', e);
   }
 }
 

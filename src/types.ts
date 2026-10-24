@@ -124,6 +124,8 @@ export interface TeacherProfile {
   reminderMinutesBefore?: number;
   remindersEnabled?: boolean;
   teacherNotificationsEnabled?: boolean;
+  morningSummaryEnabled?: boolean;
+  morningSummaryTime?: string; // "HH:MM" in the teacher's time zone
   timezone?: string;
   doNotDisturb?: DoNotDisturbSettings;
   absencePolicy?: AbsencePolicySettings;
@@ -373,6 +375,8 @@ export interface ReminderSettings {
   autoOpenWhatsApp?: boolean;
   endOfDaySummaryEnabled?: boolean;
   endOfDaySummaryTime?: string; // e.g. "21:00"
+  morningSummaryEnabled?: boolean; // push every morning with today's classes (default on)
+  morningSummaryTime?: string; // e.g. "07:00"
   timezone?: string;
 }
 

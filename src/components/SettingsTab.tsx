@@ -279,9 +279,17 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     const updated = { ...reminderSettings, [key]: val };
     setReminderSettings(updated);
     storeReminderSettings(updated);
-    if (key === 'minutesBefore' || key === 'enabled' || key === 'notifyTeacher') {
+    if (
+      key === 'minutesBefore' ||
+      key === 'enabled' ||
+      key === 'notifyTeacher' ||
+      key === 'morningSummaryEnabled' ||
+      key === 'morningSummaryTime'
+    ) {
       try {
         await updateTeacherProfile(profile.id, {
+          ...(key === 'morningSummaryEnabled' ? { morningSummaryEnabled: Boolean(val) } : {}),
+          ...(key === 'morningSummaryTime' && /^\d{1,2}:\d{2}$/.test(String(val)) ? { morningSummaryTime: String(val) } : {}),
           ...(key === 'minutesBefore' ? { reminderMinutesBefore: Math.min(120, Math.max(5, Number(val) || 15)) } : {}),
           ...(key === 'enabled' ? { remindersEnabled: Boolean(val) } : {}),
           ...(key === 'notifyTeacher' ? { teacherNotificationsEnabled: Boolean(val) } : {}),
@@ -1634,6 +1642,49 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               >
                 {reminderSettings.soundEnabled ? 'مفعل 🔊' : 'صامت 🔇'}
               </button>
+            </div>
+
+            {/* Morning summary: a phone push every morning with today's classes (sent by the server, works with the phone locked) */}
+            <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-950/30 via-slate-950/60 to-purple-950/30 border border-amber-500/30 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30">
+                    <Bell className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white">ملخص الصباح ☀️</h4>
+                    <p className="text-[10px] text-slate-400">إشعار على الموبايل كل صباح بحصص اليوم، حتى لو التطبيق مقفول</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleUpdateReminderSetting(
+                      'morningSummaryEnabled',
+                      reminderSettings.morningSummaryEnabled === false
+                    )
+                  }
+                  className={`w-10 h-5 flex items-center rounded-full p-0.5 transition cursor-pointer ${
+                    reminderSettings.morningSummaryEnabled !== false
+                      ? 'bg-amber-600 justify-end'
+                      : 'bg-slate-700 justify-start'
+                  }`}
+                >
+                  <span className="bg-white w-4 h-4 rounded-full shadow-md" />
+                </button>
+              </div>
+
+              {reminderSettings.morningSummaryEnabled !== false && (
+                <div className="flex items-center gap-2 pt-1 border-t border-white/5 text-xs">
+                  <span className="text-[11px] text-slate-300">وقت الإشعار:</span>
+                  <input
+                    type="time"
+                    value={reminderSettings.morningSummaryTime || '07:00'}
+                    onChange={(e) => handleUpdateReminderSetting('morningSummaryTime', e.target.value)}
+                    className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white"
+                  />
+                </div>
+              )}
             </div>
 
             {/* End-of-Day Summary Report Section */}

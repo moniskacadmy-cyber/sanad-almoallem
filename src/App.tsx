@@ -64,6 +64,7 @@ import {
   playNotificationChime,
   checkRemindersApi,
   sendEndOfDaySummaryNotification,
+  sendLoginSummaryApi,
 } from './services/reminderService';
 import { requestAndSaveFCMToken } from './firebase';
 import {
@@ -314,7 +315,12 @@ export default function App() {
 
           requestAndSaveFCMToken()
             .then((result) => {
-              if (!result.success) console.warn('FCM notification registration:', result.error);
+              if (!result.success) {
+                console.warn('FCM notification registration:', result.error);
+              } else {
+                // Phone notification right after sign-in (today's classes + proof that push works).
+                void sendLoginSummaryApi();
+              }
             })
             .catch((e) => console.warn('FCM token error:', e));
         } else {
