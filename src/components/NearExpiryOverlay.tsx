@@ -1,6 +1,6 @@
 import React from 'react';
 import { TeacherProfile } from '../types';
-import { Clock, MessageCircle, AlertTriangle, ArrowRight, ShieldCheck, Sparkles } from 'lucide-react';
+import { Clock, MessageCircle, AlertTriangle, ArrowRight, ShieldCheck } from 'lucide-react';
 
 interface NearExpiryOverlayProps {
   profile: TeacherProfile;

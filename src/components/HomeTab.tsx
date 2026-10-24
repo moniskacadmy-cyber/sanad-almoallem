@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TeacherProfile, Student, ScheduleSlot, LessonLog } from '../types';
 import { VoiceInputButton } from './VoiceInputButton';
+import { DailyFocus } from './DailyFocus';
 import { useBackHandler } from '../services/backHandler';
 import {
   addLessonLog,
@@ -16,6 +17,9 @@ import {
   getStoredReminderSettings,
 } from '../services/reminderService';
 import { LiveCountdown } from './LiveCountdown';
+import { LessonFeedbackForm } from './LessonFeedbackForm';
+import { CollapsibleSection } from './CollapsibleSection';
+import { useSettings } from '../context/SettingsContext';
 const StatsChart = React.lazy(() => import('./StatsChart'));
 import {
   Calendar,
@@ -24,24 +28,15 @@ import {
   Clock,
   Sparkles,
   MessageCircle,
-  X,
-  CreditCard,
   Check,
-  DollarSign,
   TrendingUp,
   BookOpen,
   UserPlus,
   Settings,
   FileText,
   Crown,
-  ChevronLeft,
   ArrowLeft,
-  Video,
-  Building,
-  User,
   Copy,
-  CheckCircle2,
-  AlertTriangle,
   UserCheck,
 } from 'lucide-react';
 
@@ -70,8 +65,9 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [classTopic, setClassTopic] = useState('');
   const [classHomework, setClassHomework] = useState('');
+  const [feedback, setFeedback] = useState({ strengths: '', challenges: '', homework: '' });
   const [attendance, setAttendance] = useState<'present' | 'absent' | 'excused'>('present');
-  const [rating, setRating] = useState<number>(5);
+  const rating = 5; // تقييم الحصة الافتراضي الكامل
   const [savingClass, setSavingClass] = useState(false);
 
   // Edit Before Send Modal for Class Report
@@ -106,7 +102,6 @@ export const HomeTab: React.FC<HomeTabProps> = ({
     year: 'numeric',
   }).format(now);
 
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
   // Minute ticker for next scheduled class lookup (updates every 60s instead of every second)
   const [minuteNow, setMinuteNow] = useState(() => new Date());
   useEffect(() => {
@@ -222,6 +217,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
       planned,
       completed,
       date: dayDateStr,
+      isToday: dayDateStr === todayStr,
     };
   });
 
@@ -416,6 +412,8 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         is_financial_counted: true,
         hasMakeupClass: false,
         has_makeup_class: false,
+        strengths: feedback.strengths.trim(),
+        challenges: feedback.challenges.trim(),
       });
 
       if (todaySlot) {
@@ -469,6 +467,9 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         </div>
         <div>{getSubscriptionBadge()}</div>
       </div>
+
+      {/* Daily Focus */}
+      <DailyFocus profile={profile} />
 
       {/* 2. كارت بنفسجي كبير عنوانه "جدول اليوم" */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-purple-900 via-indigo-950 to-slate-950 p-4 sm:p-5 shadow-2xl border border-purple-500/30 space-y-3.5">
@@ -647,12 +648,16 @@ export const HomeTab: React.FC<HomeTabProps> = ({
             <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30">
               <TrendingUp className="w-4 h-4" />
             </div>
-            <h3 className="text-sm font-black text-white">
-              الملخص المالي والأرباح (نظام سعر الساعة)
-            </h3>
+            <div>
+              <h3 className="text-sm font-black text-white">
+                الملخص المالي والأرباح
+              </h3>
+              <p className="text-[10px] text-emerald-300/80">العملة المعتمدة: {profile.currency || 'ج.م'}</p>
+            </div>
           </div>
-          <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black shadow-sm">
-            جديد 💰
+          <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-black shadow-sm flex items-center gap-1">
+            <span>العملة:</span>
+            <strong className="text-white font-mono">{profile.currency || 'ج.م'}</strong>
           </span>
         </div>
 
@@ -729,109 +734,30 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         </div>
       </div>
 
-      {/* 5. كارت "روابط سريعة" (وصول فوري للأقسام) - شبكة 3 أعمدة × صفين */}
-      <div className="rounded-3xl bg-slate-900/90 border border-purple-500/20 p-4 sm:p-5 shadow-xl space-y-3">
-        <div className="flex items-center justify-between border-b border-purple-900/30 pb-2.5">
-          <h3 className="text-sm font-black text-white">روابط سريعة</h3>
-          <span className="text-[11px] text-purple-300/70">وصول فوري للأقسام</span>
-        </div>
-
-        <div className="grid grid-cols-3 gap-2.5">
-          {/* 1. مكتبتي */}
-          <button
-            type="button"
-            onClick={() => onNavigateToTab(3)}
-            className="p-3 rounded-2xl bg-slate-950/70 hover:bg-purple-950/50 border border-purple-500/20 hover:border-purple-400/50 transition cursor-pointer flex flex-col items-center justify-center gap-1.5 group shadow-sm active:scale-95"
+      {/* 6. لوحة إحصائية: توزيع الحصص خلال الأسبوع الحالي (recharts lazy-loaded) */}
+      <div className="mt-10">
+        <React.Suspense fallback={
+    <div className="rounded-3xl p-6 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-purple-500/20 animate-pulse text-center text-xs text-slate-500 dark:text-slate-400">
+            جاري تحميل الإحصائيات الأسبوعية...
+          </div>
+        }>
+          <CollapsibleSection 
+            title="توزيع الحصص خلال الأسبوع الحالي"
+            description="عرض/إخفاء تفاصيل الإنجاز والرسوم البيانية"
+            icon={<TrendingUp className="w-5 h-5" />}
+            defaultOpen={false}
           >
-            <div className="w-10 h-10 rounded-2xl bg-purple-500/20 text-purple-300 group-hover:text-purple-200 flex items-center justify-center transition">
-              <BookOpen className="w-5 h-5" />
-            </div>
-            <span className="text-xs font-bold text-slate-200 group-hover:text-white">
-              مكتبتي
-            </span>
-          </button>
-
-          {/* 2. جدول المواعيد */}
-          <button
-            type="button"
-            onClick={() => onNavigateToTab(2)}
-            className="p-3 rounded-2xl bg-slate-950/70 hover:bg-purple-950/50 border border-purple-500/20 hover:border-purple-400/50 transition cursor-pointer flex flex-col items-center justify-center gap-1.5 group shadow-sm active:scale-95"
-          >
-            <div className="w-10 h-10 rounded-2xl bg-sky-500/20 text-sky-300 group-hover:text-sky-200 flex items-center justify-center transition">
-              <Calendar className="w-5 h-5" />
-            </div>
-            <span className="text-xs font-bold text-slate-200 group-hover:text-white">
-              جدول المواعيد
-            </span>
-          </button>
-
-          {/* 3. إضافة طالب */}
-          <button
-            type="button"
-            onClick={() => onNavigateToTab(1)}
-            className="p-3 rounded-2xl bg-slate-950/70 hover:bg-purple-950/50 border border-purple-500/20 hover:border-purple-400/50 transition cursor-pointer flex flex-col items-center justify-center gap-1.5 group shadow-sm active:scale-95"
-          >
-            <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-300 group-hover:text-emerald-200 flex items-center justify-center transition">
-              <UserPlus className="w-5 h-5" />
-            </div>
-            <span className="text-xs font-bold text-slate-200 group-hover:text-white">
-              إضافة طالب
-            </span>
-          </button>
-
-          {/* 4. الإعدادات */}
-          <button
-            type="button"
-            onClick={() => onNavigateToTab(4)}
-            className="p-3 rounded-2xl bg-slate-950/70 hover:bg-purple-950/50 border border-purple-500/20 hover:border-purple-400/50 transition cursor-pointer flex flex-col items-center justify-center gap-1.5 group shadow-sm active:scale-95"
-          >
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-300 group-hover:text-amber-200 flex items-center justify-center transition">
-              <Settings className="w-5 h-5" />
-            </div>
-            <span className="text-xs font-bold text-slate-200 group-hover:text-white">
-              الإعدادات
-            </span>
-          </button>
-
-          {/* 5. الاشتراك */}
-          <button
-            type="button"
-            onClick={onOpenUpgradeModal}
-            className="p-3 rounded-2xl bg-slate-950/70 hover:bg-purple-950/50 border border-purple-500/20 hover:border-purple-400/50 transition cursor-pointer flex flex-col items-center justify-center gap-1.5 group shadow-sm active:scale-95"
-          >
-            <div className="w-10 h-10 rounded-2xl bg-rose-500/20 text-rose-300 group-hover:text-rose-200 flex items-center justify-center transition">
-              <Crown className="w-5 h-5" />
-            </div>
-            <span className="text-xs font-bold text-slate-200 group-hover:text-white">
-              الاشتراك
-            </span>
-          </button>
-
-          {/* 6. ملاحظات الطلاب */}
-          <button
-            type="button"
-            onClick={() => onNavigateToTab(1)}
-            className="p-3 rounded-2xl bg-slate-950/70 hover:bg-purple-950/50 border border-purple-500/20 hover:border-purple-400/50 transition cursor-pointer flex flex-col items-center justify-center gap-1.5 group shadow-sm active:scale-95"
-          >
-            <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 text-indigo-300 group-hover:text-indigo-200 flex items-center justify-center transition">
-              <FileText className="w-5 h-5" />
-            </div>
-            <span className="text-xs font-bold text-slate-200 group-hover:text-white">
-              ملاحظات الطلاب
-            </span>
-          </button>
-        </div>
+            <StatsChart
+              weeklyChartData={weeklyChartData}
+              totalCompletedWeek={totalCompletedWeek}
+              totalPlannedWeek={totalPlannedWeek}
+              weeklyCompletionPct={weeklyCompletionPct}
+              todayDayName={todayArabicName}
+              onNavigateToSchedules={() => onNavigateToTab(2)}
+            />
+          </CollapsibleSection>
+        </React.Suspense>
       </div>
-
-      {/* 6. رسم بياني: إنجاز الحصص الأسبوعي مقارنة بالمخطط لها (recharts lazy-loaded) */}
-      <React.Suspense fallback={null}>
-        <StatsChart
-          weeklyChartData={weeklyChartData}
-          totalCompletedWeek={totalCompletedWeek}
-          totalPlannedWeek={totalPlannedWeek}
-          weeklyCompletionPct={weeklyCompletionPct}
-        />
-      </React.Suspense>
 
       {/* Start Class Modal */}
       {showStartClassModal && (
@@ -961,6 +887,13 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                   className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white"
                 />
               </div>
+
+              <LessonFeedbackForm
+                initialStrengths={feedback.strengths}
+                initialChallenges={feedback.challenges}
+                initialHomework={feedback.homework}
+                onSave={setFeedback}
+              />
 
               <div className="pt-2 flex flex-col gap-2">
                 <button

@@ -1,12 +1,10 @@
-import React, { useState, useMemo } from 'react';
-import { Student, TeacherProfile, LessonLog, isLessonFinanciallyCounted } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Student, TeacherProfile, LessonLog, isLessonFinanciallyCounted, SUPPORTED_CURRENCIES } from '../types';
 import { useBackHandler } from '../services/backHandler';
 import {
   ReportType,
   ReportOptions,
-  buildReportHtml,
   exportReportToPdf,
-  formatArabicDate,
 } from '../services/pdfReportService';
 import {
   FileText,
@@ -16,13 +14,9 @@ import {
   Download,
   Printer,
   X,
-  Check,
   Sparkles,
-  Share2,
-  Copy,
   MessageCircle,
-  Eye,
-  Filter,
+  Coins,
 } from 'lucide-react';
 
 interface StudentPdfExportModalProps {
@@ -50,7 +44,6 @@ export const StudentPdfExportModal: React.FC<StudentPdfExportModalProps> = ({
   const [customEndDate, setCustomEndDate] = useState('');
   const [teacherNote, setTeacherNote] = useState('');
   const [includeHomework, setIncludeHomework] = useState(true);
-  const [copiedLink, setCopiedLink] = useState(false);
 
   // Compute actual start & end date for the selected filter
   const { startDate, endDate } = useMemo(() => {
@@ -78,6 +71,11 @@ export const StudentPdfExportModal: React.FC<StudentPdfExportModalProps> = ({
     return { startDate: undefined, endDate: undefined };
   }, [dateFilterMode, customStartDate, customEndDate]);
 
+  const [currency, setCurrency] = useState(teacher.currency || 'ج.م');
+  useEffect(() => {
+    if (teacher.currency) setCurrency(teacher.currency);
+  }, [teacher.currency]);
+
   const reportOptions: ReportOptions = useMemo(
     () => ({
       reportType,
@@ -85,8 +83,9 @@ export const StudentPdfExportModal: React.FC<StudentPdfExportModalProps> = ({
       endDate,
       teacherNote: teacherNote.trim() || undefined,
       includeHomework,
+      currency,
     }),
-    [reportType, startDate, endDate, teacherNote, includeHomework]
+    [reportType, startDate, endDate, teacherNote, includeHomework, currency]
   );
 
   // Filter lessons for live metrics preview
@@ -97,7 +96,6 @@ export const StudentPdfExportModal: React.FC<StudentPdfExportModalProps> = ({
     return list;
   }, [lessons, startDate, endDate]);
 
-  const currency = teacher.currency || 'ج.م';
   const hourlyRate =
     student.hourlyRate || (student.monthlyFee ? Math.round(student.monthlyFee / 4) : 100);
 

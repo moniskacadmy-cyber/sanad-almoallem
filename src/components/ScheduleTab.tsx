@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { TeacherProfile, Student, ScheduleSlot, ClassType, RecurrenceType } from '../types';
+import { TeacherProfile, Student, ScheduleSlot, ClassType, RecurrenceType, Group } from '../types';
 import {
   addSchedule,
   updateSchedule,
@@ -7,11 +7,14 @@ import {
   toggleScheduleCompletedToday,
   saveScheduleEvaluation,
   addStudent,
+  subscribeToGroups,
 } from '../firebase';
+import { exportScheduleToPdf } from '../services/pdfReportService';
 import { VoiceInputButton } from './VoiceInputButton';
 import { CalendarView } from './CalendarView';
+import { DailyAttendanceModal } from './DailyAttendanceModal';
 import { useBackHandler } from '../services/backHandler';
-import { hasConflict, formatMinutesToArabicTime, getMinutesFromTime } from '../services/conflictService';
+import { hasConflict, getMinutesFromTime } from '../services/conflictService';
 import {
   Calendar,
   Clock,
@@ -21,7 +24,6 @@ import {
   X,
   Bell,
   Video,
-  Building,
   UserCheck,
   User,
   UserPlus,
@@ -29,22 +31,13 @@ import {
   CheckCircle,
   LayoutGrid,
   List,
-  Palette,
   Sparkles,
-  ChevronLeft,
-  ChevronRight,
-  Info,
-  ExternalLink,
-  MessageCircle,
-  Play,
-  AlertTriangle,
   AlertCircle,
   Star,
   Search,
-  BookOpen,
-  DollarSign,
-  Phone,
   Layers,
+  Printer,
+  MessageCircle,
 } from 'lucide-react';
 
 interface ScheduleTabProps {
@@ -216,9 +209,66 @@ export interface FormSlotItem {
 }
 
 export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, schedules: rawSchedules }) => {
-  const schedules = rawSchedules;
+  const [groups, setGroups] = useState<Group[]>([]);
+
+  useEffect(() => {
+    const unsub = subscribeToGroups(profile.id, (g) => setGroups(g));
+    return () => unsub();
+  }, [profile.id]);
+
+  // Derived group schedule slots: automatically generated for all active groups
+  const groupSlots = useMemo(() => {
+    const slots: ScheduleSlot[] = [];
+    groups.forEach((g) => {
+      if (g.status !== 'active' || g.archived || !Array.isArray(g.schedule)) return;
+      const studentCount = students.filter(
+        (s) => !s.archived && s.groupIds && s.groupIds.includes(g.id)
+      ).length;
+
+      g.schedule.forEach((item) => {
+        slots.push({
+          id: `group_slot_${g.id}_day_${item.day}_time_${item.time}`,
+          teacherId: profile.id,
+          studentId: `group_${g.id}`,
+          studentName: `مجموعة ${g.name} (${studentCount} طلاب)`,
+          dayOfWeek: item.day,
+          time: item.time,
+          duration: item.duration || 60,
+          recurrence: 'weekly',
+          classType: 'center',
+          color: g.color || 'purple',
+          locationOrLink: g.centerName || 'السنتر',
+          notes: `${g.subject || ''} • سنتر: ${g.centerName || 'بدون سنتر'} • عدد الطلاب: ${studentCount}`,
+          createdAt: g.createdAt || new Date(),
+          updatedAt: g.updatedAt || new Date(),
+          ...({ isGroupSlot: true, groupId: g.id, groupData: g, groupStudentCount: studentCount } as any),
+        });
+      });
+    });
+    return slots;
+  }, [groups, students, profile.id]);
+
+  // Combined schedules (individual students + active groups)
+  const schedules = useMemo(() => [...rawSchedules, ...groupSlots], [rawSchedules, groupSlots]);
+
   const todayIndex = new Date().getDay();
-  const [viewMode, setViewMode] = useState<'month' | 'grid' | 'list'>('month');
+
+  // Schedule View Mode: Default to Weekly Timetable ('grid') with toggle to 'month', persisting selection
+  const [viewMode, setViewModeState] = useState<'grid' | 'month' | 'list'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sanad_schedule_view_mode');
+      if (saved === 'grid' || saved === 'month' || saved === 'list') return saved as any;
+    }
+    return 'grid'; // Default weekly timetable view as requested
+  });
+
+  const setViewMode = (mode: 'grid' | 'month' | 'list') => {
+    setViewModeState(mode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sanad_schedule_view_mode', mode);
+    }
+  };
+
   const [selectedDayFilter, setSelectedDayFilter] = useState<number | 'all'>(todayIndex);
   const [selectedClassTypeFilter, setSelectedClassTypeFilter] = useState<'all' | 'online' | 'in_person' | 'trial'>('all');
 
@@ -226,6 +276,12 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<ScheduleSlot | null>(null);
   const [viewingScheduleDetails, setViewingScheduleDetails] = useState<ScheduleSlot | null>(null);
+  
+  // Group Attendance Modal on clicking group slot
+  const [groupAttendanceModal, setGroupAttendanceModal] = useState<{
+    group: Group;
+    date: string;
+  } | null>(null);
 
   // Quick Evaluation Modal State
   const [showQuickEvalModal, setShowQuickEvalModal] = useState(false);
@@ -239,6 +295,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
   useBackHandler(showAddModal, () => setShowAddModal(false), 'schedule_add_modal');
   useBackHandler(showQuickEvalModal, () => setShowQuickEvalModal(false), 'schedule_quick_eval_modal');
   useBackHandler(!!viewingScheduleDetails, () => setViewingScheduleDetails(null), 'schedule_details_modal');
+  useBackHandler(!!groupAttendanceModal, () => setGroupAttendanceModal(null), 'schedule_group_attendance');
 
   // Student selection mode: 'existing' vs 'new'
   const [studentSelectionMode, setStudentSelectionMode] = useState<'existing' | 'new'>('existing');
@@ -508,9 +565,26 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
     setShowAddModal(true);
   };
 
-  // Open Details Modal on booked class click
-  const handleSlotClick = (slot: ScheduleSlot, e: React.MouseEvent) => {
-    e.stopPropagation();
+  // Open Details Modal on booked class click, or Record Attendance for group slot
+  const handleSlotClick = (slot: ScheduleSlot, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if ((slot as any).isGroupSlot) {
+      const g = (slot as any).groupData || groups.find((grp) => grp.id === (slot as any).groupId);
+      if (g) {
+        const today = new Date();
+        const currentDay = today.getDay();
+        const diff = slot.dayOfWeek - currentDay;
+        const slotDate = new Date(today);
+        slotDate.setDate(today.getDate() + diff);
+        const targetDateStr = new Intl.DateTimeFormat('en-CA').format(slotDate);
+
+        setGroupAttendanceModal({
+          group: g,
+          date: targetDateStr,
+        });
+        return;
+      }
+    }
     setViewingScheduleDetails(slot);
   };
 
@@ -534,7 +608,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
         );
 
         if (conflictRes.hasConflict) {
-          setConflictError(conflictRes.message || 'تعارض في الموعد مع حصة أخرى!');
+          setConflictError(conflictRes.message || 'عفواً، لديك حصة أو مجموعة أخرى في نفس هذا الموعد');
           return;
         }
 
@@ -624,9 +698,8 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
           );
 
           if (conflictRes.hasConflict) {
-            const dayName = WEEK_DAYS.find((d) => d.dayIndex === slot.dayOfWeek)?.name;
             setConflictError(
-              `تعارض في الموعد رقم (${i + 1}) يوم ${dayName} الساعة ${slot.time}: ${conflictRes.message}`
+              conflictRes.message || 'عفواً، لديك حصة أو مجموعة أخرى في نفس هذا الموعد'
             );
             return;
           }
@@ -819,6 +892,18 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
         <div className="flex items-center gap-1.5 flex-wrap">
           <div className="flex rounded-xl bg-slate-900 border border-slate-700/80 p-0.5">
             <button
+              onClick={() => setViewMode('grid')}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                viewMode === 'grid'
+                  ? 'bg-purple-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="الجدول الأسبوعي (الافتراضي)"
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>الجدول الأسبوعي</span>
+            </button>
+            <button
               onClick={() => setViewMode('month')}
               className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
                 viewMode === 'month'
@@ -829,18 +914,6 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
             >
               <Calendar className="w-3.5 h-3.5" />
               <span>التقويم الشهري</span>
-            </button>
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`px-2 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
-                viewMode === 'grid'
-                  ? 'bg-purple-600 text-white shadow'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-              title="الجدول الأسبوعي"
-            >
-              <LayoutGrid className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">الجدول الأسبوعي</span>
             </button>
             <button
               onClick={() => setViewMode('list')}
@@ -862,6 +935,14 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
           >
             <Plus className="w-4 h-4" />
             <span>إضافة موعد</span>
+          </button>
+          <button
+            onClick={() => exportScheduleToPdf(profile, schedules, students)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition cursor-pointer border border-slate-700"
+            title="تصدير جدول الحصص PDF"
+          >
+            <Printer className="w-4 h-4" />
+            <span>تصدير المواعيد</span>
           </button>
         </div>
       </div>
@@ -1233,7 +1314,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
           onAddSchedule={(dayOfWeek, time) => handleCellClick(dayOfWeek, time || '16:00')}
           onEditSchedule={handleOpenEdit}
           onDeleteSchedule={handleDelete}
-          onViewDetails={setViewingScheduleDetails}
+          onViewDetails={(slot) => handleSlotClick(slot)}
           onOpenQuickEval={handleOpenQuickEval}
         />
       )}
@@ -1361,7 +1442,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
                 return (
                   <div
                     key={slot.id}
-                    onClick={() => setViewingScheduleDetails(slot)}
+                    onClick={() => handleSlotClick(slot)}
                     style={{ borderColor: isCompleted ? 'rgba(16, 185, 129, 0.4)' : colorInfo.border }}
                     className={`rounded-2xl border p-3.5 flex items-center justify-between transition cursor-pointer shadow-md ${
                       isCompleted
@@ -1486,6 +1567,20 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
         </div>
       )}
 
+      {/* GROUP ATTENDANCE MODAL (Directly opened on clicking group slot) */}
+      {groupAttendanceModal && (
+        <DailyAttendanceModal
+          isOpen={true}
+          onClose={() => setGroupAttendanceModal(null)}
+          profile={profile}
+          students={students}
+          schedules={schedules}
+          targetGroupId={groupAttendanceModal.group.id}
+          targetGroupName={groupAttendanceModal.group.name}
+          targetDate={groupAttendanceModal.date}
+        />
+      )}
+
       {/* MODAL 1: VIEW DETAILS OF A BOOKED CLASS */}
       {viewingScheduleDetails && (
         <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
@@ -1565,6 +1660,27 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
 
             {/* Action Buttons */}
             <div className="space-y-2 pt-1">
+              {(() => {
+                const student = students.find((s) => s.id === viewingScheduleDetails.studentId);
+                const phone = student?.whatsapp || '';
+                const dayName = WEEK_DAYS.find((d) => d.dayIndex === viewingScheduleDetails.dayOfWeek)?.name || '';
+                const msg = `مرحباً بك يا ${viewingScheduleDetails.studentName}،\nنذكرك بموعد حصتنا القادمة:\n📚 المادة: ${profile.subject || 'دراسات'}\n📅 اليوم: ${dayName}\n⏰ التوقيت: ${viewingScheduleDetails.time}\n\nنتطلع لحضورك المتميز!`;
+                const cleanPhone = phone.replace(/[^0-9]/g, '');
+                const waUrl = cleanPhone ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+
+                return (
+                  <a
+                    href={waUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-md"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    <span>إرسال تذكير عبر واتساب 📱</span>
+                  </a>
+                );
+              })()}
+
               <button
                 onClick={() => {
                   const toEdit = viewingScheduleDetails;

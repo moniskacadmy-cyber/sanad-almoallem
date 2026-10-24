@@ -25,36 +25,34 @@ function safeParseServiceAccount(raw: string | undefined): any {
     str = str.slice(1, -1).trim();
   }
 
-  // Normalize repeated JSON-stringification while preserving private-key newlines.
-  const newlinePlaceholder = '__FIREBASE_ESCAPED_NEWLINE__';
-  str = str.replace(/\\+n/g, newlinePlaceholder);
-  for (let pass = 0; pass < 3; pass += 1) {
-    str = str.replace(/\\+"/g, '"').replace(/^\\+/, '').trim();
-    if ((str.startsWith('"') && str.endsWith('"')) || (str.startsWith("'") && str.endsWith("'"))) {
-      str = str.slice(1, -1).trim();
-    }
-  }
-  str = str.replace(/\\+/g, '');
-  str = str.replace(new RegExp(newlinePlaceholder, 'g'), '\\\\n').trim();
-
-  // Some dashboard pastes omit the outer object braces.
-  const typeIndex = str.indexOf('"type"');
-  if (!str.startsWith('{') && typeIndex >= 0) {
-    str = `{${str.slice(typeIndex)}`;
-  }
-
-  // Handle base64-encoded service-account JSON.
-  if (!str.startsWith('{') && /^(?:ey|eyJ)/.test(str)) {
+  // Handle base64-encoded service-account JSON without backtracking regex
+  if (!str.startsWith('{') && str.startsWith('ey')) {
     try {
       const decoded = Buffer.from(str, 'base64').toString('utf-8').trim();
       if (decoded.startsWith('{')) str = decoded;
     } catch (_) {}
   }
 
+  // Some dashboard pastes omit the outer object braces
+  const typeIndex = str.indexOf('"type"');
+  if (!str.startsWith('{') && typeIndex >= 0) {
+    str = `{${str.slice(typeIndex)}`;
+  }
+
   const startIdx = str.indexOf('{');
   const endIdx = str.lastIndexOf('}');
   if (startIdx !== -1 && endIdx > startIdx) {
     str = str.substring(startIdx, endIdx + 1);
+  }
+
+  // Linear unescaping without backtracking regexes
+  for (let pass = 0; pass < 3; pass += 1) {
+    if (str.includes('\\"')) {
+      str = str.split('\\"').join('"');
+    }
+    if ((str.startsWith('"') && str.endsWith('"')) || (str.startsWith("'") && str.endsWith("'"))) {
+      str = str.slice(1, -1).trim();
+    }
   }
 
   try {
@@ -127,6 +125,28 @@ const adminAuth = getAuth();
 
 const app = express();
 const PORT = 3000;
+
+// Security: Disable Express identification banner
+app.disable('x-powered-by');
+
+// Enhanced Security Headers (Clickjacking, MIME sniffing, HSTS, Referrer Policy)
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+  res.setHeader('X-XSS-Protection', '0');
+  next();
+});
+
+// Prevent caching of sensitive API responses
+app.use('/api', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
 
 // Body parser: 4.5mb limit for /api/ai/transcribe and 2mb limit for all other routes
 app.use((req, res, next) => {
@@ -414,12 +434,22 @@ export async function aiRateLimiter(
 // Helper to get Admin Firestore DB.
 // MUST resolve the same database as the client (src/firebase.ts): VITE_FIREBASE_DATABASE_ID or FIREBASE_DATABASE_ID. '(default)' / empty -> default DB.
 export function resolveDatabaseId(): string | undefined {
-  const effective =
+  const currentProjectId =
+    process.env.FIREBASE_PROJECT_ID?.trim() ||
+    process.env.VITE_FIREBASE_PROJECT_ID?.trim() ||
+    fallbackConfig.projectId;
+  const isAiStudioProject =
+    Boolean(fallbackConfig.projectId) && currentProjectId === fallbackConfig.projectId;
+
+  const explicit =
     process.env.VITE_FIREBASE_DATABASE_ID?.trim() ||
-    process.env.FIREBASE_DATABASE_ID?.trim() ||
-    fallbackConfig.firestoreDatabaseId ||
-    '(default)';
-  return effective === '(default)' || !effective ? undefined : effective;
+    process.env.FIREBASE_DATABASE_ID?.trim();
+
+  if (explicit && explicit !== '(default)') return explicit;
+  if (!explicit && isAiStudioProject && fallbackConfig.firestoreDatabaseId && fallbackConfig.firestoreDatabaseId !== '(default)') {
+    return fallbackConfig.firestoreDatabaseId;
+  }
+  return undefined;
 }
 
 function getAdminDb() {
@@ -642,7 +672,7 @@ app.post('/api/ai/transcribe', verifyFirebaseToken, (req, res, next) => aiRateLi
       return res.status(500).json({ error: 'خدمة الذكاء الاصطناعي غير مهيأة.' });
     }
 
-    const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    const modelName = 'gemini-3.5-transcribe';
     const audioPart = {
       inlineData: {
         mimeType: mimeType || 'audio/webm',
@@ -676,11 +706,31 @@ app.post('/api/ai/transcribe', verifyFirebaseToken, (req, res, next) => aiRateLi
 app.post('/api/ai/assistant', verifyFirebaseToken, (req, res, next) => aiRateLimiter('assistant', req, res, next), requireActiveSubscription, async (req, res) => {
   let streamStarted = false;
   try {
-    const { message, messagesHistory, summary } = req.body;
+    const { message, messagesHistory, summary, model, role, customInstruction } = req.body;
     if (!message || typeof message !== 'string') return res.status(400).json({ error: 'الرسالة مطلوبة.' });
     if (message.length > 2000) return res.status(400).json({ error: 'الرسالة طويلة جداً. الحد الأقصى 2000 حرف.' });
     if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: 'خدمة الذكاء الاصطناعي غير مهيأة حالياً.' });
-    const systemInstruction = 'أنت المساعد الذكي التربوي لمنصة سند المعلم. ساعد المعلم بإجابات عملية ومباشرة. اعتمد فقط على المعلومات المتاحة. إذا لم تتوفر المعلومة وضح ذلك ولا تبتكر بيانات. اجعل الإجابة مختصرة ومنظمة.';
+    
+    // Model selection: gemini-4-argon for complex tasks, gemini-3.8-flash for general tasks (default), gemini-3.1-flash-lite for fast tasks
+    const allowedModels = ['gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.1-flash-lite'];
+    const selectedModel = allowedModels.includes(model) ? model : (process.env.GEMINI_MODEL || 'gemini-3.8-flash');
+
+    // Role-specific System Instructions
+    const ROLE_INSTRUCTIONS: Record<string, string> = {
+      general: 'أنت "سند" المساعد الذكي التربوي لمنصة سند المعلم. ساعد المعلم بإجابات عملية، ذكية، ومباشرة. اعتمد على سياق المعلم وطلابه ومواعيده المتاحة. إذا لم تتوفر معلومة وضح ذلك ولا تبتكر بيانات. اجعل إجابتك منسقة بنقاط واضحة.',
+      lesson_planner: 'أنت خبير تربوي ومستشار تصميم مناهج وتحضير دروس لمنصة سند المعلم. دورك صياغة خطط دروس احترافية وشاملة تحتوي على: الأهداف السلوكية (معرفية، وجدانية، مهارية)، التمهيد الشيق، استراتيجيات التدريس النشط، الأنشطة والوسائل، والتقويم الختامي، مع تقسيم الوقت بدقة.',
+      quiz_generator: 'أنت أخصائي قياس وتقويم تربوي وإعداد اختبارات. دورك مساعدة المعلم في توليد بنوك أسئلة وامتحانات متوازنة (اختيار من متعدد، علل، صح وخطأ، مسائل تطبيقية) متدرجة من التذكر للفهم والتطبيق، مع تزويد المعلم بنموذج إجابة كامل وسلم درجات وتوزيع النقاط.',
+      parent_comms: 'أنت خبير تواصل مدرسي وعلاقات مع أولياء الأمور. دورك مساعدة المعلم في صياغة رسائل واتساب وبريد إلكتروني راقية، مهذبة، مشجعة، وواضحة جداً. تشمل: تقارير الأداء الدوري، تنبيهات الغياب والواجبات، تذكير بمواعيد الحصص والمدفوعات بلباقة مع مراعاة الحالة النفسية للطالب وولي الأمر.',
+      problem_solver: 'أنت أستاذ متخصص في التفكير التحليلي وحل المسائل العلمية والرياضية والمنطقية المعقدة. دورك تقديم شروحات عميقة خطوة بخطوة لكل مسألة، وتوضيح القوانين الرياضية، وذكر الأخطاء الشائعة التي يقع فيها الطلاب، وتقديم طرق بديلة أو تحقق منطقي من النتيجة.',
+    };
+
+    const selectedRoleKey = (typeof role === 'string' && ROLE_INSTRUCTIONS[role]) ? role : 'general';
+    let baseInstruction = ROLE_INSTRUCTIONS[selectedRoleKey];
+    if (typeof customInstruction === 'string' && customInstruction.trim() && customInstruction.length <= 1000) {
+      baseInstruction += `\nتعليمات إضافية يفضلها المعلم:\n${customInstruction.trim()}`;
+    }
+    const systemInstruction = baseInstruction;
+
     let formattedContext = '';
     if (summary && typeof summary === 'object') {
       const stringFieldLimits: Record<string, number> = { teacherName: 150, subject: 150 };
@@ -693,10 +743,18 @@ app.post('/api/ai/assistant', verifyFirebaseToken, (req, res, next) => aiRateLim
     let historyText = '';
     if (messagesHistory !== undefined && !Array.isArray(messagesHistory)) return res.status(400).json({ error: 'سجل المحادثة غير صالح.' });
     if (Array.isArray(messagesHistory) && messagesHistory.length > 20) return res.status(400).json({ error: 'سجل المحادثة كبير جداً.' });
-    if (Array.isArray(messagesHistory) && messagesHistory.length) { const recent = messagesHistory.slice(-6); historyText = 'سجل المحادثة السابقة:\n' + recent.map((m: any) => `${m.role === 'user' ? 'المعلم' : 'المساعد'}: ${typeof m.text === 'string' ? m.text.slice(0, 1000) : ''}`).join('\n') + '\n===============================\n'; }
+    if (Array.isArray(messagesHistory) && messagesHistory.length) { const recent = messagesHistory.slice(-10); historyText = 'سجل المحادثة السابقة:\n' + recent.map((m: any) => `${m.role === 'user' ? 'المعلم' : 'المساعد'}: ${typeof m.text === 'string' ? m.text.slice(0, 1000) : ''}`).join('\n') + '\n===============================\n'; }
     const fullPrompt = `${formattedContext}\n${historyText}سؤال المعلم الحالي:\n${message.slice(0, 2000).trim()}`;
     if (fullPrompt.length > 12000) return res.status(400).json({ error: 'حجم الطلب النهائي كبير جداً.' });
-    const stream = streamGeminiTextWithFreeFallback({ model: process.env.GEMINI_MODEL || 'gemini-2.5-flash', contents: fullPrompt, config: { systemInstruction, maxOutputTokens: 700 } });
+    const stream = streamGeminiTextWithFreeFallback({ 
+      model: selectedModel, 
+      contents: fullPrompt, 
+      config: { 
+        systemInstruction, 
+        maxOutputTokens: 1500,
+        tools: [{ googleSearch: {} }]
+      }
+    });
     res.status(200); res.setHeader('Content-Type', 'text/event-stream; charset=utf-8'); res.setHeader('Cache-Control', 'no-cache, no-transform'); res.setHeader('Connection', 'keep-alive'); res.setHeader('X-Accel-Buffering', 'no'); res.flushHeaders?.(); streamStarted = true;
     for await (const chunkText of stream) res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
     res.write('data: [DONE]\n\n'); return res.end();
@@ -732,8 +790,8 @@ function getTimezoneNowParts(tz = 'Africa/Cairo') {
     const month = getPart('month');
     const day = getPart('day');
     const weekdayStr = getPart('weekday');
-    const hour = (parseInt(getPart('hour'), 10) || 0) % 24;
-    const minute = (parseInt(getPart('minute'), 10) || 0) % 60;
+    const hour = (Number.parseInt(getPart('hour'), 10) || 0) % 24;
+    const minute = (Number.parseInt(getPart('minute'), 10) || 0) % 60;
 
     const weekdayMap: Record<string, number> = {
       Sun: 0,

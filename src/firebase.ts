@@ -5,6 +5,7 @@ import {
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
+  signInWithRedirect,
   signInWithPopup,
   GoogleAuthProvider,
   sendPasswordResetEmail,
@@ -22,13 +23,14 @@ import {
   updateDoc,
   deleteDoc,
   collection,
-  query,
-  orderBy,
-  where,
   serverTimestamp,
   Timestamp,
   getDocFromServer,
   onSnapshot,
+  writeBatch,
+  query,
+  orderBy,
+  limit,
   Firestore
 } from 'firebase/firestore';
 import {
@@ -42,6 +44,15 @@ import {
   BackupData,
   QuickNote,
   NoteColor,
+  Workplace,
+  Group,
+  WorkplaceType,
+  EducationalCenter,
+  GroupMembership,
+  GroupScheduleItem,
+  AttendanceRecord,
+  PaymentStatus,
+  StudentPaymentRecord,
 } from './types';
 
 const env = import.meta.env;
@@ -226,6 +237,21 @@ export async function registerTeacher(params: {
     handleFirestoreError(err, OperationType.CREATE, `teachers/${user.uid}`);
   }
 
+  try {
+    await setDoc(doc(collection(db, 'admin_notifications')), {
+      type: 'new_user_registration',
+      teacherId: user.uid,
+      teacherName: params.name.trim(),
+      teacherEmail: normalizedEmail,
+      whatsapp: params.whatsapp.trim(),
+      subject: params.subject.trim(),
+      createdAt: serverTimestamp(),
+      read: false,
+    });
+  } catch (err) {
+    console.warn('Could not record admin notification:', err);
+  }
+
   // Seed starter library templates
   try {
     await seedDefaultLibraryItems(user.uid);
@@ -246,7 +272,26 @@ export async function registerTeacher(params: {
 // Google Sign-in helper
 export async function signInWithGoogle(): Promise<{ user: User; isNew: boolean }> {
   const provider = new GoogleAuthProvider();
-  const result = await signInWithPopup(auth, provider);
+  provider.setCustomParameters({ prompt: 'select_account' });
+
+  let result;
+  try {
+    result = await signInWithPopup(auth, provider);
+  } catch (error: any) {
+    const code = typeof error?.code === 'string' ? error.code : '';
+    const msg = typeof error?.message === 'string' ? error.message : '';
+    if (
+      code === 'auth/popup-blocked' ||
+      code === 'auth/operation-not-supported-in-this-environment' ||
+      msg.includes('Cross-Origin-Opener-Policy')
+    ) {
+      await signInWithRedirect(auth, provider);
+      // signInWithRedirect navigates away, but TypeScript needs a return
+      throw new Error('redirecting');
+    }
+    throw error;
+  }
+
   const user = result.user;
   const teacherDoc = await getDoc(doc(db, 'teachers', user.uid));
   return {
@@ -319,6 +364,10 @@ export async function updateTeacherProfile(teacherId: string, updates: {
     requireMakeup?: boolean;
     autoCountExcused?: boolean;
   };
+  onboardingCompleted?: boolean;
+  notificationPreferences?: any;
+  dailyGoals?: any;
+  doNotDisturb?: any;
 }) {
   const path = `teachers/${teacherId}`;
   try {
@@ -740,6 +789,48 @@ export async function addStudent(
   }
 }
 
+export function addStudentWithSchedules(
+  teacherId: string,
+  student: Omit<Student, 'id' | 'teacherId' | 'createdAt' | 'updatedAt'>,
+  schedules: Array<Omit<ScheduleSlot, 'id' | 'teacherId' | 'createdAt' | 'updatedAt'>> = []
+): { studentId: string; commitPromise: Promise<void> } {
+  const path = `teachers/${teacherId}/students`;
+  try {
+    const batch = writeBatch(db);
+    const colRef = collection(db, 'teachers', teacherId, 'students');
+    const newDoc = doc(colRef);
+    const studentId = newDoc.id;
+
+    batch.set(newDoc, {
+      ...student,
+      id: studentId,
+      teacherId,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    const schedColRef = collection(db, 'teachers', teacherId, 'schedules');
+    for (const s of schedules) {
+      const newSchedDoc = doc(schedColRef);
+      batch.set(newSchedDoc, {
+        ...s,
+        id: newSchedDoc.id,
+        studentId,
+        studentName: s.studentName || student.name,
+        teacherId,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    const commitPromise = batch.commit();
+    return { studentId, commitPromise };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+    throw error;
+  }
+}
+
 export async function updateStudent(
   teacherId: string,
   studentId: string,
@@ -805,13 +896,21 @@ export async function deleteStudent(teacherId: string, studentId: string) {
 export async function toggleStudentPaymentStatus(
   teacherId: string,
   studentId: string,
-  currentStatus: 'paid' | 'unpaid'
+  currentStatus: PaymentStatus,
+  targetStatus?: PaymentStatus
 ) {
-  const newStatus = currentStatus === 'paid' ? 'unpaid' : 'paid';
+  const nextStatus: PaymentStatus = targetStatus
+    ? targetStatus
+    : currentStatus === 'unpaid'
+    ? 'partial'
+    : currentStatus === 'partial'
+    ? 'paid'
+    : 'unpaid';
+
   const currentMonth = new Intl.DateTimeFormat('ar-EG', { month: 'long', year: 'numeric' }).format(new Date());
   return updateStudent(teacherId, studentId, {
-    paymentStatus: newStatus,
-    lastPaymentMonth: newStatus === 'paid' ? currentMonth : undefined,
+    paymentStatus: nextStatus,
+    lastPaymentMonth: nextStatus === 'paid' ? currentMonth : undefined,
   });
 }
 
@@ -1536,6 +1635,873 @@ export async function requestAndSaveFCMToken(force = false): Promise<{
 
   return fcmRegistrationPromise;
 }
+
+// ==========================================
+// Phase 1: Workplaces & Groups Services + Migration
+// ==========================================
+
+export async function addWorkplace(
+  teacherId: string,
+  data: { name: string; type: WorkplaceType }
+): Promise<string> {
+  const path = `teachers/${teacherId}/workplaces`;
+  try {
+    const colRef = collection(db, 'teachers', teacherId, 'workplaces');
+    const newDoc = doc(colRef);
+    await setDoc(newDoc, {
+      id: newDoc.id,
+      teacherId,
+      name: data.name.trim(),
+      type: data.type,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return newDoc.id;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, path);
+    throw err;
+  }
+}
+
+export async function updateWorkplace(
+  teacherId: string,
+  workplaceId: string,
+  updates: Partial<{ name: string; type: WorkplaceType }>
+) {
+  const path = `teachers/${teacherId}/workplaces/${workplaceId}`;
+  try {
+    await updateDoc(doc(db, 'teachers', teacherId, 'workplaces', workplaceId), {
+      ...updates,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+    throw err;
+  }
+}
+
+export async function deleteWorkplace(teacherId: string, workplaceId: string) {
+  const path = `teachers/${teacherId}/workplaces/${workplaceId}`;
+  try {
+    await deleteDoc(doc(db, 'teachers', teacherId, 'workplaces', workplaceId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, path);
+    throw err;
+  }
+}
+
+// -------------------------------------------------------------
+// Helper: Arabic Text Normalization & Unification
+// -------------------------------------------------------------
+
+/**
+ * توحيد الحروف العربية وإزالة التشكيل والمحاذاة للمقارنة الدقيقة:
+ * - تحويل [أإآٱ] إلى 'ا'
+ * - تحويل [ة] إلى 'ه'
+ * - تحويل [ى] إلى 'ي'
+ * - إزالة التشكيل والتنوين
+ * - إزالة المسافات المتكررة
+ */
+export function normalizeArabicText(text: string): string {
+  if (!text) return '';
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي')
+    .replace(/[\u064B-\u065F\u0670]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+export function subscribeToWorkplaces(
+  teacherId: string,
+  onUpdate: (workplaces: Workplace[]) => void,
+  onError?: (err: Error) => void
+) {
+  const colRef = collection(db, 'teachers', teacherId, 'workplaces');
+  return onSnapshot(
+    colRef,
+    (snap) => {
+      const items: Workplace[] = snap.docs.map((d) => ({
+        ...d.data(),
+        id: d.id,
+      })) as Workplace[];
+      items.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
+      onUpdate(items);
+    },
+    (err) => {
+      console.error('Error in subscribeToWorkplaces:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+// -------------------------------------------------------------
+// Educational Centers
+// -------------------------------------------------------------
+
+export async function addCenter(
+  teacherId: string,
+  name: string
+): Promise<string> {
+  const cleanName = name.trim();
+  if (!cleanName) throw new Error('يرجى إدخال اسم السنتر');
+  const path = `teachers/${teacherId}/centers`;
+  try {
+    const colRef = collection(db, 'teachers', teacherId, 'centers');
+    // Fetch all centers with getDocs without where or orderBy
+    const existing = await getDocs(colRef);
+    const normalizedTarget = normalizeArabicText(cleanName);
+    const foundDoc = existing.docs.find((d) => {
+      const data = d.data() as EducationalCenter;
+      if (data.archived) return false;
+      return normalizeArabicText(data.name || '') === normalizedTarget;
+    });
+
+    if (foundDoc) {
+      return foundDoc.id;
+    }
+
+    const newDoc = doc(colRef);
+    await setDoc(newDoc, {
+      id: newDoc.id,
+      ownerUid: teacherId,
+      name: cleanName,
+      archived: false,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return newDoc.id;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, path);
+    throw err;
+  }
+}
+
+export function subscribeToCenters(
+  teacherId: string,
+  onUpdate: (centers: EducationalCenter[]) => void,
+  onError?: (err: Error) => void
+) {
+  const colRef = collection(db, 'teachers', teacherId, 'centers');
+  return onSnapshot(
+    colRef,
+    (snap) => {
+      const items: EducationalCenter[] = snap.docs.map((d) => ({
+        ...d.data(),
+        id: d.id,
+      })) as EducationalCenter[];
+      items.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
+      onUpdate(items);
+    },
+    (err) => {
+      console.error('Error in subscribeToCenters:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+// -------------------------------------------------------------
+// Groups
+// -------------------------------------------------------------
+
+export async function addGroup(
+  teacherId: string,
+  data: {
+    name: string;
+    centerId: string;
+    centerName: string;
+    subject: string;
+    grade?: string;
+    schedule: GroupScheduleItem[];
+    monthlyFee: number;
+    color?: string;
+    status?: 'active' | 'paused';
+    notes?: string;
+    workplaceId?: string;
+  }
+): Promise<string> {
+  const cleanName = data.name.trim();
+  const cleanCenter = data.centerName.trim();
+  if (!cleanName) throw new Error('يرجى إدخال اسم المجموعة');
+  if (!cleanCenter) throw new Error('يرجى اختيار أو إدخال اسم السنتر');
+  if (!data.subject?.trim()) throw new Error('يرجى تحديد المادة الدراسية');
+  if (data.monthlyFee === undefined || data.monthlyFee < 0) throw new Error('يرجى تحديد سعر الشهر بشكل صحيح');
+
+  const path = `teachers/${teacherId}/groups`;
+  try {
+    const colRef = collection(db, 'teachers', teacherId, 'groups');
+    // Fetch all groups without where or orderBy
+    const checkSnap = await getDocs(colRef);
+    const targetName = normalizeArabicText(cleanName);
+    const targetCenter = normalizeArabicText(cleanCenter);
+    const hasDuplicate = checkSnap.docs.some((d) => {
+      const g = d.data() as Group;
+      if (g.archived) return false;
+      return (
+        normalizeArabicText(g.name || '') === targetName &&
+        normalizeArabicText(g.centerName || '') === targetCenter
+      );
+    });
+
+    if (hasDuplicate) {
+      throw new Error(`توجد بالفعل مجموعة نشطة باسم "${cleanName}" في سنتر "${cleanCenter}". يرجى اختيار اسم مختلف.`);
+    }
+
+    const newDoc = doc(colRef);
+    await setDoc(newDoc, {
+      id: newDoc.id,
+      ownerUid: teacherId,
+      teacherId,
+      workplaceId: data.workplaceId || data.centerId,
+      name: cleanName,
+      centerId: data.centerId,
+      centerName: cleanCenter,
+      subject: data.subject.trim(),
+      grade: data.grade?.trim() || '',
+      schedule: data.schedule || [],
+      monthlyFee: Number(data.monthlyFee) || 0,
+      color: data.color || '#7c3aed',
+      status: data.status || 'active',
+      notes: data.notes?.trim() || '',
+      active: (data.status || 'active') === 'active',
+      archived: false,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return newDoc.id;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, path);
+    throw err;
+  }
+}
+
+export async function updateGroup(
+  teacherId: string,
+  groupId: string,
+  updates: Partial<Group>
+) {
+  const path = `teachers/${teacherId}/groups/${groupId}`;
+  try {
+    // If name or centerName is being updated, check for duplicates
+    if (updates.name || updates.centerName) {
+      const colRef = collection(db, 'teachers', teacherId, 'groups');
+      const checkSnap = await getDocs(colRef);
+      const targetDoc = checkSnap.docs.find((d) => d.id === groupId);
+      const currentData = targetDoc ? (targetDoc.data() as Group) : null;
+      const targetName = normalizeArabicText(updates.name || currentData?.name || '');
+      const targetCenter = normalizeArabicText(updates.centerName || currentData?.centerName || '');
+
+      const hasDuplicate = checkSnap.docs.some((d) => {
+        if (d.id === groupId) return false;
+        const g = d.data() as Group;
+        if (g.archived) return false;
+        return (
+          normalizeArabicText(g.name || '') === targetName &&
+          normalizeArabicText(g.centerName || '') === targetCenter
+        );
+      });
+
+      if (hasDuplicate) {
+        throw new Error(`توجد بالفعل مجموعة نشطة بنفس الاسم في هذا السنتر.`);
+      }
+    }
+
+    await updateDoc(doc(db, 'teachers', teacherId, 'groups', groupId), {
+      ...updates,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+    throw err;
+  }
+}
+
+// Soft delete (archive) group with undo capability
+export async function archiveGroup(teacherId: string, groupId: string, archived: boolean = true) {
+  const path = `teachers/${teacherId}/groups/${groupId}`;
+  try {
+    await updateDoc(doc(db, 'teachers', teacherId, 'groups', groupId), {
+      archived,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+    throw err;
+  }
+}
+
+export async function deleteGroup(teacherId: string, groupId: string) {
+  return archiveGroup(teacherId, groupId, true);
+}
+
+export async function deleteGroupPermanently(teacherId: string, groupId: string) {
+  const path = `teachers/${teacherId}/groups/${groupId}`;
+  try {
+    await deleteDoc(doc(db, 'teachers', teacherId, 'groups', groupId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, path);
+    throw err;
+  }
+}
+
+export function subscribeToGroups(
+  teacherId: string,
+  onUpdate: (groups: Group[]) => void,
+  onError?: (err: Error) => void
+) {
+  const colRef = collection(db, 'teachers', teacherId, 'groups');
+  return onSnapshot(
+    colRef,
+    (snap) => {
+      const items: Group[] = snap.docs.map((d) => ({
+        ...d.data(),
+        id: d.id,
+      })) as Group[];
+      items.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
+      onUpdate(items);
+    },
+    (err) => {
+      console.error('Error in subscribeToGroups:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+// -------------------------------------------------------------
+// Memberships (Student <-> Group relation with historical preservation)
+// -------------------------------------------------------------
+
+export function getMembershipId(studentId: string, groupId: string) {
+  return `${studentId}_${groupId}`;
+}
+
+export async function addStudentToGroup(
+  teacherId: string,
+  studentId: string,
+  groupId: string,
+  studentName: string,
+  groupName: string,
+  centerName: string
+) {
+  const membershipId = getMembershipId(studentId, groupId);
+  const path = `teachers/${teacherId}/memberships/${membershipId}`;
+  try {
+    const memRef = doc(db, 'teachers', teacherId, 'memberships', membershipId);
+    await setDoc(
+      memRef,
+      {
+        id: membershipId,
+        ownerUid: teacherId,
+        studentId,
+        studentName,
+        groupId,
+        groupName,
+        centerName,
+        joinedAt: serverTimestamp(),
+        active: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    // Also update student's groupIds array and classType
+    const studentRef = doc(db, 'teachers', teacherId, 'students', studentId);
+    const studentSnap = await getDoc(studentRef);
+    if (studentSnap.exists()) {
+      const existing = studentSnap.data() as Student;
+      const currentGroups = existing.groupIds || [];
+      const updatedGroups = currentGroups.includes(groupId) ? currentGroups : [...currentGroups, groupId];
+      await updateDoc(studentRef, {
+        groupIds: updatedGroups,
+        classType: 'center',
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, path);
+    throw err;
+  }
+}
+
+export async function removeStudentFromGroup(
+  teacherId: string,
+  studentId: string,
+  groupId: string
+) {
+  const membershipId = getMembershipId(studentId, groupId);
+  const path = `teachers/${teacherId}/memberships/${membershipId}`;
+  try {
+    const memRef = doc(db, 'teachers', teacherId, 'memberships', membershipId);
+    // Mark membership inactive and record leftAt so history is preserved
+    await updateDoc(memRef, {
+      active: false,
+      leftAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    const studentRef = doc(db, 'teachers', teacherId, 'students', studentId);
+    const studentSnap = await getDoc(studentRef);
+    if (studentSnap.exists()) {
+      const existing = studentSnap.data() as Student;
+      const currentGroups = (existing.groupIds || []).filter((g) => g !== groupId);
+      await updateDoc(studentRef, {
+        groupIds: currentGroups,
+        classType: currentGroups.length > 0 ? 'center' : 'private',
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+    throw err;
+  }
+}
+
+export async function moveStudentGroup(
+  teacherId: string,
+  studentId: string,
+  studentName: string,
+  fromGroupId: string,
+  toGroupId: string,
+  toGroupName: string,
+  toCenterName: string
+) {
+  const batch = writeBatch(db);
+
+  // 1. Deactivate old membership
+  const oldMemId = getMembershipId(studentId, fromGroupId);
+  const oldRef = doc(db, 'teachers', teacherId, 'memberships', oldMemId);
+  batch.update(oldRef, {
+    active: false,
+    leftAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  // 2. Activate or create new membership
+  const newMemId = getMembershipId(studentId, toGroupId);
+  const newRef = doc(db, 'teachers', teacherId, 'memberships', newMemId);
+  batch.set(
+    newRef,
+    {
+      id: newMemId,
+      ownerUid: teacherId,
+      studentId,
+      studentName,
+      groupId: toGroupId,
+      groupName: toGroupName,
+      centerName: toCenterName,
+      joinedAt: serverTimestamp(),
+      active: true,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  // 3. Update student record
+  const studentRef = doc(db, 'teachers', teacherId, 'students', studentId);
+  const studentSnap = await getDoc(studentRef);
+  if (studentSnap.exists()) {
+    const existing = studentSnap.data() as Student;
+    const currentGroups = (existing.groupIds || []).filter((g) => g !== fromGroupId);
+    const updatedGroups = currentGroups.includes(toGroupId) ? currentGroups : [...currentGroups, toGroupId];
+    batch.update(studentRef, {
+      groupIds: updatedGroups,
+      classType: 'center',
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  await batch.commit();
+}
+
+export async function convertStudentToIndividual(
+  teacherId: string,
+  studentId: string,
+  fromGroupId?: string
+) {
+  const batch = writeBatch(db);
+
+  if (fromGroupId) {
+    const oldMemId = getMembershipId(studentId, fromGroupId);
+    const oldRef = doc(db, 'teachers', teacherId, 'memberships', oldMemId);
+    batch.update(oldRef, {
+      active: false,
+      leftAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  const studentRef = doc(db, 'teachers', teacherId, 'students', studentId);
+  batch.update(studentRef, {
+    groupIds: [],
+    classType: 'private',
+    isIndividual: true,
+    updatedAt: serverTimestamp(),
+  });
+
+  await batch.commit();
+}
+
+// Bulk add students to a group from newline-separated names
+export async function bulkAddStudentsToGroup(
+  teacherId: string,
+  groupId: string,
+  groupName: string,
+  centerName: string,
+  studentNames: string[],
+  subject: string = 'عام',
+  hourlyRate: number = 100
+): Promise<number> {
+  const cleanNames = studentNames
+    .map((n) => n.trim())
+    .filter((n) => n.length > 0);
+
+  if (cleanNames.length === 0) return 0;
+
+  const batch = writeBatch(db);
+
+  for (const name of cleanNames) {
+    const studentRef = doc(collection(db, 'teachers', teacherId, 'students'));
+    const studentId = studentRef.id;
+
+    batch.set(studentRef, {
+      id: studentId,
+      teacherId,
+      ownerUid: teacherId,
+      name,
+      phone: '',
+      parentPhone: '',
+      whatsapp: '',
+      subject,
+      classType: 'center',
+      billingType: 'monthly',
+      hourlyRate,
+      monthlyFee: hourlyRate,
+      pendingDues: 0,
+      totalHours: 0,
+      collectedDues: 0,
+      paymentStatus: 'unpaid',
+      groupIds: [groupId],
+      active: true,
+      archived: false,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    const memId = getMembershipId(studentId, groupId);
+    const memRef = doc(db, 'teachers', teacherId, 'memberships', memId);
+    batch.set(memRef, {
+      id: memId,
+      ownerUid: teacherId,
+      studentId,
+      studentName: name,
+      groupId,
+      groupName,
+      centerName,
+      joinedAt: serverTimestamp(),
+      active: true,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  await batch.commit();
+  return cleanNames.length;
+}
+
+export function subscribeToMemberships(
+  teacherId: string,
+  onUpdate: (memberships: GroupMembership[]) => void,
+  onError?: (err: Error) => void
+) {
+  const colRef = collection(db, 'teachers', teacherId, 'memberships');
+  return onSnapshot(
+    colRef,
+    (snap) => {
+      const items: GroupMembership[] = snap.docs.map((d) => ({
+        ...d.data(),
+        id: d.id,
+      })) as GroupMembership[];
+      items.sort((a, b) => {
+        const tA = (a.createdAt as any)?.toMillis?.() || 0;
+        const tB = (b.createdAt as any)?.toMillis?.() || 0;
+        return tB - tA;
+      });
+      onUpdate(items);
+    },
+    (err) => {
+      console.error('Error in subscribeToMemberships:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+// Soft delete (archive) student with undo support
+export async function archiveStudent(teacherId: string, studentId: string, archived: boolean = true) {
+  const path = `teachers/${teacherId}/students/${studentId}`;
+  try {
+    await updateDoc(doc(db, 'teachers', teacherId, 'students', studentId), {
+      archived,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+    throw err;
+  }
+}
+
+// Idempotent Migration: Ensures default workplaces (Private and Online) exist for existing teachers
+export async function ensureDefaultWorkplacesAndMigration(teacherId: string): Promise<void> {
+  if (!teacherId) return;
+  try {
+    const wpSnap = await getDocs(collection(db, 'teachers', teacherId, 'workplaces'));
+    if (wpSnap.empty) {
+      const batch = writeBatch(db);
+      
+      const privRef = doc(collection(db, 'teachers', teacherId, 'workplaces'));
+      batch.set(privRef, {
+        id: privRef.id,
+        teacherId,
+        name: 'دروس خصوصية (منزلية / خاصة)',
+        type: 'private',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      const onlineRef = doc(collection(db, 'teachers', teacherId, 'workplaces'));
+      batch.set(onlineRef, {
+        id: onlineRef.id,
+        teacherId,
+        name: 'دروس أونلاين (عن بعد)',
+        type: 'online',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      await batch.commit();
+      console.log('Default workplaces successfully provisioned for teacher:', teacherId);
+    }
+  } catch (err) {
+    console.warn('Migration check warning:', err);
+  }
+}
+
+export async function recordStudentAttendance(
+  teacherId: string,
+  data: {
+    studentId: string;
+    studentName: string;
+    subject: string;
+    status: 'present' | 'absent' | 'late';
+    date: string; // YYYY-MM-DD
+    notes?: string;
+  }
+): Promise<string> {
+  const path = `teachers/${teacherId}/attendance`;
+  try {
+    const colRef = collection(db, 'teachers', teacherId, 'attendance');
+    const newDoc = doc(colRef);
+    await setDoc(newDoc, {
+      id: newDoc.id,
+      teacherId,
+      studentId: data.studentId,
+      studentName: data.studentName,
+      subject: data.subject,
+      status: data.status,
+      date: data.date,
+      notes: data.notes?.trim() || '',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return newDoc.id;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, path);
+    throw err;
+  }
+}
+
+export function getPaymentRecordId(studentId: string, groupId: string | null | undefined, month: string): string {
+  const gId = groupId && groupId.trim() ? groupId.trim() : 'individual';
+  return `${studentId}_${gId}_${month}`;
+}
+
+export async function recordStudentPayment(
+  teacherId: string,
+  record: {
+    studentId: string;
+    studentName?: string;
+    groupId?: string | null;
+    groupName?: string;
+    month: string; // YYYY-MM
+    status: PaymentStatus;
+    amountPaid: number;
+    amountDue: number;
+    notes?: string;
+  }
+) {
+  const paymentId = getPaymentRecordId(record.studentId, record.groupId, record.month);
+  const path = `teachers/${teacherId}/payments/${paymentId}`;
+  try {
+    const paymentRef = doc(db, 'teachers', teacherId, 'payments', paymentId);
+    await setDoc(
+      paymentRef,
+      {
+        id: paymentId,
+        teacherId,
+        studentId: record.studentId,
+        studentName: record.studentName || '',
+        groupId: record.groupId || 'individual',
+        groupName: record.groupName || '',
+        month: record.month,
+        status: record.status,
+        amountPaid: record.amountPaid,
+        amountDue: record.amountDue,
+        notes: record.notes || '',
+        paidAt: record.status === 'paid' ? serverTimestamp() : null,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    // Also update student document directly for quick querying/filtering
+    const studentRef = doc(db, 'teachers', teacherId, 'students', record.studentId);
+    await updateDoc(studentRef, {
+      paymentStatus: record.status,
+      lastPaymentMonth: record.month,
+      collectedDues: record.amountPaid,
+      updatedAt: serverTimestamp(),
+    }).catch(() => {});
+
+    return paymentId;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, path);
+    throw err;
+  }
+}
+
+export function subscribeToMonthlyPayments(
+  teacherId: string,
+  month: string,
+  callback: (records: StudentPaymentRecord[]) => void
+) {
+  const collRef = collection(db, 'teachers', teacherId, 'payments');
+  return onSnapshot(
+    collRef,
+    (snapshot) => {
+      const list: StudentPaymentRecord[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data.month === month) {
+          list.push({
+            id: docSnap.id,
+            ...data,
+          } as StudentPaymentRecord);
+        }
+      });
+      callback(list);
+    },
+    (err) => {
+      console.error('Error in payments subscription:', err);
+      callback([]);
+    }
+  );
+}
+
+export function subscribeToAllPayments(
+  teacherId: string,
+  callback: (records: StudentPaymentRecord[]) => void
+) {
+  const collRef = collection(db, 'teachers', teacherId, 'payments');
+  return onSnapshot(
+    collRef,
+    (snapshot) => {
+      const list: StudentPaymentRecord[] = [];
+      snapshot.forEach((docSnap) => {
+        list.push({
+          id: docSnap.id,
+          ...docSnap.data(),
+        } as StudentPaymentRecord);
+      });
+      callback(list);
+    },
+    (err) => {
+      console.error('Error in all payments subscription:', err);
+      callback([]);
+    }
+  );
+}
+
+export async function updateStudentPaymentStatus(
+  teacherId: string,
+  studentId: string,
+  isPaid: boolean,
+  amount: number,
+  groupId: string | null = null,
+  month?: string
+) {
+  const currentMonth = month || new Date().toISOString().substring(0, 7);
+  return recordStudentPayment(teacherId, {
+    studentId,
+    groupId,
+    month: currentMonth,
+    status: isPaid ? 'paid' : 'unpaid',
+    amountPaid: isPaid ? amount : 0,
+    amountDue: amount,
+  });
+}
+
+export interface AdminNotification {
+  id: string;
+  type: string;
+  teacherId: string;
+  teacherName: string;
+  teacherEmail: string;
+  whatsapp: string;
+  subject: string;
+  createdAt: any;
+  read: boolean;
+}
+
+export function subscribeToAdminNotifications(callback: (notifications: AdminNotification[]) => void) {
+  const q = query(collection(db, 'admin_notifications'), orderBy('createdAt', 'desc'), limit(50));
+  return onSnapshot(q, (snapshot) => {
+    const list: AdminNotification[] = [];
+    snapshot.forEach((docSnap) => {
+      list.push({
+        id: docSnap.id,
+        ...docSnap.data(),
+      } as AdminNotification);
+    });
+    callback(list);
+  }, (err) => {
+    console.error('Error subscribing to admin notifications:', err);
+    callback([]);
+  });
+}
+
+export async function fetchReminderLogs(teacherId: string): Promise<ReminderLog[]> {
+  const collRef = collection(db, 'teachers', teacherId, 'reminderLogs');
+  const q = query(collRef, orderBy('sentAt', 'desc'), limit(100));
+  try {
+    const snapshot = await getDocs(q);
+    const logs: ReminderLog[] = [];
+    snapshot.forEach((docSnap) => {
+      logs.push({ id: docSnap.id, ...docSnap.data() } as ReminderLog);
+    });
+    return logs;
+  } catch (err) {
+    console.error('Error fetching reminder logs:', err);
+    return [];
+  }
+}
+
+
+
+
+
 
 
 

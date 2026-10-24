@@ -53,6 +53,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   const [googlePendingUser, setGooglePendingUser] = useState<User | null>(null);
 
   const subjectsList = [
+    'القرآن الكريم',
     'رياضيات',
     'لغة عربية',
     'لغة إنجليزية',

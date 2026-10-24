@@ -1,0 +1,166 @@
+From 6fe53fb2a767cfaae6041421759fef84486c64d6 Mon Sep 17 00:00:00 2001
+From: Claude <dev@local>
+Date: Sat, 17 Oct 2026 15:38:41 +0000
+Subject: [PATCH 1/4] perf(startup): don't block first paint on admin check;
+ subscribe by uid in parallel; preconnect
+
+---
+ index.html                         |  2 ++
+ src/App.tsx                        | 58 ++++++++++++++++++------------
+ src/components/AdminSecretGate.tsx | 12 +++++++
+ 3 files changed, 50 insertions(+), 22 deletions(-)
+
+diff --git a/index.html b/index.html
+index eb544b3..9e1bb95 100644
+--- a/index.html
++++ b/index.html
+@@ -14,6 +14,8 @@
+     <meta name="apple-mobile-web-app-capable" content="yes" />
+     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+     <meta name="apple-mobile-web-app-title" content="سند المعلم" />
++    <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
++    <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
+     <link rel="preconnect" href="https://fonts.googleapis.com">
+     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+diff --git a/src/App.tsx b/src/App.tsx
+index 454583b..4d88332 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -79,6 +79,8 @@ export default function App() {
+   const [currentUser, setCurrentUser] = useState<User | null>(null);
+   const [profile, setProfile] = useState<TeacherProfile | null>(null);
+   const [isAdmin, setIsAdmin] = useState(false);
++  // False until the (background) admin check finishes; true immediately when signed out.
++  const [adminChecked, setAdminChecked] = useState(false);
+   const [loadingAuth, setLoadingAuth] = useState(true);
+   const [profileLoadingTimeout, setProfileLoadingTimeout] = useState(false);
+   const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
+@@ -238,31 +240,40 @@ export default function App() {
+ 
+   // Listen to Auth State
+   useEffect(() => {
+-    const unsub = onAuthStateChanged(auth, async (user) => {
+-      try {
+-        setCurrentUser(user);
+-        if (user) {
+-          try {
+-            const adminStatus = await checkIsAdmin(user);
++    let isMounted = true;
++    const unsub = onAuthStateChanged(auth, (user) => {
++      // Never block the first paint on extra network round trips.
++      setCurrentUser(user);
++      setLoadingAuth(false);
++
++      if (user) {
++        setAdminChecked(false);
++        // Admin check runs in the background; the UI updates when it resolves.
++        checkIsAdmin(user)
++          .then((adminStatus) => {
++            if (!isMounted) return;
+             setIsAdmin(adminStatus);
+-          } catch (e) {
++            setAdminChecked(true);
++          })
++          .catch((e) => {
+             console.warn('checkIsAdmin error:', e);
++            if (!isMounted) return;
+             setIsAdmin(false);
+-          }
+-          requestAndSaveFCMToken().then((result) => {
+-            if (!result.success) console.warn('FCM notification registration:', result.error);
+-          }).catch((e) => console.warn('FCM token error:', e));
+-        } else {
+-          setProfile(null);
+-          setIsAdmin(false);
+-        }
+-      } catch (err) {
+-        console.error('Error in onAuthStateChanged listener:', err);
+-      } finally {
+-        setLoadingAuth(false);
++            setAdminChecked(true);
++          });
++        requestAndSaveFCMToken().then((result) => {
++          if (!result.success) console.warn('FCM notification registration:', result.error);
++        }).catch((e) => console.warn('FCM token error:', e));
++      } else {
++        setProfile(null);
++        setIsAdmin(false);
++        setAdminChecked(true);
+       }
+     });
+-    return () => unsub();
++    return () => {
++      isMounted = false;
++      unsub();
++    };
+   }, []);
+ 
+   // Listen to Teacher Profile (with auto-provision fallback)
+@@ -322,7 +333,9 @@ export default function App() {
+ 
+   // Listen to Students, Schedules, and Library
+   useEffect(() => {
+-    if (!currentUser || !profile) {
++    // Teacher document id === auth uid (see firestore.rules isTeacherOwner), and read access to
++    // these subcollections only depends on the uid, so we do not need to wait for `profile`.
++    if (!currentUser) {
+       setStudents([]);
+       setSchedules([]);
+       setLibraryItems([]);
+@@ -338,7 +351,7 @@ export default function App() {
+       unsubSchedules();
+       unsubLibrary();
+     };
+-  }, [currentUser, profile?.id]);
++  }, [currentUser?.uid]);
+ 
+   // Run database automatic cleanup script for orphaned schedules and lessons (IIFE triggered)
+   useEffect(() => {
+@@ -438,6 +451,7 @@ export default function App() {
+           <AdminSecretGate
+             currentUser={currentUser}
+             isAdmin={isAdmin}
++            adminChecked={adminChecked}
+             onBackToApp={() => navigateTo('/')}
+           />
+         </div>
+diff --git a/src/components/AdminSecretGate.tsx b/src/components/AdminSecretGate.tsx
+index d0df662..3b26934 100644
+--- a/src/components/AdminSecretGate.tsx
++++ b/src/components/AdminSecretGate.tsx
+@@ -17,12 +17,15 @@ interface AdminSecretGateProps {
+   onBackToApp: () => void;
+   currentUser: User | null;
+   isAdmin: boolean;
++  /** False while the background admin check is still running. */
++  adminChecked?: boolean;
+ }
+ 
+ export const AdminSecretGate: React.FC<AdminSecretGateProps> = ({
+   onBackToApp,
+   currentUser,
+   isAdmin,
++  adminChecked = true,
+ }) => {
+   const [adminEmail, setAdminEmail] = useState('');
+   const [adminPassword, setAdminPassword] = useState('');
+@@ -61,6 +64,15 @@ export const AdminSecretGate: React.FC<AdminSecretGateProps> = ({
+     );
+   }
+ 
++  // 1b. Signed in but the admin check has not finished yet: never show "unauthorized" prematurely.
++  if (currentUser && !isAdmin && !adminChecked) {
++    return (
++      <div className="min-h-[85vh] flex items-center justify-center text-xs text-purple-200/80">
++        جاري التحقق من الصلاحيات...
++      </div>
++    );
++  }
++
+   // 2. If user is signed in but does not have admin permissions in the admins collection
+   if (currentUser && !isAdmin) {
+     return (
+-- 
+2.43.0
+

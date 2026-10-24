@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { onAuthStateChanged, User, signOut } from 'firebase/auth';
+import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
+import { onAuthStateChanged, User, signOut, getRedirectResult } from 'firebase/auth';
 import {
   auth,
   checkIsAdmin,
@@ -16,6 +17,7 @@ import {
   Student,
   ScheduleSlot,
   LibraryItem,
+  isInDoNotDisturbPeriod,
 } from './types';
 import { AuthModal } from './components/AuthModal';
 import { LockScreen } from './components/LockScreen';
@@ -25,6 +27,11 @@ import { NearExpiryOverlay } from './components/NearExpiryOverlay';
 import { OfflineIndicator } from './OfflineIndicator';
 import { AIAssistantChat } from './components/AIAssistantChat';
 import { LoadingFallback } from './components/LoadingFallback';
+import { Sidebar } from './components/Sidebar';
+import { ThemeToggleCompact } from './components/ThemeToggle';
+import { OnboardingModal } from './components/OnboardingModal';
+import { ActiveReminderAlert, ActiveReminderAlertData } from './components/ActiveReminderAlert';
+import { getStoredNotificationPrefs } from './components/NotificationCenter';
 
 // Code-split heavy screen tabs with React.lazy to accelerate initial load time
 const StudentsTab = React.lazy(() => import('./components/StudentsTab').then((m) => ({ default: m.StudentsTab })));
@@ -47,6 +54,9 @@ import {
   AlertCircle,
   ChevronRight,
   LogOut,
+  Menu,
+  Bot,
+  Sparkles,
 } from 'lucide-react';
 import {
   getStoredReminderSettings,
@@ -54,6 +64,7 @@ import {
   playNotificationChime,
   checkRemindersApi,
   sendEndOfDaySummaryNotification,
+  sendDailyDigestNotification,
 } from './services/reminderService';
 import { requestAndSaveFCMToken } from './firebase';
 import {
@@ -76,17 +87,18 @@ export default function App() {
     );
   }
 
+  const { t } = useTranslation();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<TeacherProfile | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [adminChecked, setAdminChecked] = useState(false);
   const [loadingAuth, setLoadingAuth] = useState(true);
-  const [loadingTimeout, setLoadingTimeout] = useState(false);
   const [profileLoadingTimeout, setProfileLoadingTimeout] = useState(false);
+  const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
 
   // Safety net timer: Ensure loadingAuth never hangs indefinitely
   useEffect(() => {
     const timer = setTimeout(() => {
-      setLoadingTimeout(true);
       // Force exit loading mode if auth listener hasn't responded after 6 seconds
       setLoadingAuth(false);
     }, 6000);
@@ -119,28 +131,67 @@ export default function App() {
   // Active Tab for teacher application
   const [activeTab, setActiveTab] = useState<number>(0);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
+  const [exitToastMessage, setExitToastMessage] = useState<string | null>(null);
+  const lastBackPressTimeRef = useRef<number>(0);
   const [showFinancialDashboard, setShowFinancialDashboard] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // Sidebar navigation drawer state
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [activeSidebarItem, setActiveSidebarItem] = useState('reminders');
+
+  useEffect(() => {
+    if (profile && profile.role !== 'admin' && !profile.onboardingCompleted) {
+      setShowOnboarding(true);
+    }
+  }, [profile]);
+
+  const handleSidebarSelect = (itemId: string) => {
+    setActiveSidebarItem(itemId);
+    if (itemId === 'home') {
+      setActiveTab(0);
+      setShowFinancialDashboard(false);
+      setShowAdminView(false);
+    } else if (itemId === 'students') {
+      setActiveTab(1);
+      setShowFinancialDashboard(false);
+      setShowAdminView(false);
+    } else if (itemId === 'appointments') {
+      setActiveTab(2);
+      setShowFinancialDashboard(false);
+      setShowAdminView(false);
+    } else if (itemId === 'classes') {
+      setActiveTab(3);
+      setShowFinancialDashboard(false);
+      setShowAdminView(false);
+    } else if (itemId === 'profits' || itemId === 'expenses' || itemId === 'reports') {
+      setShowFinancialDashboard(true);
+      setShowAdminView(false);
+    } else if (itemId === 'reminders' || itemId === 'notifications' || itemId === 'settings') {
+      setActiveTab(4);
+      setShowFinancialDashboard(false);
+      setShowAdminView(false);
+    }
+  };
 
   // Collections state for current teacher
   const [students, setStudents] = useState<Student[]>([]);
   const [schedules, setSchedules] = useState<ScheduleSlot[]>([]);
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
 
-  // Automated 15-Minute Class Reminders Alert Banner State
-  const [activeReminderAlert, setActiveReminderAlert] = useState<{
-    studentName: string;
-    classTime: string;
-    whatsappUrl?: string;
-    studentPhone?: string;
-    subject?: string;
-  } | null>(null);
+  // Automated Class Reminders Alert Banner State
+  const [activeReminderAlert, setActiveReminderAlert] = useState<ActiveReminderAlertData | null>(null);
+
+  // AI Assistant Chat state (Header Icon trigger)
+  const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
 
   // Register top-level modals & subviews on back handler stack
-  useBackHandler(showExitConfirmModal, () => setShowExitConfirmModal(false), 'exit_confirm_modal', false);
+  useBackHandler(isSidebarOpen, () => setIsSidebarOpen(false), 'sidebar_drawer');
+  useBackHandler(showOnboarding, () => setShowOnboarding(false), 'onboarding_modal');
   useBackHandler(showUpgradeModal, () => setShowUpgradeModal(false), 'upgrade_modal');
   useBackHandler(showFinancialDashboard, () => setShowFinancialDashboard(false), 'financial_dashboard');
   useBackHandler(showAdminView, () => setShowAdminView(false), 'admin_view');
+  useBackHandler(isAIAssistantOpen, () => setIsAIAssistantOpen(false), 'ai_assistant_modal');
   useBackHandler(!!activeReminderAlert, () => setActiveReminderAlert(null), 'active_reminder_alert', false);
 
   // Push initial history state on mount & Request browser notification permission
@@ -151,15 +202,19 @@ export default function App() {
 
       // Ask for native notification permission immediately upon app startup
       if ('Notification' in window && Notification.permission === 'default') {
-        Notification.requestPermission().then((perm) => {
-          if (perm === 'granted') {
-            showBrowserNotification(
-              'سند المعلم 🔔',
-              'تم تفعيل إشعارات الهاتف والنظام بنجاح لحصصك المجدولة!'
-            );
-            playNotificationChime();
-          }
-        });
+        Notification.requestPermission()
+          .then((perm) => {
+            if (perm === 'granted') {
+              showBrowserNotification(
+                'سند المعلم 🔔',
+                'تم تفعيل إشعارات الهاتف والنظام بنجاح لحصصك المجدولة!'
+              );
+              playNotificationChime();
+            }
+          })
+          .catch((err) => {
+            console.warn('Notification permission error:', err);
+          });
       }
     }
   }, []);
@@ -206,14 +261,19 @@ export default function App() {
       }
 
       // 6. If user is ALREADY at the Main Dashboard (Tab 0) and pressed Back:
-      // Show confirmation dialog: "هل تريد الخروج من التطبيق؟"
-      setShowExitConfirmModal(true);
-      pushAppHistoryState({ modal: 'exit_confirm' });
+      const now = Date.now();
+      if (now - lastBackPressTimeRef.current < 2000) {
+        return; // default exit behavior
+      }
+      lastBackPressTimeRef.current = now;
+      setExitToastMessage('اضغط مرة أخرى للخروج');
+      setTimeout(() => setExitToastMessage(null), 2000);
+      pushAppHistoryState({ tab: 0 });
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [activeTab, showAdminView, showUpgradeModal, showExitConfirmModal, showFinancialDashboard]);
+  }, [activeTab, showAdminView, showUpgradeModal, showFinancialDashboard]);
 
   const handleSelectTab = (idx: number) => {
     if (idx === activeTab) return;
@@ -221,14 +281,7 @@ export default function App() {
     pushAppHistoryState({ tab: idx });
   };
 
-  const handleConfirmExit = () => {
-    setShowExitConfirmModal(false);
-    exitApplication();
-  };
 
-  const handleCancelExit = () => {
-    setShowExitConfirmModal(false);
-  };
 
   const navigateTo = (path: string) => {
     if (window.location.pathname !== path) {
@@ -239,27 +292,41 @@ export default function App() {
 
   // Listen to Auth State
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
+    // Process any redirect sign-in results gracefully (e.g. mobile or COOP fallbacks)
+    getRedirectResult(auth).catch((e) => {
+      console.warn('Redirect auth result warning:', e?.message || e);
+    });
+
+    const unsub = onAuthStateChanged(auth, (user) => {
       try {
         setCurrentUser(user);
+        setLoadingAuth(false);
         if (user) {
-          try {
-            const adminStatus = await checkIsAdmin(user);
-            setIsAdmin(adminStatus);
-          } catch (e) {
-            console.warn('checkIsAdmin error:', e);
-            setIsAdmin(false);
-          }
-          requestAndSaveFCMToken().then((result) => {
-            if (!result.success) console.warn('FCM notification registration:', result.error);
-          }).catch((e) => console.warn('FCM token error:', e));
+          setAdminChecked(false);
+          checkIsAdmin(user)
+            .then((adminStatus) => {
+              setIsAdmin(adminStatus);
+            })
+            .catch((e) => {
+              console.warn('checkIsAdmin error:', e);
+              setIsAdmin(false);
+            })
+            .finally(() => {
+              setAdminChecked(true);
+            });
+
+          requestAndSaveFCMToken()
+            .then((result) => {
+              if (!result.success) console.warn('FCM notification registration:', result.error);
+            })
+            .catch((e) => console.warn('FCM token error:', e));
         } else {
           setProfile(null);
           setIsAdmin(false);
+          setAdminChecked(true);
         }
       } catch (err) {
         console.error('Error in onAuthStateChanged listener:', err);
-      } finally {
         setLoadingAuth(false);
       }
     });
@@ -270,6 +337,7 @@ export default function App() {
   useEffect(() => {
     if (!currentUser) {
       setProfile(null);
+      setProfileLoadError(null);
       return;
     }
 
@@ -281,6 +349,7 @@ export default function App() {
         if (!isMounted) return;
         if (p) {
           setProfile(p);
+          setProfileLoadError(null);
         } else {
           // If profile doc does not exist yet for signed-in user, auto-provision
           try {
@@ -292,15 +361,24 @@ export default function App() {
               subject: 'عام',
               existingUser: currentUser,
             });
-            if (isMounted) setProfile(newP);
-          } catch (createErr) {
+            if (isMounted) {
+              setProfile(newP);
+              setProfileLoadError(null);
+            }
+          } catch (createErr: any) {
             console.warn('Auto profile creation error:', createErr);
-            if (isMounted) setProfile(null);
+            if (isMounted) {
+              setProfile(null);
+              setProfileLoadError(createErr?.message || 'تعذر إنشاء ملف المعلم في Firestore.');
+            }
           }
         }
       },
       (err) => {
         console.error('Error in teacher profile subscription', err);
+        if (isMounted) {
+          setProfileLoadError(err?.message || 'تعذر قراءة ملف المعلم من Firestore.');
+        }
       }
     );
 
@@ -312,7 +390,7 @@ export default function App() {
 
   // Listen to Students, Schedules, and Library
   useEffect(() => {
-    if (!currentUser || !profile) {
+    if (!currentUser) {
       setStudents([]);
       setSchedules([]);
       setLibraryItems([]);
@@ -328,12 +406,14 @@ export default function App() {
       unsubSchedules();
       unsubLibrary();
     };
-  }, [currentUser, profile?.id]);
+  }, [currentUser?.uid]);
 
   // Run database automatic cleanup script for orphaned schedules and lessons (IIFE triggered)
   useEffect(() => {
     if (!currentUser || !profile || students.length === 0) return;
-    runOrphanCleanup(currentUser.uid, students.map(s => s.id));
+    void runOrphanCleanup(currentUser.uid, students.map(s => s.id)).catch((err) => {
+      console.warn('Orphan cleanup warning:', err);
+    });
   }, [currentUser, profile?.id, students]);
 
   // Automated 15-Minute Class Reminders Periodic Check
@@ -345,6 +425,7 @@ export default function App() {
     let isMounted = true;
 
     const performCheck = async () => {
+      if (isInDoNotDisturbPeriod(profile?.doNotDisturb)) return;
       try {
         const res = await checkRemindersApi({
           teacher: profile,
@@ -353,18 +434,35 @@ export default function App() {
           minutesBefore: settings.minutesBefore || 15,
         });
 
-        if (isMounted && res.matchedReminders && res.matchedReminders.length > 0) {
+        const notifPrefs = getStoredNotificationPrefs(profile);
+
+        if (isMounted && res.matchedReminders && res.matchedReminders.length > 0 && notifPrefs.classReminders !== false) {
           const first = res.matchedReminders[0];
-          setActiveReminderAlert({
-            studentName: first.studentName,
-            classTime: first.classTime,
-            whatsappUrl: first.whatsappUrl,
-            studentPhone: first.recipientPhone,
-            subject: first.subject,
-          });
+          const now = new Date();
+          const [hStr, mStr] = (first.classTime || '').split(':');
+          const target = new Date();
+          if (hStr !== undefined && mStr !== undefined) {
+            target.setHours(Number.parseInt(hStr, 10), Number.parseInt(mStr, 10), 0, 0);
+            if (now.getTime() - target.getTime() > 6 * 60 * 60 * 1000) {
+              target.setDate(target.getDate() + 1);
+            }
+          } else {
+            target.setTime(now.getTime() + (settings.minutesBefore || 15) * 60 * 1000);
+          }
+
+          if (notifPrefs.inAppBanner !== false) {
+            setActiveReminderAlert({
+              studentName: first.studentName,
+              classTime: first.classTime,
+              whatsappUrl: first.whatsappUrl,
+              studentPhone: first.recipientPhone,
+              subject: first.subject,
+              targetTime: target,
+            });
+          }
 
           // Automatically open WhatsApp API link with populated class details if enabled
-          if (settings.autoOpenWhatsApp && first.whatsappUrl) {
+          if ((settings.autoOpenWhatsApp || notifPrefs.whatsappAlerts) && first.whatsappUrl) {
             try {
               window.open(first.whatsappUrl, '_blank');
             } catch (e) {
@@ -372,10 +470,10 @@ export default function App() {
             }
           }
 
-          if (settings.soundEnabled) {
+          if (settings.soundEnabled && notifPrefs.soundChime !== false) {
             playNotificationChime();
           }
-          if (settings.notifyTeacher) {
+          if (settings.notifyTeacher && notifPrefs.browserPush !== false) {
             showBrowserNotification(
               '🔔 تذكير بحصة قادمة!',
               `حصة الطالب/ـة ${first.studentName} تبدأ بعد ${settings.minutesBefore || 15} دقيقة (الساعة ${first.classTime}).`
@@ -383,8 +481,29 @@ export default function App() {
           }
         }
 
+        // Automatic Daily Morning Digest Schedule check ("عندك X حصص اليوم")
+        if (settings.dailyDigestEnabled !== false && isMounted) {
+          const nowTime = new Date();
+          const currentHour = nowTime.getHours();
+          const currentMinute = nowTime.getMinutes();
+          const [targetHour, targetMin] = (settings.dailyDigestTime || '08:00')
+            .split(':')
+            .map(Number);
+          const currentTotalMinutes = currentHour * 60 + currentMinute;
+          const targetTotalMinutes = (targetHour || 8) * 60 + (targetMin || 0);
+
+          if (currentTotalMinutes >= targetTotalMinutes) {
+            sendDailyDigestNotification({
+              teacher: profile,
+              schedules,
+              students,
+              force: false,
+            });
+          }
+        }
+
         // Automatic End-of-Day Summary check
-        if (settings.endOfDaySummaryEnabled !== false && isMounted) {
+        if (settings.endOfDaySummaryEnabled !== false && notifPrefs.dailySummaryReport !== false && isMounted) {
           const nowTime = new Date();
           const currentHour = nowTime.getHours();
           const currentMinute = nowTime.getMinutes();
@@ -409,10 +528,12 @@ export default function App() {
     };
 
     // Initial check
-    performCheck();
+    void performCheck();
 
     // Check periodically every 60 seconds
-    const timer = setInterval(performCheck, 60 * 1000);
+    const timer = setInterval(() => {
+      void performCheck();
+    }, 60 * 1000);
     return () => {
       isMounted = false;
       clearInterval(timer);
@@ -428,6 +549,7 @@ export default function App() {
           <AdminSecretGate
             currentUser={currentUser}
             isAdmin={isAdmin}
+            adminChecked={adminChecked}
             onBackToApp={() => navigateTo('/')}
           />
         </div>
@@ -480,8 +602,35 @@ export default function App() {
             timeoutMs={4000}
           />
         ) : (
-          <div className="w-full max-w-sm space-y-4">
-            <AuthModal onSuccess={() => {}} />
+          <div className="w-full max-w-sm space-y-4 rounded-2xl border border-amber-500/30 bg-slate-900/90 p-5">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/10 text-amber-300">
+              <AlertCircle className="h-6 w-6" />
+            </div>
+            <h2 className="text-base font-bold text-white">تم تسجيل الدخول، لكن تعذر تحميل بيانات المعلم</h2>
+            <p className="text-sm leading-6 text-slate-300">
+              لن نعيدك إلى شاشة تسجيل الدخول لأن حساب Google قد يكون متصلًا بالفعل. تعذر تحميل ملف المعلم من قاعدة البيانات.
+            </p>
+            {profileLoadError && (
+              <p className="break-words rounded-xl bg-slate-950 p-3 text-left text-xs text-amber-200" dir="ltr">
+                {profileLoadError}
+              </p>
+            )}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="flex-1 rounded-xl bg-purple-600 px-3 py-2.5 text-sm font-bold text-white hover:bg-purple-500"
+              >
+                إعادة المحاولة
+              </button>
+              <button
+                type="button"
+                onClick={() => signOut(auth)}
+                className="flex-1 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm font-bold text-slate-200 hover:bg-slate-700"
+              >
+                تسجيل الخروج
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -500,7 +649,7 @@ export default function App() {
       expiryDate = new Date(effectiveExpiry.seconds * 1000);
     } else {
       const d = new Date(effectiveExpiry);
-      if (!isNaN(d.getTime())) expiryDate = d;
+      if (!Number.isNaN(d.getTime())) expiryDate = d;
     }
   }
 
@@ -526,15 +675,15 @@ export default function App() {
   }
 
   const tabs = [
-    { label: 'الرئيسية', icon: Home },
-    { label: 'الطلاب', icon: Users, badge: students.length },
-    { label: 'المواعيد', icon: Calendar, badge: schedules.length },
-    { label: 'مكتبتي', icon: BookOpen },
-    { label: 'الإعدادات', icon: Settings },
+    { label: t('nav.home', 'الرئيسية'), icon: Home },
+    { label: t('nav.students', 'الطلاب'), icon: Users, badge: students.length },
+    { label: t('nav.appointments', 'المواعيد'), icon: Calendar, badge: schedules.length },
+    { label: t('nav.classes', 'مكتبتي'), icon: BookOpen },
+    { label: t('nav.settings', 'الإعدادات'), icon: Settings },
   ];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex justify-center">
+    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex justify-center transition-colors duration-200">
       <OfflineIndicator />
 
       {/* Near Expiry Overlay Alert (3 days or less) */}
@@ -547,18 +696,35 @@ export default function App() {
       )}
 
       {/* Mobile-first centered frame (up to 460px) */}
-      <div className="w-full max-w-[460px] min-h-screen bg-slate-950/95 border-x border-purple-950/40 flex flex-col relative shadow-2xl">
+      <div className="w-full max-w-[460px] min-h-screen bg-white/95 dark:bg-slate-950/95 border-x border-slate-200 dark:border-purple-950/40 flex flex-col relative shadow-2xl transition-colors duration-200">
+        {/* Sidebar Navigation Drawer */}
+        <Sidebar
+          isOpen={isSidebarOpen}
+          onClose={() => setIsSidebarOpen(false)}
+          activeItem={activeSidebarItem}
+          onSelect={handleSidebarSelect}
+          profile={profile}
+        />
+
         {/* Top App Header */}
-        <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-purple-900/30 px-3.5 py-2.5 flex items-center justify-between">
+        <header className="sticky top-0 z-40 bg-white/90 dark:bg-slate-950/80 backdrop-blur-md border-b border-slate-200 dark:border-purple-900/30 px-3.5 py-2.5 flex items-center justify-between transition-colors duration-200">
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-1.5 rounded-xl bg-purple-100 dark:bg-purple-900/40 hover:bg-purple-200 dark:hover:bg-purple-900/70 border border-purple-300 dark:border-purple-500/30 text-purple-700 dark:text-purple-200 hover:text-purple-900 dark:hover:text-white transition cursor-pointer"
+              title="فتح القائمة الرئيسية"
+            >
+              <Menu className="w-4 h-4 text-purple-700 dark:text-amber-300" />
+            </button>
             {activeTab !== 0 ? (
               <button
                 type="button"
                 onClick={() => handleSelectTab(0)}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-purple-900/50 hover:bg-purple-800/70 border border-purple-500/40 text-xs font-bold text-purple-200 hover:text-white transition cursor-pointer shadow-sm active:scale-95"
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-purple-100 dark:bg-purple-900/50 hover:bg-purple-200 dark:hover:bg-purple-800/70 border border-purple-300 dark:border-purple-500/40 text-xs font-bold text-purple-800 dark:text-purple-200 hover:text-purple-950 dark:hover:text-white transition cursor-pointer shadow-sm active:scale-95"
                 title="الرجوع للواجهة الرئيسية (Main Dashboard)"
               >
-                <ChevronRight className="w-4 h-4 text-amber-300" />
+                <ChevronRight className="w-4 h-4 text-purple-700 dark:text-amber-300" />
                 <span>الرئيسية</span>
               </button>
             ) : (
@@ -567,26 +733,52 @@ export default function App() {
               </div>
             )}
             <div>
-              <h1 className="text-sm font-extrabold text-white tracking-wide">
+              <h1 className="text-sm font-extrabold text-slate-900 dark:text-white tracking-wide">
                 سند المعلم
               </h1>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Quick AI Assistant Icon in Header */}
+            <button
+              type="button"
+              onClick={() => setIsAIAssistantOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-700 to-indigo-600 hover:from-purple-600 hover:to-indigo-500 text-white text-xs font-bold shadow-md shadow-purple-950/40 active:scale-95 transition cursor-pointer border border-purple-400/30 group"
+              title="المساعد الذكي Gemini"
+            >
+              <div className="relative">
+                <Bot className="w-4 h-4 text-amber-300 group-hover:rotate-12 transition" />
+                <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+              </div>
+              <span className="hidden sm:inline text-[11px]">المساعد الذكي</span>
+              <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+            </button>
+
+            {/* Quick Theme Toggle Button */}
+            <ThemeToggleCompact />
+
             <div
               onClick={() => setShowUpgradeModal(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-900/40 border border-purple-500/30 text-[11px] font-bold text-purple-200 cursor-pointer hover:bg-purple-900/70 transition"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-100 dark:bg-purple-900/40 border border-purple-300 dark:border-purple-500/30 text-[11px] font-bold text-purple-800 dark:text-purple-200 cursor-pointer hover:bg-purple-200 dark:hover:bg-purple-900/70 transition"
               title="ترقية أو تجديد الاشتراك"
             >
               <span>{profile.subscriptionStatus === 'active' ? 'مشترك 💎' : 'تجريبي 🎁'}</span>
             </div>
 
-            {/* Exit Application Trigger Button (Shows confirmation modal on Main Dashboard) */}
+            {/* Exit Application Trigger Button */}
             <button
               type="button"
-              onClick={() => setShowExitConfirmModal(true)}
-              className="p-1.5 rounded-xl bg-slate-900 hover:bg-rose-950/60 border border-slate-800 hover:border-rose-500/40 text-slate-400 hover:text-rose-300 transition cursor-pointer"
+              onClick={() => {
+                const now = Date.now();
+                if (now - lastBackPressTimeRef.current < 2000) {
+                  return;
+                }
+                lastBackPressTimeRef.current = now;
+                setExitToastMessage('اضغط مرة أخرى للخروج');
+                setTimeout(() => setExitToastMessage(null), 2000);
+              }}
+              className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 hover:bg-rose-100 dark:hover:bg-rose-950/60 border border-slate-300 dark:border-slate-800 hover:border-rose-400 dark:hover:border-rose-500/40 text-slate-600 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-300 transition cursor-pointer"
               title="خروج من التطبيق"
             >
               <LogOut className="w-4 h-4" />
@@ -594,44 +786,12 @@ export default function App() {
           </div>
         </header>
 
-        {/* Active Class 15-Minute Reminder Banner */}
+        {/* Active Class Dynamic Reminder Banner with Countdown */}
         {activeReminderAlert && (
-          <div className="bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-900 border-b border-emerald-500/50 px-3.5 py-2.5 flex items-center justify-between text-xs text-white shadow-xl">
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/40 flex-shrink-0 animate-bounce">
-                <Bell className="w-4 h-4" />
-              </div>
-              <div>
-                <p className="font-bold text-emerald-300">
-                  حصة {activeReminderAlert.studentName} تبدأ بعد 15 دقيقة! ⏰
-                </p>
-                <p className="text-[10px] text-slate-300">
-                  الساعة {activeReminderAlert.classTime} {activeReminderAlert.subject ? `• ${activeReminderAlert.subject}` : ''}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5">
-              {activeReminderAlert.whatsappUrl && (
-                <a
-                  href={activeReminderAlert.whatsappUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] transition flex items-center gap-1 shadow"
-                >
-                  <MessageCircle className="w-3.5 h-3.5" />
-                  <span>تذكير واتساب 💬</span>
-                </a>
-              )}
-              <button
-                type="button"
-                onClick={() => setActiveReminderAlert(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white transition cursor-pointer"
-                title="إخفاء التنبيه"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
+          <ActiveReminderAlert
+            alert={activeReminderAlert}
+            onClose={() => setActiveReminderAlert(null)}
+          />
         )}
 
         {/* Persistent Warning Bar for Near Expiry (when popup was dismissed) */}
@@ -722,7 +882,7 @@ export default function App() {
         </main>
 
         {/* Bottom Tab Navigation Bar */}
-        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[460px] z-40 bg-slate-950/95 backdrop-blur-lg border-t border-purple-900/40 px-2 py-1.5 flex items-center justify-around shadow-2xl">
+        <nav className="secondary-nav fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[460px] z-40 bg-white/95 dark:bg-slate-950/95 backdrop-blur-lg border-t border-slate-200 dark:border-purple-900/40 px-2 py-1.5 flex items-center justify-around shadow-2xl transition-colors duration-200">
           {tabs.map((tab, idx) => {
             const Icon = tab.icon;
             const isActive = activeTab === idx;
@@ -732,13 +892,13 @@ export default function App() {
                 onClick={() => handleSelectTab(idx)}
                 className={`flex-1 flex flex-col items-center justify-center py-1.5 px-1 rounded-2xl transition cursor-pointer relative ${
                   isActive
-                    ? 'text-purple-300 font-bold'
-                    : 'text-slate-400 hover:text-slate-200 font-medium'
+                    ? 'text-purple-700 dark:text-purple-300 font-bold'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
                 }`}
               >
                 <div
                   className={`p-1 rounded-xl transition ${
-                    isActive ? 'bg-purple-600/30 text-amber-300 scale-110' : ''
+                    isActive ? 'bg-purple-100 dark:bg-purple-600/30 text-purple-700 dark:text-amber-300 scale-110 shadow-sm' : ''
                   }`}
                 >
                   <Icon className="w-5 h-5" />
@@ -757,12 +917,16 @@ export default function App() {
 
         {/* Floating AI Assistant Chat Window */}
         {currentUser && profile && (
-          <AIAssistantChat
-            profile={profile}
-            students={students}
-            schedules={schedules}
-            onOpenUpgradeModal={() => setShowUpgradeModal(true)}
-          />
+          <div className="ai-assistant">
+            <AIAssistantChat
+              profile={profile}
+              students={students}
+              schedules={schedules}
+              onOpenUpgradeModal={() => setShowUpgradeModal(true)}
+              isOpenControlled={isAIAssistantOpen}
+              onCloseControlled={() => setIsAIAssistantOpen(false)}
+            />
+          </div>
         )}
 
         {/* Voluntary Upgrade Modal */}
@@ -774,43 +938,18 @@ export default function App() {
           />
         )}
 
-        {/* Exit Application Confirmation Modal */}
-        {showExitConfirmModal && (
-          <div
-            className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 text-right"
-            dir="rtl"
-          >
-            <div className="w-full max-w-sm bg-gradient-to-b from-slate-900 to-slate-950 border border-purple-500/40 rounded-3xl p-6 shadow-2xl relative space-y-4 animate-in fade-in zoom-in-95 duration-200">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30 flex-shrink-0">
-                  <AlertCircle className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white">هل تريد الخروج من التطبيق؟</h3>
-                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                    هل أنت متأكد أنك تريد الخروج؟
-                  </p>
-                </div>
-              </div>
+        {/* First-Time Onboarding Modal */}
+        {showOnboarding && profile && (
+          <OnboardingModal
+            profile={profile}
+            onComplete={() => setShowOnboarding(false)}
+          />
+        )}
 
-              <div className="flex items-center gap-2 pt-2">
-                <button
-                  type="button"
-                  autoFocus
-                  onClick={handleCancelExit}
-                  className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition cursor-pointer shadow-lg shadow-purple-950/50 active:scale-98"
-                >
-                  البقاء في التطبيق
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmExit}
-                  className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-rose-950/80 hover:text-rose-200 text-slate-300 font-bold text-xs border border-slate-700 hover:border-rose-500/50 transition cursor-pointer active:scale-98"
-                >
-                  نعم، خروج
-                </button>
-              </div>
-            </div>
+        {/* Exit Toast Notification */}
+        {exitToastMessage && (
+          <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 text-white px-4 py-2 rounded-2xl border border-purple-500/40 text-xs shadow-2xl animate-in fade-in slide-in-from-bottom-3">
+            {exitToastMessage}
           </div>
         )}
       </div>

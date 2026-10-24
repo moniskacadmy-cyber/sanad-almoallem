@@ -1,0 +1,39 @@
+From c9824ca55c1c6c8fdbb1356a73b7b47fd38efe8f Mon Sep 17 00:00:00 2001
+From: Claude <dev@local>
+Date: Sun, 18 Oct 2026 07:12:01 +0000
+Subject: [PATCH 3/4] perf(rules): read teacher doc once in
+ isTeacherSubscriptionActive (behavior unchanged)
+
+---
+ firestore.rules | 14 ++++++++++----
+ 1 file changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/firestore.rules b/firestore.rules
+index c7b6e95..175841a 100644
+--- a/firestore.rules
++++ b/firestore.rules
+@@ -31,11 +31,17 @@ service cloud.firestore {
+       return isSignedIn() && request.auth.uid == teacherId;
+     }
+ 
+-    // Enforce active subscription or admin status for write operations
++    // Subscription state of an already-fetched teacher document.
++    function isSubscriptionDataActive(data) {
++      return data.isActive != false && data.subscriptionExpiresAt > request.time;
++    }
++
++    // Enforce active subscription or admin status for write operations.
++    // The teacher document is read ONCE, and only when the caller is not an admin
++    // (|| short-circuits), so admins are never blocked by a missing teacher document.
+     function isTeacherSubscriptionActive(teacherId) {
+-      return isAdmin() || (
+-        get(/databases/$(database)/documents/teachers/$(teacherId)).data.isActive != false &&
+-        get(/databases/$(database)/documents/teachers/$(teacherId)).data.subscriptionExpiresAt > request.time
++      return isAdmin() || isSubscriptionDataActive(
++        get(/databases/$(database)/documents/teachers/$(teacherId)).data
+       );
+     }
+ 
+-- 
+2.43.0
+

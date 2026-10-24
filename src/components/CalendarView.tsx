@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { TeacherProfile, Student, ScheduleSlot, ClassType } from '../types';
+import { TeacherProfile, Student, ScheduleSlot } from '../types';
 import { toggleScheduleCompletedToday } from '../firebase';
 import {
   Calendar as CalendarIcon,
@@ -14,7 +14,6 @@ import {
   Star,
   Edit2,
   Trash2,
-  ExternalLink,
   MessageCircle,
   X,
 } from 'lucide-react';

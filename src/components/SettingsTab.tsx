@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { TeacherProfile, Student, ScheduleSlot, LibraryItem, BackupData, ReminderLog, ReminderSettings, DEFAULT_WHATSAPP_TEMPLATES } from '../types';
+import { useTranslation } from 'react-i18next';
+import { TeacherProfile, Student, ScheduleSlot, LibraryItem, BackupData, ReminderLog, ReminderSettings, DEFAULT_WHATSAPP_TEMPLATES, SUPPORTED_CURRENCIES, NotificationPreferences, DEFAULT_NOTIFICATION_PREFERENCES, DoNotDisturbSettings, DEFAULT_DND_SETTINGS, isInDoNotDisturbPeriod } from '../types';
+import { getStoredNotificationPrefs } from './NotificationCenter';
 import { updateTeacherProfile, auth, fetchAllStudentLessons, importFullTeacherBackup, requestAndSaveFCMToken } from '../firebase';
 import { useBackHandler } from '../services/backHandler';
 import { signOut } from 'firebase/auth';
@@ -8,6 +10,9 @@ import { PWAInstallButton } from '../PWAInstallButton';
 const triggerConfetti = (opts: Record<string, any>) => {
   import('canvas-confetti').then((m) => m.default(opts)).catch(() => {});
 };
+import { ThemeSettingsSection } from './ThemeToggle';
+import { useSettings } from '../context/SettingsContext';
+import { NotificationCenter } from './NotificationCenter';
 
 import {
   getStoredReminderSettings,
@@ -19,10 +24,10 @@ import {
   fetchCronStatusApi,
   triggerTestReminderApi,
   sendEndOfDaySummaryNotification,
+  sendDailyDigestNotification,
+  generateDailyDigestMessage,
 } from '../services/reminderService';
 import {
-  User,
-  Shield,
   CreditCard,
   Download,
   Upload,
@@ -31,7 +36,6 @@ import {
   Sparkles,
   Phone,
   Mail,
-  BookOpen,
   Edit2,
   X,
   FileSpreadsheet,
@@ -39,24 +43,25 @@ import {
   ShieldAlert,
   Smartphone,
   Lock,
-  Eye,
-  EyeOff,
   AlertCircle,
   FileJson,
   RefreshCw,
-  FileUp,
   Clock,
   MessageCircle,
   Check,
   ExternalLink,
   Volume2,
   VolumeX,
-  Copy,
   Send,
   DollarSign,
-  TrendingUp,
   ChevronLeft,
   ChevronRight,
+  Coins,
+  Globe,
+  Moon,
+  BellOff,
+  Sun,
+  CalendarOff,
 } from 'lucide-react';
 
 interface SettingsTabProps {
@@ -81,13 +86,38 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   onOpenFinancialDashboard,
 }) => {
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const { i18n, t } = useTranslation();
+
+  const changeLanguage = (lng: string) => {
+    i18n.changeLanguage(lng);
+    document.documentElement.dir = lng === 'ar' ? 'rtl' : 'ltr';
+  };
+
   const [activeSubScreen, setActiveSubScreen] = useState<'main' | 'whatsapp_templates'>('main');
   const [editName, setEditName] = useState(profile.name);
   const [editWhatsapp, setEditWhatsapp] = useState(profile.whatsapp);
   const [editSubject, setEditSubject] = useState(profile.subject);
   const [editCurrency, setEditCurrency] = useState(profile.currency || 'ج.م');
   const [savingProfile, setSavingProfile] = useState(false);
+  const [updatingCurrency, setUpdatingCurrency] = useState(false);
+
+  const handleQuickCurrencyChange = async (newCurr: string) => {
+    if (newCurr === profile.currency) return;
+    setUpdatingCurrency(true);
+    try {
+      await updateTeacherProfile(profile.id, { currency: newCurr });
+      triggerConfetti({ particleCount: 35, spread: 60, origin: { y: 0.7 } });
+      setExportNotice(`تم تغيير العملة المعتمدة إلى (${newCurr}) بنجاح! 💰`);
+      setTimeout(() => setExportNotice(null), 3500);
+    } catch (e: any) {
+      console.error('Failed to update currency:', e);
+    } finally {
+      setUpdatingCurrency(false);
+    }
+  };
+
   const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const { isFocusMode, toggleFocusMode } = useSettings();
 
   // Backup & Import state
   const [isExporting, setIsExporting] = useState(false);
@@ -114,8 +144,49 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [fcmNotice, setFcmNotice] = useState<string | null>(null);
   const [fcmError, setFcmError] = useState<string | null>(null);
 
+  // Notification Preferences State
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPreferences>(() => getStoredNotificationPrefs(profile));
+  const [savingNotifPrefs, setSavingNotifPrefs] = useState(false);
+  const [notifPrefsNotice, setNotifPrefsNotice] = useState<string | null>(null);
+
+  const handleToggleNotifPref = async (key: keyof NotificationPreferences) => {
+    const updated = { ...notifPrefs, [key]: !notifPrefs[key] };
+    setNotifPrefs(updated);
+    setSavingNotifPrefs(true);
+    try {
+      localStorage.setItem('sanad_notification_preferences', JSON.stringify(updated));
+      await updateTeacherProfile(profile.id, { notificationPreferences: updated });
+      setNotifPrefsNotice('تم حفظ تفضيلات الإشعارات بنجاح ✅');
+      setTimeout(() => setNotifPrefsNotice(null), 2500);
+    } catch (e) {
+      console.error('Failed to save notification preferences:', e);
+    } finally {
+      setSavingNotifPrefs(false);
+    }
+  };
+  // Do Not Disturb State
+  const [dndSettings, setDndSettings] = useState<DoNotDisturbSettings>(() => {
+    return profile.doNotDisturb || DEFAULT_DND_SETTINGS;
+  });
+  const [savingDnd, setSavingDnd] = useState(false);
+  const [dndNotice, setDndNotice] = useState<string | null>(null);
+
+  const handleUpdateDnd = async (updates: Partial<DoNotDisturbSettings>) => {
+    const updated = { ...dndSettings, ...updates };
+    setDndSettings(updated);
+    setSavingDnd(true);
+    try {
+      await updateTeacherProfile(profile.id, { doNotDisturb: updated });
+      setDndNotice('تم حفظ إعدادات وضع عدم الإزعاج بنجاح 🌙');
+      setTimeout(() => setDndNotice(null), 3000);
+    } catch (e) {
+      console.error('Failed to save DND settings:', e);
+    } finally {
+      setSavingDnd(false);
+    }
+  };
+
   const handleEnablePhoneNotifications = async () => {
-    setIsEnablingFcm(true);
     setFcmNotice(null);
     setFcmError(null);
     try {
@@ -163,8 +234,21 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     setTimeout(() => setEodNotice(null), 4000);
   };
 
+  const [dailyDigestNotice, setDailyDigestNotice] = useState<string | null>(null);
+
+  const handleTestDailyDigest = () => {
+    const res = sendDailyDigestNotification({
+      teacher: profile,
+      schedules,
+      students,
+      force: true,
+    });
+    setDailyDigestNotice(`تم إرسال إشعار تذكير جدول اليوم بنجاح! ("${res.title}") 🔔`);
+    setTimeout(() => setDailyDigestNotice(null), 4000);
+  };
+
   // WhatsApp Template Customization States
-  const [selectedTemplateKey, setSelectedTemplateKey] = useState<'welcome' | 'payment' | 'report' | 'lessonPrep'>('welcome');
+  const [selectedTemplateKey, setSelectedTemplateKey] = useState<'welcome' | 'payment' | 'report' | 'lessonPrep' | 'absenceReminder'>('welcome');
   const [templateText, setTemplateText] = useState('');
   const [savingTemplate, setSavingProfileTemplate] = useState(false);
   const [templateNotice, setTemplateNotice] = useState<string | null>(null);
@@ -172,6 +256,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   useEffect(() => {
     const t = profile.whatsappTemplates || {};
     const fallback = DEFAULT_WHATSAPP_TEMPLATES;
+    // @ts-ignore
     setTemplateText(t[selectedTemplateKey] || fallback[selectedTemplateKey] || '');
   }, [selectedTemplateKey, profile.whatsappTemplates]);
 
@@ -589,6 +674,17 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             >
               📋 تحضير الدرس
             </button>
+            <button
+              type="button"
+              onClick={() => setSelectedTemplateKey('absenceReminder')}
+              className={`py-2 px-1 rounded-xl border transition cursor-pointer text-center whitespace-nowrap truncate ${
+                selectedTemplateKey === 'absenceReminder'
+                  ? 'bg-purple-600 border-purple-400 text-white shadow-md'
+                  : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              ⚠️ تذكير الغياب
+            </button>
           </div>
 
           {/* Placeholders Guide Box */}
@@ -598,6 +694,14 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <p>يمكنك استخدام العلامات التالية ليقوم التطبيق بتعويضها تلقائياً عند الإرسال: <br />
                 <code className="text-purple-300 font-bold font-mono">{"{studentName}"}</code> لاسم الطالب •{' '}
                 <code className="text-purple-300 font-bold font-mono">{"{subject}"}</code> للمادة الدراسية.
+              </p>
+            )}
+            {selectedTemplateKey === 'absenceReminder' && (
+              <p>يمكنك استخدام العلامات التالية ليقوم التطبيق بتعويضها تلقائياً: <br />
+                <code className="text-purple-300 font-bold font-mono">{"{studentName}"}</code> اسم الطالب •{' '}
+                <code className="text-purple-300 font-bold font-mono">{"{subject}"}</code> المادة •{' '}
+                <code className="text-purple-300 font-bold font-mono">{"{date}"}</code> التاريخ •{' '}
+                <code className="text-purple-300 font-bold font-mono">{"{teacherName}"}</code> اسم المعلم.
               </p>
             )}
             {selectedTemplateKey === 'payment' && (
@@ -677,9 +781,15 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   return (
     <div className="space-y-4 pb-20">
       {/* Header */}
-      <div>
-        <h2 className="text-lg font-bold text-white">الإعدادات والحساب</h2>
-        <p className="text-xs text-slate-400">إدارة الملف الشخصي، حالة الاشتراك والنسخ الاحتياطي</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-white">{t('settings.title')}</h2>
+          <p className="text-xs text-slate-400">إدارة الملف الشخصي، حالة الاشتراك والنسخ الاحتياطي</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => changeLanguage('ar')} className={`px-2 py-1 rounded text-xs ${i18n.language === 'ar' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400'}`}>العربية</button>
+          <button onClick={() => changeLanguage('en')} className={`px-2 py-1 rounded text-xs ${i18n.language === 'en' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400'}`}>English</button>
+        </div>
       </div>
 
       {exportNotice && (
@@ -732,6 +842,483 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             </span>
           </div>
         </div>
+      </div>
+
+      {/* App Theme (Dark & Light Mode) Selection */}
+      <ThemeSettingsSection />
+
+      {/* Interface Language Preference Section */}
+      <div className="p-4 sm:p-5 rounded-3xl bg-slate-900/90 border border-purple-500/30 shadow-xl space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-2xl bg-indigo-600/20 text-indigo-300 flex items-center justify-center border border-indigo-500/30">
+              <Globe className="w-5 h-5 text-indigo-400" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>{t('settings.language', 'لغة الواجهة (Interface Language)')}</span>
+              </h4>
+              <p className="text-xs text-slate-400">
+                {t('settings.select_language', 'اختر لغة عرض الواجهة والاتجاه (RTL / LTR)')}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-800">
+            <button
+              type="button"
+              onClick={() => changeLanguage('ar')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                i18n.language.startsWith('ar')
+                  ? 'bg-purple-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>🇸🇦</span>
+              <span>العربية</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => changeLanguage('en')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                i18n.language.startsWith('en')
+                  ? 'bg-purple-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>🇬🇧</span>
+              <span>English</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Teacher Currency Preference Section */}
+      <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/40 via-slate-900 to-purple-950/40 border border-amber-500/30 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30">
+              <Coins className="w-5 h-5 text-amber-400" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>عملة المعلم المعتمدة</span>
+                <span className="text-xs font-mono font-black px-2 py-0.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300">
+                  {profile.currency || 'ج.م'}
+                </span>
+                {updatingCurrency && <RefreshCw className="w-3 h-3 text-amber-300 animate-spin" />}
+              </h4>
+              <p className="text-xs text-slate-400">تُستخدم في كافة الحسابات والتقارير المالية وفواتير أولياء الأمور</p>
+            </div>
+          </div>
+
+          <div className="relative">
+            <select
+              value={profile.currency || 'ج.م'}
+              onChange={(e) => handleQuickCurrencyChange(e.target.value)}
+              disabled={updatingCurrency}
+              className="appearance-none bg-slate-950 border border-amber-500/40 text-amber-300 font-bold rounded-xl pr-7 pl-3 py-1.5 text-xs cursor-pointer focus:outline-none"
+            >
+              {SUPPORTED_CURRENCIES.map((c) => (
+                <option key={c.code} value={c.code} className="bg-slate-900 text-white">
+                  {c.flag} {c.code} - {c.name}
+                </option>
+              ))}
+            </select>
+            <Coins className="w-3.5 h-3.5 text-amber-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+        </div>
+
+        {/* Quick Click Currency Badges */}
+        <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-800/80">
+          <span className="text-[11px] text-slate-400 font-bold ml-1">اختيار سريع:</span>
+          {['ج.م', 'ر.س', 'د.إ', 'د.ك', 'ر.ق', 'د.أ', '$', '€'].map((curCode) => (
+            <button
+              key={curCode}
+              type="button"
+              onClick={() => handleQuickCurrencyChange(curCode)}
+              disabled={updatingCurrency}
+              className={`text-xs font-bold px-2.5 py-1 rounded-xl transition cursor-pointer border ${
+                (profile.currency || 'ج.م') === curCode
+                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-black shadow-sm'
+                  : 'bg-slate-800/90 hover:bg-slate-700 text-slate-200 border-slate-700'
+              }`}
+            >
+              {curCode}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Notification Preferences Section */}
+      <div className="p-4 sm:p-5 rounded-3xl bg-slate-900/90 border border-purple-500/30 shadow-xl space-y-4">
+        <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-2xl bg-purple-600/20 text-purple-300 flex items-center justify-center border border-purple-500/30">
+              <Bell className="w-5 h-5 text-purple-400" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>تفضيلات الإشعارات والتنبيهات</span>
+                {savingNotifPrefs && <RefreshCw className="w-3 h-3 text-purple-400 animate-spin" />}
+              </h4>
+              <p className="text-xs text-slate-400">تحكم كامل في الإشعارات وقنوات التنبيه في التطبيق</p>
+            </div>
+          </div>
+
+          {notifPrefsNotice && (
+            <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 animate-in fade-in">
+              {notifPrefsNotice}
+            </span>
+          )}
+        </div>
+
+        {/* Preferences Toggles List */}
+        <div className="space-y-3">
+          {/* 1. Class Reminders */}
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
+            <div className="flex items-center gap-2.5">
+              <Clock className="w-4 h-4 text-blue-400" />
+              <div>
+                <span className="text-xs font-bold text-white block">تذكيرات مواعيد الحصص</span>
+                <span className="text-[10px] text-slate-400">تنبيه قبل موعد الحصة القادمة</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleToggleNotifPref('classReminders')}
+              className={`w-11 h-6 rounded-full transition-colors flex items-center p-1 cursor-pointer ${
+                notifPrefs.classReminders ? 'bg-purple-600 justify-end' : 'bg-slate-700 justify-start'
+              }`}
+            >
+              <div className="w-4 h-4 rounded-full bg-white shadow" />
+            </button>
+          </div>
+
+          {/* 2. WhatsApp Alerts */}
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
+            <div className="flex items-center gap-2.5">
+              <MessageCircle className="w-4 h-4 text-emerald-400" />
+              <div>
+                <span className="text-xs font-bold text-white block">تنبيهات ورسائل الواتساب</span>
+                <span className="text-[10px] text-slate-400">فتح روابط واتساب لتذكير أولياء الأمور</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleToggleNotifPref('whatsappAlerts')}
+              className={`w-11 h-6 rounded-full transition-colors flex items-center p-1 cursor-pointer ${
+                notifPrefs.whatsappAlerts ? 'bg-purple-600 justify-end' : 'bg-slate-700 justify-start'
+              }`}
+            >
+              <div className="w-4 h-4 rounded-full bg-white shadow" />
+            </button>
+          </div>
+
+          {/* 3. Daily Summary Report */}
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
+            <div className="flex items-center gap-2.5">
+              <Sparkles className="w-4 h-4 text-amber-300" />
+              <div>
+                <span className="text-xs font-bold text-white block">تقرير ملخص نهاية اليوم</span>
+                <span className="text-[10px] text-slate-400">إشعار تلخيص الحصص المنجزة والأرباح نهاية اليوم</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleToggleNotifPref('dailySummaryReport')}
+              className={`w-11 h-6 rounded-full transition-colors flex items-center p-1 cursor-pointer ${
+                notifPrefs.dailySummaryReport ? 'bg-purple-600 justify-end' : 'bg-slate-700 justify-start'
+              }`}
+            >
+              <div className="w-4 h-4 rounded-full bg-white shadow" />
+            </button>
+          </div>
+
+          {/* 4. Browser Push Notifications */}
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
+            <div className="flex items-center gap-2.5">
+              <Bell className="w-4 h-4 text-purple-400" />
+              <div>
+                <span className="text-xs font-bold text-white block">إشعارات المتصفح والنظام</span>
+                <span className="text-[10px] text-slate-400">تفعيل الإشعارات المنبثقة عبر متصفح الويب</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleToggleNotifPref('browserPush')}
+              className={`w-11 h-6 rounded-full transition-colors flex items-center p-1 cursor-pointer ${
+                notifPrefs.browserPush ? 'bg-purple-600 justify-end' : 'bg-slate-700 justify-start'
+              }`}
+            >
+              <div className="w-4 h-4 rounded-full bg-white shadow" />
+            </button>
+          </div>
+
+          {/* 5. Sound Chime */}
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
+            <div className="flex items-center gap-2.5">
+              <Volume2 className="w-4 h-4 text-teal-400" />
+              <div>
+                <span className="text-xs font-bold text-white block">نغمة التنبيه الصوتية</span>
+                <span className="text-[10px] text-slate-400">تشغيل نغمة صوتية عند وصول إشعار أو تذكير</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleToggleNotifPref('soundChime')}
+              className={`w-11 h-6 rounded-full transition-colors flex items-center p-1 cursor-pointer ${
+                notifPrefs.soundChime ? 'bg-purple-600 justify-end' : 'bg-slate-700 justify-start'
+              }`}
+            >
+              <div className="w-4 h-4 rounded-full bg-white shadow" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Daily Scheduled Schedule Digest Notification Section */}
+      <div className="p-4 sm:p-5 rounded-3xl bg-slate-900/90 border border-purple-500/30 shadow-xl space-y-4">
+        <div className="flex items-center justify-between border-b border-purple-900/40 pb-3 flex-wrap gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-2xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30">
+              <Clock className="w-5 h-5 text-amber-400" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>تذكير جدول حصص اليوم المجدول (Daily Schedule Digest)</span>
+              </h4>
+              <p className="text-xs text-slate-400">
+                تحديد وقت يومي يتلقى فيه المعلم إشعاراً ملخصاً بحصص اليوم مرتبة حسب أوقاتها
+              </p>
+            </div>
+          </div>
+
+          {dailyDigestNotice && (
+            <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-emerald-950/90 border border-emerald-500/40 text-emerald-300 animate-in fade-in">
+              {dailyDigestNotice}
+            </span>
+          )}
+        </div>
+
+        {/* Master Toggle */}
+        <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
+          <div className="flex items-center gap-2.5">
+            <Sparkles className="w-4 h-4 text-amber-300" />
+            <div>
+              <span className="text-xs font-bold text-white block">تفعيل إشعار جدول حصص اليوم</span>
+              <span className="text-[10px] text-slate-400">إرسال إشعار تلقائي بالحصص المجدولة لليوم</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleUpdateReminderSetting('dailyDigestEnabled', !(reminderSettings.dailyDigestEnabled !== false))}
+            className={`w-11 h-6 rounded-full transition-colors flex items-center p-1 cursor-pointer ${
+              reminderSettings.dailyDigestEnabled !== false ? 'bg-purple-600 justify-end' : 'bg-slate-700 justify-start'
+            }`}
+          >
+            <div className="w-4 h-4 rounded-full bg-white shadow" />
+          </button>
+        </div>
+
+        {/* Time Picker & Preview (when enabled) */}
+        {reminderSettings.dailyDigestEnabled !== false && (
+          <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-purple-500/20 space-y-3.5 animate-in fade-in duration-200">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                  توقيت التذكير الصباحي المفضل (Daily Notification Time):
+                </label>
+                <input
+                  type="time"
+                  value={reminderSettings.dailyDigestTime || '08:00'}
+                  onChange={(e) => handleUpdateReminderSetting('dailyDigestTime', e.target.value)}
+                  className="bg-slate-900 border border-purple-500/40 rounded-xl px-3 py-1.5 text-xs text-amber-300 font-mono font-bold focus:outline-none focus:border-purple-500 cursor-pointer"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={handleTestDailyDigest}
+                className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-lg shadow-purple-600/30 cursor-pointer"
+              >
+                <Bell className="w-3.5 h-3.5" />
+                <span>إرسال إشعار تجريبي الآن 🔔</span>
+              </button>
+            </div>
+
+            {/* Notification Live Preview Box */}
+            {(() => {
+              const preview = generateDailyDigestMessage({ schedules, students });
+              return (
+                <div className="p-3 rounded-2xl bg-purple-950/40 border border-purple-500/30 space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-purple-200 font-bold border-b border-purple-800/40 pb-1 mb-1">
+                    <span className="flex items-center gap-1.5">
+                      <Bell className="w-3.5 h-3.5 text-amber-400" />
+                      <span>معاينة شكل الإشعار المستلم:</span>
+                    </span>
+                    <span className="text-[10px] text-amber-300 font-mono">{reminderSettings.dailyDigestTime || '08:00'}</span>
+                  </div>
+                  <p className="font-extrabold text-white text-xs">{preview.title}</p>
+                  <p className="text-slate-300 text-[11px] font-medium leading-relaxed">{preview.body}</p>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+      </div>
+
+      {/* Do Not Disturb (وضع عدم الإزعاج والهدوء) Section */}
+      <div className="p-4 sm:p-5 rounded-3xl bg-slate-900/90 border border-indigo-500/30 shadow-xl space-y-4">
+        <div className="flex items-center justify-between border-b border-indigo-900/40 pb-3 flex-wrap gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-2xl bg-indigo-600/20 text-indigo-300 flex items-center justify-center border border-indigo-500/30">
+              <BellOff className="w-5 h-5 text-indigo-400" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>{t('dnd.title', 'وضع عدم الإزعاج (Quiet Hours & Vacation)')}</span>
+                {savingDnd && <RefreshCw className="w-3 h-3 text-indigo-400 animate-spin" />}
+              </h4>
+              <p className="text-xs text-slate-400">{t('dnd.subtitle', 'إسكات جميع التنبيهات والإشعارات خلال الساعات الهادئة أو العطلات')}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {isInDoNotDisturbPeriod(dndSettings) ? (
+              <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-amber-950/90 border border-amber-500/40 text-amber-300 flex items-center gap-1.5 animate-pulse">
+                <Moon className="w-3.5 h-3.5 text-amber-400" />
+                <span>{t('dnd.active_now', 'وضع عدم الإزعاج نشط الآن 🌙')}</span>
+              </span>
+            ) : dndSettings.enabled ? (
+              <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5 text-emerald-400" />
+                <span>{t('dnd.scheduled', 'مجدول')}</span>
+              </span>
+            ) : (
+              <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-slate-800 text-slate-400">
+                {t('dnd.disabled', 'معطل')}
+              </span>
+            )}
+
+            {dndNotice && (
+              <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-emerald-950/90 border border-emerald-500/40 text-emerald-300 animate-in fade-in">
+                {dndNotice}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Master Toggle */}
+        <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
+          <div className="flex items-center gap-2.5">
+            <Moon className="w-4 h-4 text-amber-400" />
+            <div>
+              <span className="text-xs font-bold text-white block">{t('dnd.enable_quiet_hours', 'تفعيل الساعات الهادئة')}</span>
+              <span className="text-[10px] text-slate-400">{t('dnd.enable_quiet_hours_desc', 'إيقاف الصوت والتنبيهات المباشرة خلال الأوقات المحددة')}</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleUpdateDnd({ enabled: !dndSettings.enabled })}
+            className={`w-11 h-6 rounded-full transition-colors flex items-center p-1 cursor-pointer ${
+              dndSettings.enabled ? 'bg-indigo-600 justify-end' : 'bg-slate-700 justify-start'
+            }`}
+          >
+            <div className="w-4 h-4 rounded-full bg-white shadow" />
+          </button>
+        </div>
+
+        {/* Time Settings Grid (when enabled) */}
+        {dndSettings.enabled && (
+          <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-indigo-500/20 space-y-3.5 animate-in fade-in duration-200">
+            <div className="grid grid-cols-2 gap-3">
+              {/* Start Time */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                  {t('dnd.start_time', 'ساعة البدء (ميعاد النوم / الهدوء)')}
+                </label>
+                <div className="relative">
+                  <input
+                    type="time"
+                    value={dndSettings.startTime || '22:00'}
+                    onChange={(e) => handleUpdateDnd({ startTime: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-amber-300 font-mono font-bold focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* End Time */}
+              <div>
+                <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                  {t('dnd.end_time', 'ساعة الانتهاء (الاستيقاظ)')}
+                </label>
+                <div className="relative">
+                  <input
+                    type="time"
+                    value={dndSettings.endTime || '07:00'}
+                    onChange={(e) => handleUpdateDnd({ endTime: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-emerald-300 font-mono font-bold focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Weekend Mute */}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+              <div className="flex items-center gap-2">
+                <Sun className="w-4 h-4 text-amber-300" />
+                <div>
+                  <span className="text-xs font-bold text-slate-200 block">{t('dnd.mute_weekends', 'إسكات عطلة نهاية الأسبوع (الجمعة والسبت)')}</span>
+                  <span className="text-[10px] text-slate-400">{t('dnd.mute_weekends_desc', 'إيقاف تنبيهات الحصص في أيام الإجازة الأسبوعية')}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleUpdateDnd({ muteWeekends: !dndSettings.muteWeekends })}
+                className={`w-10 h-5.5 rounded-full transition-colors flex items-center p-0.5 cursor-pointer ${
+                  dndSettings.muteWeekends ? 'bg-amber-600 justify-end' : 'bg-slate-700 justify-start'
+                }`}
+              >
+                <div className="w-4 h-4 rounded-full bg-white shadow" />
+              </button>
+            </div>
+
+            {/* Vacation Mode */}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+              <div className="flex items-center gap-2">
+                <CalendarOff className="w-4 h-4 text-purple-400" />
+                <div>
+                  <span className="text-xs font-bold text-rose-300 block">{t('dnd.vacation_mode', 'وضع العطلة الشاملة (Vacation Mode)')}</span>
+                  <span className="text-[10px] text-slate-400">{t('dnd.vacation_mode_desc', 'تعطيل كافة التنبيهات والتذكيرات كلياً طوال فترة الإجازة')}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleUpdateDnd({ vacationMode: !dndSettings.vacationMode })}
+                className={`w-10 h-5.5 rounded-full transition-colors flex items-center p-0.5 cursor-pointer ${
+                  dndSettings.vacationMode ? 'bg-rose-600 justify-end' : 'bg-slate-700 justify-start'
+                }`}
+              >
+                <div className="w-4 h-4 rounded-full bg-white shadow" />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Focus Mode Toggle */}
+      <div className="p-4 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-between">
+        <div>
+          <h4 className="text-sm font-bold text-white">وضع التركيز (Focus Mode)</h4>
+          <p className="text-xs text-slate-400">تقليل التشتت أثناء الحصص</p>
+        </div>
+        <button
+          onClick={toggleFocusMode}
+          className={`w-12 h-6 rounded-full transition-colors flex items-center ${isFocusMode ? 'bg-purple-600' : 'bg-slate-600'}`}
+        >
+          <div className={`w-4 h-4 rounded-full bg-white transition-transform ${isFocusMode ? 'translate-x-[-4px]' : 'translate-x-[4px]'}`} />
+        </button>
       </div>
 
       {/* Subscription Card */}
@@ -909,6 +1496,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           <span>تصدير قائمة الطلاب كملف Excel (CSV)</span>
         </button>
       </div>
+
+      {/* Notification Center (مركز الإشعارات) */}
+      <NotificationCenter profile={profile} />
 
       {/* Automated Class Reminders Card */}
       <div className="rounded-2xl bg-gradient-to-r from-purple-950/50 via-slate-900 to-indigo-950/50 border border-purple-500/30 p-4 space-y-4 shadow-xl">
@@ -1352,15 +1942,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                   required
                   className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
                 >
-                  <option value="ج.م">ج.م (جنيه مصري)</option>
-                  <option value="ر.س">ر.س (ريال سعودي)</option>
-                  <option value="د.إ">د.إ (درهم إماراتي)</option>
-                  <option value="د.ك">د.ك (دينار كويتي)</option>
-                  <option value="د.أ">د.أ (دينار أردني)</option>
-                  <option value="ر.ق">ر.ق (ريال قطري)</option>
-                  <option value="ر.ع">ر.ع (ريال عماني)</option>
-                  <option value="ب.د">ب.د (دينار بحريني)</option>
-                  <option value="$">$ (دولار أمريكي)</option>
+                  {SUPPORTED_CURRENCIES.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.flag} {c.code} - {c.name}
+                    </option>
+                  ))}
                 </select>
               </div>
 

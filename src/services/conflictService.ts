@@ -66,7 +66,7 @@ export function hasConflict(
         return {
           hasConflict: true,
           conflictingSlot: slot,
-          message: `هذا الموعد يتعارض مع حصة الطالب (${studentName}) يوم ${dayName} من ${startTimeStr} إلى ${endTimeStr}.`,
+          message: `عفواً، لديك حصة أو مجموعة أخرى في نفس هذا الموعد (${studentName} يوم ${dayName} من ${startTimeStr} إلى ${endTimeStr}).`,
         };
       }
     }

@@ -9,7 +9,11 @@ import {
   adminSetCustomExpiry,
   adminResetTrial,
   adminDeleteTeacher,
+  subscribeToAdminNotifications,
+  AdminNotification,
 } from '../firebase';
+import { playNotificationChime, showBrowserNotification } from '../services/reminderService';
+import { NewUsersDashboard } from './NewUsersDashboard';
 import {
   ShieldAlert,
   Users,
@@ -72,8 +76,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToApp }) =
     }
   };
 
+  const [adminNotifications, setAdminNotifications] = useState<AdminNotification[]>([]);
+
   useEffect(() => {
     fetchTeachers();
+    const unsub = subscribeToAdminNotifications((list) => {
+      setAdminNotifications((prev) => {
+        if (prev.length > 0 && list.length > prev.length) {
+          const newest = list[0];
+          playNotificationChime();
+          showBrowserNotification(
+            'مستخدم جديد انضم للتطبيق! 🔔',
+            `انضم المعلم الجديد: ${newest.teacherName} (${newest.subject})`
+          );
+          showToast(`مستخدم جديد انضم: ${newest.teacherName} (${newest.subject}) 🎉`, 'success');
+          fetchTeachers();
+        }
+        return list;
+      });
+    });
+    return () => unsub();
   }, []);
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
@@ -439,6 +461,52 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToApp }) =
           <p className="text-lg font-black text-rose-400">{expired + deactivated}</p>
         </div>
       </div>
+
+      {/* Live New Users Log Section */}
+      <div className="rounded-3xl bg-slate-900/90 border border-purple-500/30 p-4 shadow-xl space-y-2.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center border border-purple-500/30">
+              <Sparkles className="w-3.5 h-3.5" />
+            </div>
+            <h4 className="text-xs font-bold text-white">سجل المستخدمين الجدد المنضمين حديثاً 🔔</h4>
+          </div>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-bold border border-purple-500/30">
+            {adminNotifications.length} انضمام
+          </span>
+        </div>
+
+        {adminNotifications.length === 0 ? (
+          <p className="text-[11px] text-slate-400 text-center py-2">لا توجد تسجيلات جديدة مسجلة حالياً.</p>
+        ) : (
+          <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+            {adminNotifications.map((notif) => (
+              <div
+                key={notif.id}
+                className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950/70 border border-purple-900/40 text-[11px]"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-white truncate">{notif.teacherName}</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                      {notif.subject}
+                    </span>
+                  </div>
+                  <p className="text-slate-400 text-[10px] truncate mt-0.5" dir="ltr">
+                    {notif.teacherEmail} • {notif.whatsapp || 'بدون رقم'}
+                  </p>
+                </div>
+                <div className="text-left text-[10px] text-purple-300/80 shrink-0">
+                  {notif.createdAt?.toDate ? notif.createdAt.toDate().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : 'جديد'}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* New Users Dashboard (Last 10 Registered Users) */}
+      <NewUsersDashboard />
 
       {/* Search & Status Filters */}
       <div className="space-y-2">

@@ -1,0 +1,385 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function isTeacherOwner(teacherId) {
+      return isSignedIn() && request.auth.uid == teacherId;
+    }
+
+    // Subscription state of an already-fetched teacher document.
+    function isSubscriptionDataActive(data) {
+      return data.isActive != false && data.subscriptionExpiresAt > request.time;
+    }
+
+    // Enforce active subscription or admin status for write operations.
+    // The teacher document is read ONCE, and only when the caller is not an admin
+    // (|| short-circuits), so admins are never blocked by a missing teacher document.
+    function isTeacherSubscriptionActive(teacherId) {
+      return isAdmin() || isSubscriptionDataActive(
+        get(/databases/$(database)/documents/teachers/$(teacherId)).data
+      );
+    }
+
+    // Validation for new teacher profile registration
+    function isValidNewTeacher(teacherId) {
+      let data = incoming();
+      let hasPreprovisionedSubscription =
+        request.auth.token.email != null &&
+        request.auth.token.email_verified == true &&
+        (exists(/databases/$(database)/documents/subscriptions/$(request.auth.token.email)) ||
+         exists(/databases/$(database)/documents/subscriptions/$(request.auth.token.email.lower())));
+
+      return isValidId(teacherId) &&
+        data.keys().hasOnly([
+          'id', 'name', 'email', 'whatsapp', 'subject', 'role',
+          'subscriptionStatus', 'plan', 'isActive', 'subscriptionEndDate',
+          'trialStartDate', 'trialEndDate', 'subscriptionExpiresAt',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.id == teacherId &&
+        (data.email == request.auth.token.email || data.email.lower() == request.auth.token.email.lower()) &&
+        data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
+        data.whatsapp is string && data.whatsapp.size() <= 30 &&
+        data.subject is string && data.subject.size() >= 2 && data.subject.size() <= 100 &&
+        data.role in ['teacher', 'admin'] &&
+        (data.role == 'teacher' || isAdmin()) &&
+        data.createdAt == request.time &&
+        data.updatedAt == request.time &&
+        data.trialStartDate == request.time &&
+        (
+          (
+            data.subscriptionStatus == 'trial' &&
+            data.plan == 'none' &&
+            data.isActive == true &&
+            data.trialEndDate >= request.time + duration.value(5, 'd') &&
+            data.trialEndDate <= request.time + duration.value(10, 'd') &&
+            data.subscriptionExpiresAt == data.trialEndDate &&
+            data.subscriptionEndDate == data.trialEndDate
+          ) ||
+          (
+            hasPreprovisionedSubscription &&
+            data.subscriptionStatus == 'active' &&
+            data.isActive == true &&
+            (
+              exists(/databases/$(database)/documents/subscriptions/$(request.auth.token.email)) ?
+              (data.subscriptionEndDate == get(/databases/$(database)/documents/subscriptions/$(request.auth.token.email)).data.subscriptionEndDate &&
+               data.plan == get(/databases/$(database)/documents/subscriptions/$(request.auth.token.email)).data.plan) :
+              (data.subscriptionEndDate == get(/databases/$(database)/documents/subscriptions/$(request.auth.token.email.lower())).data.subscriptionEndDate &&
+               data.plan == get(/databases/$(database)/documents/subscriptions/$(request.auth.token.email.lower())).data.plan)
+            ) &&
+            data.subscriptionExpiresAt == data.subscriptionEndDate &&
+            data.trialEndDate >= request.time + duration.value(5, 'd') &&
+            data.trialEndDate <= request.time + duration.value(10, 'd')
+          )
+        );
+    }
+
+    // Teacher self update (can only update profile fields, not subscription or role)
+    function isValidTeacherProfileUpdate() {
+      let data = incoming();
+      let diff = incoming().diff(existing()).affectedKeys();
+      return diff.hasOnly([
+        'name', 'whatsapp', 'subject', 'currency', 'whatsappTemplates',
+        'absencePolicy', 'remindersEnabled', 'reminderMinutesBefore',
+        'teacherNotificationsEnabled', 'timezone', 'updatedAt'
+      ]) &&
+        data.updatedAt == request.time &&
+        data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
+        data.whatsapp is string && data.whatsapp.size() <= 30 &&
+        data.subject is string && data.subject.size() >= 2 && data.subject.size() <= 100 &&
+        (!('currency' in data) || (data.currency is string && data.currency.size() <= 30)) &&
+        (!('remindersEnabled' in data) || data.remindersEnabled is bool) &&
+        (!('teacherNotificationsEnabled' in data) || data.teacherNotificationsEnabled is bool) &&
+        (!('reminderMinutesBefore' in data) || (data.reminderMinutesBefore is number && data.reminderMinutesBefore >= 5 && data.reminderMinutesBefore <= 120)) &&
+        (!('timezone' in data) || (data.timezone is string && data.timezone.size() <= 64)) &&
+        data.id == existing().id &&
+        (data.email == existing().email || data.email.lower() == existing().email.lower()) &&
+        data.role == existing().role &&
+        data.subscriptionStatus == existing().subscriptionStatus &&
+        data.plan == existing().plan &&
+        data.trialStartDate == existing().trialStartDate &&
+        data.trialEndDate == existing().trialEndDate &&
+        data.subscriptionExpiresAt == existing().subscriptionExpiresAt;
+    }
+
+    // Admin teacher update (can update subscription, plan, status, etc.)
+    function isValidAdminTeacherUpdate() {
+      return isAdmin();
+    }
+
+    // Student validation
+    function isValidStudent(teacherId) {
+      let data = incoming();
+      return data.teacherId == teacherId &&
+        data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
+        (!('whatsapp' in data) || (data.whatsapp is string && data.whatsapp.size() <= 30)) &&
+        (!('phone' in data) || (data.phone is string && data.phone.size() <= 30)) &&
+        (!('parentPhone' in data) || (data.parentPhone is string && data.parentPhone.size() <= 30)) &&
+        data.subject is string && data.subject.size() <= 100 &&
+        data.classType in ['online', 'in_person', 'onsite', 'trial', 'center', 'private'] &&
+        (!('sessionType' in data) || data.sessionType in ['online', 'in_person', 'onsite', 'trial', 'center', 'private']) &&
+        (!('billingType' in data) || data.billingType in ['per_session', 'monthly_fixed']) &&
+        (!('hourlyRate' in data) || data.hourlyRate is number) &&
+        (!('monthlyFee' in data) || data.monthlyFee is number) &&
+        (!('fixedMonthlyFee' in data) || data.fixedMonthlyFee is number) &&
+        (!('totalPrepaidLessons' in data) || data.totalPrepaidLessons is number) &&
+        (!('remainingPaidLessons' in data) || data.remainingPaidLessons is number) &&
+        (!('isDeleted' in data) || data.isDeleted is bool) &&
+        (!('deletedAt' in data) || data.deletedAt != null) &&
+        data.paymentStatus in ['paid', 'unpaid'] &&
+        (!('color' in data) || (data.color is string && data.color.size() <= 50)) &&
+        (!('notes' in data) || (data.notes is string && data.notes.size() <= 2000)) &&
+        (!('learningStyle' in data) || (data.learningStyle is string && data.learningStyle.size() <= 200));
+    }
+
+    // Lesson validation
+    function isValidLesson(teacherId) {
+      let data = incoming();
+      return data.teacherId == teacherId &&
+        data.topic is string && data.topic.size() <= 500 &&
+        data.attendance in ['present', 'absent', 'excused'] &&
+        (!('is_financial_counted' in data) || data.is_financial_counted is bool) &&
+        (!('isFinancialCounted' in data) || data.isFinancialCounted is bool) &&
+        (!('has_makeup_class' in data) || data.has_makeup_class is bool) &&
+        (!('hasMakeupClass' in data) || data.hasMakeupClass is bool) &&
+        (!('makeup_class_date' in data) || data.makeup_class_date == null || (data.makeup_class_date is string && data.makeup_class_date.size() <= 100) || data.makeup_class_date is timestamp) &&
+        (!('makeupClassDate' in data) || data.makeupClassDate == null || (data.makeupClassDate is string && data.makeupClassDate.size() <= 100) || data.makeupClassDate is timestamp) &&
+        (!('absence_reason_type' in data) || (data.absence_reason_type is string && data.absence_reason_type.size() <= 100)) &&
+        (!('absenceReasonType' in data) || (data.absenceReasonType is string && data.absenceReasonType.size() <= 100)) &&
+        (!('makeupCompleted' in data) || data.makeupCompleted is bool);
+    }
+
+    // Schedule validation
+    function isValidSchedule(teacherId) {
+      let data = incoming();
+      return data.teacherId == teacherId &&
+        data.studentName is string && data.studentName.size() <= 100 &&
+        (!('studentId' in data) || (data.studentId is string && data.studentId.size() <= 128)) &&
+        data.dayOfWeek is number && data.dayOfWeek >= 0 && data.dayOfWeek <= 6 &&
+        data.time is string && data.time.size() <= 20 &&
+        (!('duration' in data) || (data.duration is number && data.duration >= 15 && data.duration <= 300)) &&
+        data.recurrence in ['daily', 'weekly', 'monthly', 'once'] &&
+        data.classType in ['online', 'in_person', 'onsite', 'trial', 'center', 'private'] &&
+        (!('sessionType' in data) || data.sessionType in ['online', 'in_person', 'onsite', 'trial', 'center', 'private']) &&
+        (!('locationOrLink' in data) || (data.locationOrLink is string && data.locationOrLink.size() <= 500)) &&
+        (!('color' in data) || (data.color is string && data.color.size() <= 50)) &&
+        (!('rating' in data) || (data.rating is number && data.rating >= 1 && data.rating <= 5)) &&
+        (!('notes' in data) || (data.notes is string && data.notes.size() <= 2000)) &&
+        (!('isMakeup' in data) || data.isMakeup is bool) &&
+        (!('originalLessonId' in data) || (data.originalLessonId is string && data.originalLessonId.size() <= 128)) &&
+        (!('completedTodayDate' in data) || data.completedTodayDate == null || (data.completedTodayDate is string && data.completedTodayDate.size() <= 30));
+    }
+
+    // Library Item validation
+    function isValidLibraryItem(teacherId) {
+      let data = incoming();
+      return data.teacherId == teacherId &&
+        data.title is string && data.title.size() >= 2 && data.title.size() <= 200 &&
+        data.type in ['lesson_plan', 'quiz', 'summary', 'pdf', 'image', 'book'] &&
+        data.content is string && data.content.size() <= 60000 &&
+        (!('fileName' in data) || (data.fileName is string && data.fileName.size() <= 300)) &&
+        (!('fileSize' in data) || (data.fileSize is string && data.fileSize.size() <= 50)) &&
+        (!('fileData' in data) || (data.fileData is string && data.fileData.size() <= 950000));
+    }
+
+    // Reminder log validation
+    function isValidReminder(teacherId) {
+      let data = incoming();
+      return data.teacherId == teacherId &&
+        data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 100 &&
+        data.classTime is string && data.classTime.size() <= 30 &&
+        data.target in ['parent', 'teacher'] &&
+        data.status in ['sent', 'scheduled', 'delivered'] &&
+        data.messageText is string && data.messageText.size() <= 2500;
+    }
+
+    // Task validation for create
+    function isValidTaskCreate(teacherId) {
+      let data = incoming();
+      return data.teacherId == teacherId &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 500 &&
+        data.completed is bool &&
+        data.createdAt == request.time;
+    }
+
+    // Task validation for update
+    function isValidTaskUpdate(teacherId) {
+      let data = incoming();
+      return data.teacherId == teacherId &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 500 &&
+        data.completed is bool &&
+        (data.createdAt == existing().createdAt || data.createdAt == request.time);
+    }
+
+    // Quick Note validation
+    function isValidQuickNote(teacherId) {
+      let data = incoming();
+      return data.teacherId == teacherId &&
+        data.text is string && data.text.size() >= 1 && data.text.size() <= 2000 &&
+        (!('color' in data) || data.color in ['amber', 'emerald', 'purple', 'blue', 'rose']) &&
+        (!('isPinned' in data) || data.isPinned is bool) &&
+        (!('isCompleted' in data) || data.isCompleted is bool);
+    }
+
+    // Admins collection
+    match /admins/{adminId} {
+      allow get: if isAdmin() || (isSignedIn() && request.auth.uid == adminId);
+      allow list: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // Subscriptions collection (admin managed)
+    match /subscriptions/{subId} {
+      allow read, write: if isAdmin();
+      allow get: if isSignedIn() && (
+        isAdmin() ||
+        (request.auth.token.email != null && (
+          request.auth.token.email == subId ||
+          request.auth.token.email.lower() == subId.lower() ||
+          request.auth.token.email == resource.data.email ||
+          request.auth.token.email.lower() == resource.data.email.lower()
+        ))
+      );
+    }
+
+    // FCM tokens under users/{userId}
+    match /users/{userId}/fcmTokens/{tokenId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Teachers collection
+    match /teachers/{teacherId} {
+      allow get: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isTeacherOwner(teacherId) && isValidNewTeacher(teacherId);
+      allow update: if (isValidId(teacherId) && isTeacherOwner(teacherId) && isValidTeacherProfileUpdate()) ||
+                       (isAdmin() && isValidAdminTeacherUpdate());
+      allow delete: if isValidId(teacherId) && isAdmin();
+
+      // Subcollection: FCM Tokens
+      match /fcmTokens/{tokenId} {
+        allow read, write: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+      }
+
+      // Subcollection: Sent Reminders Deduplication.
+      // Written ONLY by the server (Admin SDK bypasses rules) and never read by the client,
+      // so clients get no access (prevents spoofing/suppressing reminders and unbounded writes).
+      match /sentReminders/{reminderId} {
+        allow read, write: if false;
+      }
+
+      // Subcollection: Students
+      match /students/{studentId} {
+        allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+        allow create, update: if isValidId(teacherId) && isValidId(studentId) &&
+                                 (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isTeacherSubscriptionActive(teacherId) &&
+                                 isValidStudent(teacherId);
+        allow delete: if isValidId(teacherId) && isValidId(studentId) &&
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId);
+
+        // Subcollection: Lessons
+        match /lessons/{lessonId} {
+          allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+          allow create, update: if isValidId(teacherId) && isValidId(studentId) && isValidId(lessonId) &&
+                                   (isTeacherOwner(teacherId) || isAdmin()) &&
+                                   isTeacherSubscriptionActive(teacherId) &&
+                                   isValidLesson(teacherId);
+          allow delete: if isValidId(teacherId) && isValidId(studentId) && isValidId(lessonId) &&
+                           (isTeacherOwner(teacherId) || isAdmin()) &&
+                           isTeacherSubscriptionActive(teacherId);
+        }
+      }
+
+      // Subcollection: Schedules
+      match /schedules/{scheduleId} {
+        allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+        allow create, update: if isValidId(teacherId) && isValidId(scheduleId) &&
+                                 (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isTeacherSubscriptionActive(teacherId) &&
+                                 isValidSchedule(teacherId);
+        allow delete: if isValidId(teacherId) && isValidId(scheduleId) &&
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId);
+      }
+
+      // Subcollection: Library
+      match /library/{itemId} {
+        allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+        allow create, update: if isValidId(teacherId) && isValidId(itemId) &&
+                                 (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isTeacherSubscriptionActive(teacherId) &&
+                                 isValidLibraryItem(teacherId);
+        allow delete: if isValidId(teacherId) && isValidId(itemId) &&
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId);
+      }
+
+      // Subcollection: Reminders
+      match /reminders/{reminderId} {
+        allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+        allow create, update: if isValidId(teacherId) && isValidId(reminderId) &&
+                                 (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isTeacherSubscriptionActive(teacherId) &&
+                                 isValidReminder(teacherId);
+        allow delete: if isValidId(teacherId) && isValidId(reminderId) &&
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId);
+      }
+
+      // Subcollection: Tasks
+      match /tasks/{taskId} {
+        allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+        allow create: if isValidId(teacherId) && isValidId(taskId) &&
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId) &&
+                         isValidTaskCreate(teacherId);
+        allow update: if isValidId(teacherId) && isValidId(taskId) &&
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId) &&
+                         isValidTaskUpdate(teacherId);
+        allow delete: if isValidId(teacherId) && isValidId(taskId) &&
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId);
+      }
+
+      // Subcollection: Notes (Quick Notes)
+      match /notes/{noteId} {
+        allow get, list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+        allow create, update: if isValidId(teacherId) && isValidId(noteId) &&
+                                 (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isTeacherSubscriptionActive(teacherId) &&
+                                 isValidQuickNote(teacherId);
+        allow delete: if isValidId(teacherId) && isValidId(noteId) &&
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId);
+      }
+    }
+  }
+}

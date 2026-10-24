@@ -1,8 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { TeacherProfile, Student, LessonLog, ClassType, PaymentStatus, ScheduleSlot, DEFAULT_WHATSAPP_TEMPLATES, renderTemplate, isLessonFinanciallyCounted } from '../types';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { TeacherProfile, Student, LessonLog, ClassType, PaymentStatus, ScheduleSlot, DEFAULT_WHATSAPP_TEMPLATES, renderTemplate, isLessonFinanciallyCounted, ALL_SUBJECTS, Group } from '../types';
 import { AbsenceDetailsModal, AbsenceDetailsResult } from './AbsenceDetailsModal';
 import { DailyAttendanceModal } from './DailyAttendanceModal';
 import { StudentPdfExportModal } from './StudentPdfExportModal';
+import { PerformanceInsights } from './PerformanceInsights';
+import { GroupManagementTab } from './GroupManagementTab';
+import { AddChoiceModal } from './AddChoiceModal';
 import { ReportType } from '../services/pdfReportService';
 import {
   triggerAbsenceNotificationAndChime,
@@ -11,10 +16,11 @@ import {
 import { useBackHandler } from '../services/backHandler';
 import {
   addStudent,
+  addStudentWithSchedules,
   updateStudent,
   deleteStudent,
-  toggleStudentPaymentStatus,
   subscribeToStudentLessons,
+  subscribeToGroups,
   addLessonLog,
   deleteLessonLog,
   addSchedule,
@@ -23,6 +29,9 @@ import {
   addLibraryItem,
   fetchAllStudentLessons,
   settleStudentAccount,
+  toggleStudentPaymentStatus,
+  normalizeArabicText,
+  recordStudentAttendance,
 } from '../firebase';
 import {
   WEEK_DAYS,
@@ -33,13 +42,12 @@ import {
 import { VoiceInputButton } from './VoiceInputButton';
 import { hasConflict } from '../services/conflictService';
 import {
+  Users,
   UserPlus,
   Search,
-  Phone,
   MessageCircle,
   CreditCard,
   CheckCircle2,
-  XCircle,
   Calendar,
   BookOpen,
   Star,
@@ -49,25 +57,20 @@ import {
   Filter,
   Check,
   Video,
-  Building,
   UserCheck,
   Sparkles,
-  Share2,
   Copy,
-  Lightbulb,
   FileText,
   AlertCircle,
   Brain,
   Send,
-  HelpCircle,
   Clock,
   Palette,
   Plus,
   ChevronDown,
   DollarSign,
-  TrendingUp,
   Download,
-  Printer,
+  RotateCcw,
 } from 'lucide-react';
 
 interface FormScheduleRow {
@@ -91,20 +94,90 @@ interface StudentsTabProps {
   schedules?: ScheduleSlot[];
 }
 
+// Helper Component for Attendance
+const AttendanceIndicator: React.FC<{ student: Student }> = ({ student }) => {
+  const [status, setStatus] = useState<'present' | 'absent' | 'excused'>('present');
+  const [isAnimating, setIsAnimating] = useState(false);
+
+  const toggleStatus = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsAnimating(true);
+    setTimeout(() => setIsAnimating(false), 300);
+    const statuses: Array<'present' | 'absent' | 'excused'> = ['present', 'absent', 'excused'];
+    const nextIndex = (statuses.indexOf(status) + 1) % statuses.length;
+    setStatus(statuses[nextIndex]);
+  };
+
+  const getStyle = () => {
+    switch (status) {
+      case 'present': return 'bg-green-500';
+      case 'absent': return 'bg-red-500';
+      case 'excused': return 'bg-yellow-400';
+      default: return 'bg-gray-400';
+    }
+  };
+
+  const getLabel = () => {
+    switch (status) {
+      case 'present': return 'حاضر';
+      case 'absent': return 'غائب';
+      case 'excused': return 'مؤجل';
+      default: return 'غير محدد';
+    }
+  };
+
+  return (
+    <button
+      onClick={toggleStatus}
+      className={`w-3.5 h-3.5 rounded-full ${getStyle()} transition-all duration-300 shadow-sm ${isAnimating ? 'scale-125' : 'scale-100'} hover:scale-150`}
+      title={`حالة الحضور: ${getLabel()} (اضغط للتبديل)`}
+    />
+  );
+};
+
 export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, schedules: rawSchedules = [] }) => {
   const schedules = rawSchedules.filter((s) => students.some((st) => st.id === s.studentId));
   const currency = profile?.currency || 'ج.م';
+  const [activeMainView, setActiveMainView] = useState<'groups_and_individuals' | 'records'>('groups_and_individuals');
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | ClassType>('all');
   const [paymentFilter, setPaymentFilter] = useState<'all' | PaymentStatus>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [subjectFilter, setSubjectFilter] = useState<string>('all');
+
+  // Available subjects dynamically extracted from students and profile
+  const availableSubjects = React.useMemo(() => {
+    const set = new Set<string>();
+    if (profile?.subject?.trim()) set.add(profile.subject.trim());
+    students.forEach((s) => {
+      if (s.subject?.trim()) set.add(s.subject.trim());
+    });
+    return Array.from(set).filter(Boolean);
+  }, [students, profile?.subject]);
+
+  const hasActiveFilters =
+    searchQuery.trim() !== '' ||
+    statusFilter !== 'all' ||
+    subjectFilter !== 'all' ||
+    typeFilter !== 'all' ||
+    paymentFilter !== 'all';
+
+  const handleResetFilters = () => {
+    setSearchQuery('');
+    setStatusFilter('all');
+    setSubjectFilter('all');
+    setTypeFilter('all');
+    setPaymentFilter('all');
+  };
 
   // Lessons map for calculating dynamic dues and hours for all students
   const [allLessonsMap, setAllLessonsMap] = useState<Record<string, LessonLog[]>>({});
-  const [loadingAllLessons, setLoadingAllLessons] = useState(false);
   const [showConfirmSettleStudent, setShowConfirmSettleStudent] = useState<Student | null>(null);
   const [isSettling, setIsSettling] = useState(false);
+  const [groups, setGroups] = useState<Group[]>([]);
 
   // Modals state
+  const [showAddChoiceModal, setShowAddChoiceModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [selectedProfileStudent, setSelectedProfileStudent] = useState<Student | null>(null);
@@ -113,6 +186,24 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const [showMonthlyReportModal, setShowMonthlyReportModal] = useState(false);
   const [reportEditableText, setReportEditableText] = useState('');
   const [copiedReport, setCopiedReport] = useState(false);
+
+  // Optional Feature: Performance Insights toggle (defaults to false to keep UI clean)
+  const [showPerformanceInsights, setShowPerformanceInsights] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('sanad_show_performance_insights') === 'true';
+    }
+    return false;
+  });
+
+  const togglePerformanceInsights = () => {
+    setShowPerformanceInsights((prev) => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('sanad_show_performance_insights', next ? 'true' : 'false');
+      }
+      return next;
+    });
+  };
 
   // Lesson Prep Modal State (Edit Before Send Modal)
   const [showLessonPrepModal, setShowLessonPrepModal] = useState(false);
@@ -123,6 +214,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const [prepSavedNotice, setPrepSavedNotice] = useState(false);
 
   // Register modals on back handler stack
+  useBackHandler(showAddChoiceModal, () => setShowAddChoiceModal(false), 'student_choice_modal');
   useBackHandler(!!selectedProfileStudent, () => setSelectedProfileStudent(null), 'student_profile');
   useBackHandler(showAddModal, () => setShowAddModal(false), 'student_add_modal');
   useBackHandler(!!showDeleteConfirm, () => setShowDeleteConfirm(null), 'student_delete_confirm');
@@ -136,6 +228,56 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const [showPdfExportModal, setShowPdfExportModal] = useState(false);
   const [pdfExportReportType, setPdfExportReportType] = useState<ReportType>('financial');
   useBackHandler(showPdfExportModal, () => setShowPdfExportModal(false), 'student_pdf_export_modal');
+
+  // WhatsApp Reminder Modal State
+  const [reminderModalStudent, setReminderModalStudent] = useState<Student | null>(null);
+  const [reminderType, setReminderType] = useState<'schedule' | 'dues' | 'prepaid' | 'custom'>('schedule');
+  const [reminderCustomText, setReminderCustomText] = useState('');
+  const [copiedReminder, setCopiedReminder] = useState(false);
+  useBackHandler(!!reminderModalStudent, () => setReminderModalStudent(null), 'student_whatsapp_reminder');
+
+  // Attendance Modal State
+  const [attendanceModalStudent, setAttendanceModalStudent] = useState<Student | null>(null);
+  const [attendanceStatus, setAttendanceStatus] = useState<'present' | 'absent' | 'late'>('present');
+  const [attendanceDate, setAttendanceDate] = useState(() => new Intl.DateTimeFormat('en-CA').format(new Date()));
+  const [attendanceNotes, setAttendanceNotes] = useState('');
+  const [isSavingAttendance, setIsSavingAttendance] = useState(false);
+  const [attendanceSuccessMsg, setAttendanceSuccessMsg] = useState<string | null>(null);
+  useBackHandler(!!attendanceModalStudent, () => setAttendanceModalStudent(null), 'student_attendance_modal');
+
+  const handleOpenAttendanceModal = (s: Student) => {
+    setAttendanceModalStudent(s);
+    setAttendanceStatus('present');
+    setAttendanceDate(new Intl.DateTimeFormat('en-CA').format(new Date()));
+    setAttendanceNotes('');
+    setAttendanceSuccessMsg(null);
+  };
+
+  const handleSaveAttendanceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!attendanceModalStudent || isSavingAttendance) return;
+    setIsSavingAttendance(true);
+    setAttendanceSuccessMsg(null);
+    try {
+      await recordStudentAttendance(profile.id, {
+        studentId: attendanceModalStudent.id,
+        studentName: attendanceModalStudent.name,
+        subject: attendanceModalStudent.subject || profile.subject || 'المادة',
+        status: attendanceStatus,
+        date: attendanceDate,
+        notes: attendanceNotes,
+      });
+      setAttendanceSuccessMsg('تم تسجيل وحفظ حالة الحضور في مجموعة attendance بنجاح! ✅');
+      setTimeout(() => {
+        setAttendanceModalStudent(null);
+        setAttendanceSuccessMsg(null);
+      }, 1500);
+    } catch (err: any) {
+      console.error('Error saving attendance:', err);
+    } finally {
+      setIsSavingAttendance(false);
+    }
+  };
 
   const handleOpenPdfExport = (type: ReportType = 'financial') => {
     setPdfExportReportType(type);
@@ -155,7 +297,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   const [formWhatsapp, setFormWhatsapp] = useState('');
   const [formSubject, setFormSubject] = useState(profile.subject || 'رياضيات');
   const [formClassType, setFormClassType] = useState<ClassType>('private');
+  const [formBillingType, setFormBillingType] = useState<'monthly' | 'hourly'>('hourly');
   const [formHourlyRate, setFormHourlyRate] = useState<number>(100);
+  const [formMonthlyFee, setFormMonthlyFee] = useState<number>(300);
   const [formRemainingPaidLessons, setFormRemainingPaidLessons] = useState<string>('');
   const [formTotalPrepaidLessons, setFormTotalPrepaidLessons] = useState<string>('');
   const [formLearningStyle, setFormLearningStyle] = useState('');
@@ -207,16 +351,6 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     );
   };
 
-  const formatSlotTime = (timeStr: string) => {
-    const slot = TIME_SLOTS.find((t) => t.time24 === timeStr);
-    return slot ? slot.label : timeStr;
-  };
-
-  const getDayName = (dayIndex: number) => {
-    const d = WEEK_DAYS.find((w) => w.dayIndex === dayIndex);
-    return d ? d.name : '';
-  };
-
   // Helper to format schedule display in exact Arabic format
   // Example: السبت الساعة 04:00 مساءً (60 دقيقة) - أونلاين
   const formatScheduleDisplayArabic = (slot: {
@@ -228,8 +362,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     const day = WEEK_DAYS.find((d) => d.dayIndex === slot.dayOfWeek);
     const dayName = day ? day.name : 'السبت';
     const [hStr, mStr] = (slot.time || '16:00').split(':');
-    const h = parseInt(hStr, 10) || 0;
-    const m = parseInt(mStr, 10) || 0;
+    const h = Number.parseInt(hStr, 10) || 0;
+    const m = Number.parseInt(mStr, 10) || 0;
     const period = h < 12 ? 'صباحاً' : 'مساءً';
     const displayHour = h === 0 ? 12 : h > 12 ? h - 12 : h;
     const timeFormatted = `${displayHour.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${period}`;
@@ -243,11 +377,6 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     return `${dayName} الساعة ${timeFormatted} (${dur} دقيقة) - ${classTypeStr}`;
   };
 
-  const getMinutesFromTime = (timeStr: string) => {
-    const [h, m] = timeStr.split(':').map(Number);
-    return (h || 0) * 60 + (m || 0);
-  };
-
   // Toast and validation errors state
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [formErrors, setFormErrors] = useState<{
@@ -255,19 +384,56 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     subject?: string;
     classType?: string;
     hourlyRate?: string;
+    billingType?: string;
+    monthlyFee?: string;
   }>({});
 
-  const checkScheduleConflict = (dayOfWeek: number, timeStr: string, durationMin: number, excludeScheduleId?: string): string | null => {
+  // Combined schedules (individual students + active groups) for conflict checking
+  const groupSlots = useMemo(() => {
+    const slots: ScheduleSlot[] = [];
+    groups.forEach((g: any) => {
+      if (g.status === 'archived' || g.archived || !Array.isArray(g.schedule)) return;
+      g.schedule.forEach((item: any) => {
+        slots.push({
+          id: `group_slot_${g.id}_day_${item.day}_time_${item.time}`,
+          teacherId: profile.id,
+          studentId: `group_${g.id}`,
+          studentName: `مجموعة ${g.name}`,
+          dayOfWeek: item.day,
+          time: item.time,
+          duration: item.duration || 60,
+          recurrence: 'weekly',
+          classType: 'center',
+          color: g.color || 'purple',
+          locationOrLink: g.centerName || 'السنتر',
+        } as any);
+      });
+    });
+    return slots;
+  }, [groups, profile.id]);
+
+  const allSchedules = useMemo(() => [...(schedules || []), ...groupSlots], [schedules, groupSlots]);
+
+  const checkScheduleConflict = (
+    dayOfWeek: number,
+    timeStr: string,
+    durationMin: number,
+    excludeStudentId?: string
+  ): string | null => {
+    // Filter out the student's own schedules if editing
+    const slotsToCheck = excludeStudentId
+      ? allSchedules.filter((s) => s.studentId !== excludeStudentId)
+      : allSchedules;
+
     const res = hasConflict(
       {
         dayOfWeek: Number(dayOfWeek),
         time: timeStr,
         duration: durationMin || 60,
       },
-      schedules,
-      excludeScheduleId
+      slotsToCheck
     );
-    return res.hasConflict ? res.message || 'تعارض في الموعد' : null;
+    return res.hasConflict ? res.message || 'عفواً، لديك حصة أو مجموعة أخرى في نفس هذا الموعد' : null;
   };
 
   // Actions for managing schedules directly inside Student Details Modal
@@ -281,28 +447,26 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
       return;
     }
 
-    setSavingSchedInProfile(true);
-    try {
-      await addSchedule(profile.id, {
-        studentId: selectedProfileStudent.id,
-        studentName: selectedProfileStudent.name,
-        dayOfWeek: Number(newSchedDay),
-        time: newSchedTime,
-        duration: Number(newSchedDuration) || 60,
-        recurrence: 'weekly',
-        classType: newSchedClassType,
-        color: newSchedColor || selectedProfileStudent.color || 'purple',
-      });
-      setShowAddScheduleInsideProfile(false);
-      // Reset default values
-      setNewSchedDay(6);
-      setNewSchedTime('16:00');
-      setNewSchedDuration(60);
-    } catch (err) {
+    setShowAddScheduleInsideProfile(false);
+    // Reset default values
+    setNewSchedDay(6);
+    setNewSchedTime('16:00');
+    setNewSchedDuration(60);
+    setSavingSchedInProfile(false);
+
+    addSchedule(profile.id, {
+      studentId: selectedProfileStudent.id,
+      studentName: selectedProfileStudent.name,
+      dayOfWeek: Number(newSchedDay),
+      time: newSchedTime,
+      duration: Number(newSchedDuration) || 60,
+      recurrence: 'weekly',
+      classType: newSchedClassType,
+      color: newSchedColor || selectedProfileStudent.color || 'purple',
+    }).catch((err) => {
       console.error('Error adding schedule in profile', err);
-    } finally {
-      setSavingSchedInProfile(false);
-    }
+      alert('حدث خطأ أثناء إضافة الموعد.');
+    });
   };
 
   const handleStartEditScheduleSlot = (slot: ScheduleSlot) => {
@@ -325,21 +489,19 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
       return;
     }
 
-    setSavingSchedInProfile(true);
-    try {
-      await updateSchedule(profile.id, editingScheduleSlot.id, {
-        dayOfWeek: Number(editSchedDay),
-        time: editSchedTime,
-        duration: Number(editSchedDuration) || 60,
-        classType: editSchedClassType,
-        color: editSchedColor,
-      });
-      setEditingScheduleSlot(null);
-    } catch (err) {
+    setEditingScheduleSlot(null);
+    setSavingSchedInProfile(false);
+
+    updateSchedule(profile.id, editingScheduleSlot.id, {
+      dayOfWeek: Number(editSchedDay),
+      time: editSchedTime,
+      duration: Number(editSchedDuration) || 60,
+      classType: editSchedClassType,
+      color: editSchedColor,
+    }).catch((err) => {
       console.error('Error updating schedule slot', err);
-    } finally {
-      setSavingSchedInProfile(false);
-    }
+      alert('حدث خطأ أثناء تعديل الموعد.');
+    });
   };
 
   const handleDeleteScheduleSlot = async (slotId: string) => {
@@ -380,19 +542,16 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
       setAllLessonsMap({});
       return;
     }
-    setLoadingAllLessons(true);
     try {
       const data = await fetchAllStudentLessons(profile.id, students);
       setAllLessonsMap(data);
     } catch (err) {
       console.error('Error fetching all lessons for students tab:', err);
-    } finally {
-      setLoadingAllLessons(false);
     }
   };
 
   useEffect(() => {
-    loadAllLessons();
+    void loadAllLessons();
   }, [profile.id, students]);
 
   // Subscribe to selected student's lessons
@@ -404,12 +563,17 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     setProfileLearningStyle(selectedProfileStudent.learningStyle || '');
     setProfileNotes(selectedProfileStudent.notes || '');
     setIsProfileLearningStyleOpen(false);
-    setIsProfileNotesOpen(false);
+    setIsProfileNotesOpen(!!selectedProfileStudent.notes);
     const unsub = subscribeToStudentLessons(profile.id, selectedProfileStudent.id, (lessons) => {
       setStudentLessons(lessons);
     });
     return () => unsub();
   }, [profile.id, selectedProfileStudent]);
+
+  useEffect(() => {
+    const unsub = subscribeToGroups(profile.id, (g) => setGroups(g));
+    return () => unsub();
+  }, [profile.id]);
 
   const handleSaveProfileNotes = async () => {
     if (!selectedProfileStudent) return;
@@ -429,18 +593,48 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     }
   };
 
-  // Filter students
+  // Filter students in-memory without requiring any Firestore index
   const filteredStudents = students.filter((s) => {
-    const matchesSearch =
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.whatsapp && s.whatsapp.includes(searchQuery)) ||
-      s.subject.toLowerCase().includes(searchQuery.toLowerCase());
+    // 1. Search Query with Arabic normalization
+    if (searchQuery.trim()) {
+      const q = normalizeArabicText(searchQuery);
+      const nameMatch = normalizeArabicText(s.name || '').includes(q);
+      const subjectMatch = normalizeArabicText(s.subject || '').includes(q);
+      const phoneMatch =
+        (s.phone && s.phone.includes(searchQuery.trim())) ||
+        (s.whatsapp && s.whatsapp.includes(searchQuery.trim())) ||
+        (s.parentPhone && s.parentPhone.includes(searchQuery.trim()));
+      if (!nameMatch && !subjectMatch && !phoneMatch) return false;
+    }
+
+    // 2. Status Filter (نشط / غير نشط / الكل)
+    if (statusFilter === 'active') {
+      const isActive = s.active !== false && !s.archived;
+      if (!isActive) return false;
+    } else if (statusFilter === 'inactive') {
+      const isInactive = s.active === false || s.archived === true;
+      if (!isInactive) return false;
+    }
+
+    // 3. Subject Filter (المادة الدراسية)
+    if (subjectFilter !== 'all') {
+      if (normalizeArabicText(s.subject || '') !== normalizeArabicText(subjectFilter)) {
+        return false;
+      }
+    }
+
+    // 4. Class Type Filter
     const matchesType =
       typeFilter === 'all' ||
       s.classType === typeFilter ||
       (typeFilter === 'in_person' && (s.classType === 'private' || s.classType === 'center' || !s.classType));
+    if (!matchesType) return false;
+
+    // 5. Payment Filter
     const matchesPayment = paymentFilter === 'all' || s.paymentStatus === paymentFilter;
-    return matchesSearch && matchesType && matchesPayment;
+    if (!matchesPayment) return false;
+
+    return true;
   });
 
   const handleOpenStudentProfile = (s: Student) => {
@@ -461,7 +655,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     setFormWhatsapp('');
     setFormSubject(profile.subject || 'رياضيات');
     setFormClassType('in_person');
+    setFormBillingType('hourly');
     setFormHourlyRate(100);
+    setFormMonthlyFee(300);
     setFormRemainingPaidLessons('');
     setFormTotalPrepaidLessons('');
     setFormLearningStyle('');
@@ -480,7 +676,10 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     setFormWhatsapp(student.whatsapp || '');
     setFormSubject(student.subject || profile.subject || 'رياضيات');
     setFormClassType(student.classType || 'in_person');
+    const isMonthlyStudent = student.billingType === 'monthly' || (student.groupIds && student.groupIds.length > 0) || student.classType === 'center';
+    setFormBillingType(student.billingType || (isMonthlyStudent ? 'monthly' : 'hourly'));
     setFormHourlyRate(student.hourlyRate || (student.monthlyFee ? Math.round(student.monthlyFee / 4) : 100));
+    setFormMonthlyFee(student.monthlyFee || (student.hourlyRate ? student.hourlyRate * 4 : 300));
     setFormRemainingPaidLessons(
       student.remainingPaidLessons !== undefined && student.remainingPaidLessons !== null
         ? String(student.remainingPaidLessons)
@@ -514,8 +713,11 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     if (!formClassType) {
       errors.classType = 'يرجى اختيار تصنيف نوع الحصة';
     }
-    if (formHourlyRate === undefined || formHourlyRate === null || isNaN(formHourlyRate) || Number(formHourlyRate) < 0) {
+    if (formBillingType === 'hourly' && (formHourlyRate === undefined || formHourlyRate === null || Number.isNaN(Number(formHourlyRate)) || Number(formHourlyRate) < 0)) {
       errors.hourlyRate = 'يرجى إدخال سعر الساعة بشكل صحيح';
+    }
+    if (formBillingType === 'monthly' && (formMonthlyFee === undefined || formMonthlyFee === null || Number.isNaN(Number(formMonthlyFee)) || Number(formMonthlyFee) < 0)) {
+      errors.monthlyFee = 'يرجى إدخال قيمة الاشتراك الشهري بشكل صحيح';
     }
 
     if (Object.keys(errors).length > 0) {
@@ -525,10 +727,15 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
     setFormErrors({});
 
-    // 2. Overlapping Schedule Validation for new student schedules before writing to Firestore
-    if (!editingStudent && formSchedules.length > 0) {
+    // 2. Overlapping Schedule Validation for new/updated student schedules before writing to Firestore
+    if (formSchedules.length > 0) {
       for (const s of formSchedules) {
-        const conflict = checkScheduleConflict(Number(s.dayOfWeek), s.time, Number(s.duration) || 60);
+        const conflict = checkScheduleConflict(
+          Number(s.dayOfWeek),
+          s.time,
+          Number(s.duration) || 60,
+          editingStudent?.id
+        );
         if (conflict) {
           setToastMessage({ type: 'error', text: conflict });
           alert(conflict);
@@ -541,12 +748,13 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
     try {
       const rate = Math.max(0, Number(formHourlyRate) || 100);
+      const mFee = formBillingType === 'monthly' ? Math.max(0, Number(formMonthlyFee) || 300) : (Number(formMonthlyFee) || rate * 4);
       const remPaid =
-        formRemainingPaidLessons.trim() !== '' && !isNaN(Number(formRemainingPaidLessons))
+        formRemainingPaidLessons.trim() !== '' && !Number.isNaN(Number(formRemainingPaidLessons))
           ? Math.max(0, Number(formRemainingPaidLessons))
           : 0;
       const totPrepaid =
-        formTotalPrepaidLessons.trim() !== '' && !isNaN(Number(formTotalPrepaidLessons))
+        formTotalPrepaidLessons.trim() !== '' && !Number.isNaN(Number(formTotalPrepaidLessons))
           ? Math.max(remPaid, Number(formTotalPrepaidLessons))
           : remPaid;
 
@@ -556,8 +764,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
         whatsapp: formWhatsapp.trim() || '',
         subject: formSubject.trim(),
         classType: formClassType,
+        billingType: formBillingType,
         hourlyRate: rate,
-        monthlyFee: rate * 4,
+        monthlyFee: mFee,
         remainingPaidLessons: remPaid,
         totalPrepaidLessons: totPrepaid,
         learningStyle: formLearningStyle.trim() || '',
@@ -854,7 +1063,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
   const handleCopyReport = () => {
     const textToCopy = reportEditableText || generateMonthlyReportText();
-    navigator.clipboard.writeText(textToCopy);
+    void navigator.clipboard.writeText(textToCopy).catch((err) => {
+      console.warn('Copy report error:', err);
+    });
     setCopiedReport(true);
     setTimeout(() => setCopiedReport(false), 2500);
   };
@@ -910,7 +1121,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
   const handleCopyLessonPrep = () => {
     const textToCopy = prepEditableText || generateLessonPrepText();
-    navigator.clipboard.writeText(textToCopy);
+    void navigator.clipboard.writeText(textToCopy).catch((err) => {
+      console.warn('Copy prep error:', err);
+    });
     setCopiedPrep(true);
     setTimeout(() => setCopiedPrep(false), 2500);
   };
@@ -937,11 +1150,14 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   // Payment Reminder WhatsApp Generator (Hourly Rate & Dues Statement)
   const handleSendPaymentReminder = () => {
     if (!selectedProfileStudent) return;
-    const hourlyRate = selectedProfileStudent.hourlyRate || (selectedProfileStudent.monthlyFee ? Math.round(selectedProfileStudent.monthlyFee / 4) : 100);
+    const isMonthly = selectedProfileStudent.billingType === 'monthly' || (!selectedProfileStudent.billingType && ((selectedProfileStudent.groupIds && selectedProfileStudent.groupIds.length > 0) || selectedProfileStudent.classType === 'center'));
+    const monthlyDue = selectedProfileStudent.monthlyFee || (selectedProfileStudent.customFees && selectedProfileStudent.groupIds && selectedProfileStudent.groupIds[0] ? selectedProfileStudent.customFees[selectedProfileStudent.groupIds[0]] : 300);
+    const hourlyRate = selectedProfileStudent.hourlyRate || 100;
     const unsettledLessons = studentLessons.filter((l) => !l.settled && isLessonFinanciallyCounted(l));
     const pendingMinutes = unsettledLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
     const pendingHours = (pendingMinutes / 60).toFixed(1);
-    const pendingAmount = unsettledLessons.reduce((acc, l) => {
+    const isPaid = selectedProfileStudent.paymentStatus === 'paid';
+    const pendingAmount = isMonthly ? (isPaid ? 0 : monthlyDue) : unsettledLessons.reduce((acc, l) => {
       const dur = l.duration || 60;
       const rate = l.hourlyRate || hourlyRate;
       return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
@@ -954,19 +1170,34 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
       )
       .join('\n');
 
-    const template = profile.whatsappTemplates?.payment || DEFAULT_WHATSAPP_TEMPLATES.payment;
-    const msg = renderTemplate(template, {
-      studentName: selectedProfileStudent.name,
-      subject: selectedProfileStudent.subject,
-      teacherName: profile.name,
-      date: new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()),
-      hourlyRate: hourlyRate,
-      currency: currency,
-      pendingHours: pendingHours,
-      unsettledCount: unsettledLessons.length,
-      pendingAmount: pendingAmount,
-      lessonsList: lessonsListText ? `📋 تفاصيل الحصص المنفذة غير المصفاة:\n${lessonsListText}` : '',
-    });
+    let msg = '';
+    if (isMonthly) {
+      msg =
+        `السلام عليكم ورحمة الله وبركاته 🌷\n` +
+        `🧾 كشف حساب واشتراك شهري - مادة (${selectedProfileStudent.subject})\n\n` +
+        `👤 الطالب/ـة: ${selectedProfileStudent.name}\n` +
+        `👨‍🏫 إعداد المعلم: أ. ${profile.name}\n` +
+        `📅 التاريخ: ${new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())}\n\n` +
+        `📊 تفاصيل الاشتراك:\n` +
+        `• نظام الحساب: اشتراك شهري ثابت (مجموعة)\n` +
+        `• قيمة الاشتراك الشهري: ${monthlyDue} ${currency}\n` +
+        `• إجمالي المستحقات المطلوبة: ${pendingAmount} ${currency} 💰\n\n` +
+        `شاكرين ومقدرين لكم حسن التعاون والاهتمام الدائم 🌟`;
+    } else {
+      const template = profile.whatsappTemplates?.payment || DEFAULT_WHATSAPP_TEMPLATES.payment;
+      msg = renderTemplate(template, {
+        studentName: selectedProfileStudent.name,
+        subject: selectedProfileStudent.subject,
+        teacherName: profile.name,
+        date: new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()),
+        hourlyRate: hourlyRate,
+        currency: currency,
+        pendingHours: pendingHours,
+        unsettledCount: unsettledLessons.length,
+        pendingAmount: pendingAmount,
+        lessonsList: lessonsListText ? `📋 تفاصيل الحصص المنفذة غير المصفاة:\n${lessonsListText}` : '',
+      });
+    }
 
     const cleanPhone = selectedProfileStudent.whatsapp ? selectedProfileStudent.whatsapp.replace(/[^0-9]/g, '') : '';
     const phoneParam = cleanPhone ? (cleanPhone.startsWith('0') ? '2' + cleanPhone : cleanPhone) : '';
@@ -989,6 +1220,157 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
       ? `https://wa.me/${phoneParam}?text=${encodeURIComponent(rendered)}`
       : `https://wa.me/?text=${encodeURIComponent(rendered)}`;
     window.open(url, '_blank');
+  };
+
+  // -------------------------------------------------------------
+  // WhatsApp Reminder Modal Helpers
+  // -------------------------------------------------------------
+  const getNextScheduleInfo = (student: Student) => {
+    const studentScheds = schedules.filter((sch) => sch.studentId === student.id);
+    if (!studentScheds.length) return null;
+
+    const now = new Date();
+    const currentDay = now.getDay(); // 0: Sun ... 6: Sat
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+    // Map and sort schedule slots by how soon they occur
+    const sorted = [...studentScheds]
+      .map((slot) => {
+        const [hours, minutes] = slot.time.split(':').map(Number);
+        const slotMinutes = (hours || 0) * 60 + (minutes || 0);
+
+        let dayDiff = slot.dayOfWeek - currentDay;
+        if (dayDiff < 0 || (dayDiff === 0 && slotMinutes <= currentMinutes)) {
+          dayDiff += 7;
+        }
+        return { slot, dayDiff, slotMinutes };
+      })
+      .sort((a, b) => a.dayDiff - b.dayDiff || a.slotMinutes - b.slotMinutes);
+
+    const next = sorted[0];
+    if (!next) return null;
+
+    const targetDate = new Date();
+    targetDate.setDate(now.getDate() + next.dayDiff);
+    const dayName = WEEK_DAYS.find((d) => d.dayIndex === next.slot.dayOfWeek)?.name || 'اليوم المحدد';
+    const formattedDate = new Intl.DateTimeFormat('ar-EG', {
+      day: 'numeric',
+      month: 'long',
+    }).format(targetDate);
+
+    // Format 12-hour time
+    const [h, m] = next.slot.time.split(':').map(Number);
+    const isPM = h >= 12;
+    const hour12 = h % 12 || 12;
+    const timeFormatted = `${hour12}:${String(m).padStart(2, '0')} ${isPM ? 'مساءً' : 'صباحاً'}`;
+
+    return {
+      dayName,
+      formattedDate,
+      time: timeFormatted,
+      classType:
+        next.slot.classType === 'online'
+          ? 'أونلاين 🌐'
+          : next.slot.classType === 'center'
+          ? 'في السنتر 🏫'
+          : 'حصة خاصة / منزلية 👤',
+      duration: next.slot.duration,
+    };
+  };
+
+  const generateReminderText = (
+    student: Student,
+    type: 'schedule' | 'dues' | 'prepaid' | 'custom'
+  ): string => {
+    const teacherName = profile.name || 'معلمك';
+    const studentName = student.name;
+    const subject = student.subject || profile.subject || 'المادة';
+
+    if (type === 'schedule') {
+      const nextSched = getNextScheduleInfo(student);
+      if (nextSched) {
+        return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر الطالب/ة: *${studentName}*،\n\nنود تذكيركم بموعد حصة *${subject}* القادمة بإذن الله:\n📅 *اليوم:* ${nextSched.dayName} (${nextSched.formattedDate})\n⏰ *الساعة:* ${nextSched.time}\n📍 *طبيعة الحصة:* ${nextSched.classType}\n⏳ *المدة:* ${nextSched.duration} دقيقة\n\nنرجو الالتزام بالموعد والتأكد من جاهزية الأدوات والكراسة. شاكرين ومقدرين حسن تعاونكم الدائم ✨\n\nمع تحيات: *أستاذ ${teacherName}*`;
+      } else {
+        return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر الطالب/ة: *${studentName}*،\n\nنود تذكيركم بموعد حصة *${subject}* القادمة.\nيرجى التنسيق والالتزام بالموعد المحدد.\n\nمع تحيات: *أستاذ ${teacherName}*`;
+      }
+    }
+
+    if (type === 'dues') {
+      const isMonthly = student.billingType === 'monthly' || (!student.billingType && ((student.groupIds && student.groupIds.length > 0) || student.classType === 'center'));
+      const monthlyDue = student.monthlyFee || (student.customFees && student.groupIds && student.groupIds[0] ? student.customFees[student.groupIds[0]] : 300);
+      const sLessons = allLessonsMap[student.id] || [];
+      const hourlyRate = student.hourlyRate || 100;
+      const unsettledLessons = sLessons.filter((l) => !l.settled && isLessonFinanciallyCounted(l));
+      const pendingMinutes = unsettledLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
+      const pendingHours = (pendingMinutes / 60).toFixed(1);
+      const isPaid = student.paymentStatus === 'paid';
+      const isPartial = student.paymentStatus === 'partial';
+      const pendingAmount = isMonthly
+        ? (isPaid ? 0 : isPartial ? Math.round(monthlyDue / 2) : monthlyDue)
+        : unsettledLessons.reduce((acc, l) => {
+            const dur = l.duration || 60;
+            const rate = l.hourlyRate || hourlyRate;
+            return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
+          }, 0);
+
+      if (isMonthly) {
+        const partialNote = isPartial ? ' (تم تسجيل دفعة جزئية والمتبقي)' : '';
+        return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر الطالب/ة: *${studentName}*،\n\nنود إحاطتكم علماً ببيان الاشتراك الشهري لمادة *${subject}*:\n🏫 *نظام الحساب:* اشتراك شهري ثابت (مجموعة)\n💰 *المبلغ المستحق${partialNote}:* ${pendingAmount} ${currency}\n\nنرجو التكرم بسداد المبلغ في أقرب وقت مناسب لكم. شاكرين تعاونكم ودعمكم المستمر لتقدم الطالب ✨\n\nمع تحيات: *أستاذ ${teacherName}*`;
+      }
+
+      const lessonsListText = unsettledLessons
+        .slice(0, 5)
+        .map(
+          (l, i) =>
+            `  • [${l.date}] ${l.topic} (${l.duration || 60} دقيقة) - ${l.cost || Math.round(((l.duration || 60) / 60) * hourlyRate)} ${currency}`
+        )
+        .join('\n');
+
+      return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر الطالب/ة: *${studentName}*،\n\nنود إحاطتكم علماً ببيان الحساب والمستحقات الخاصة بحصص مادة *${subject}*:\n💰 *المبلغ المستحق:* ${pendingAmount} ${currency}\n⏱️ *إجمالي الساعات المنفذة:* ${pendingHours} ساعة (${unsettledLessons.length} حصص)\n${lessonsListText ? `\n📋 *تفاصيل الحصص:*\n${lessonsListText}\n` : ''}\nنرجو التكرم بسداد المبلغ في أقرب وقت مناسب لكم. شاكرين تعاونكم ودعمكم المستمر لتقدم الطالب ✨\n\nمع تحيات: *أستاذ ${teacherName}*`;
+    }
+
+    if (type === 'prepaid') {
+      const remaining = student.remainingPaidLessons ?? 0;
+      return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر الطالب/ة: *${studentName}*،\n\nنود إحاطتكم علماً بأن رصيد باقة الحصص المدفوعة لمادة *${subject}*:\n⏳ *الرصيد المتبقي:* ${remaining} حصص فقط.\n\nيرجى التكرم بتجديد باقة الحصص لضمان استمرار الحصص بانتظام دون توقف. شاكرين ومقدرين تعاونكم الدائم ✨\n\nمع تحيات: *أستاذ ${teacherName}*`;
+    }
+
+    return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر الطالب/ة: *${studentName}*،\n\nبخصوص حصص مادة *${subject}*:\n[اكتب رسالتك وتوجيهاتك هنا]\n\nمع تحيات: *أستاذ ${teacherName}*`;
+  };
+
+  const handleOpenWhatsAppReminderModal = (s: Student) => {
+    setReminderModalStudent(s);
+    setCopiedReminder(false);
+    const sLessons = allLessonsMap[s.id] || [];
+    const unsettledLessons = sLessons.filter((l) => !l.settled && isLessonFinanciallyCounted(l));
+    const initialType: 'schedule' | 'dues' | 'prepaid' | 'custom' =
+      unsettledLessons.length > 0 ? 'dues' : 'schedule';
+    setReminderType(initialType);
+    setReminderCustomText(generateReminderText(s, initialType));
+  };
+
+  const handleSwitchReminderType = (type: 'schedule' | 'dues' | 'prepaid' | 'custom') => {
+    if (!reminderModalStudent) return;
+    setReminderType(type);
+    setReminderCustomText(generateReminderText(reminderModalStudent, type));
+  };
+
+  const handleSendReminderViaWhatsApp = () => {
+    if (!reminderModalStudent) return;
+    const rawPhone = reminderModalStudent.whatsapp || reminderModalStudent.phone || reminderModalStudent.parentPhone || '';
+    const clean = rawPhone.replace(/[^0-9]/g, '');
+    const phoneParam = clean ? (clean.startsWith('0') ? '2' + clean : clean) : '';
+    const waUrl = phoneParam
+      ? `https://wa.me/${phoneParam}?text=${encodeURIComponent(reminderCustomText)}`
+      : `https://wa.me/?text=${encodeURIComponent(reminderCustomText)}`;
+    window.open(waUrl, '_blank');
+  };
+
+  const handleCopyReminder = () => {
+    void navigator.clipboard.writeText(reminderCustomText).catch((err) => {
+      console.warn('Copy reminder error:', err);
+    });
+    setCopiedReminder(true);
+    setTimeout(() => setCopiedReminder(false), 2500);
   };
 
   const getClassTypeBadge = (type?: ClassType) => {
@@ -1020,15 +1402,186 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     }
   };
 
+  const handleExportStudentsPdf = () => {
+    if (students.length === 0) {
+      alert('لا يوجد طلاب لتصديرهم حالياً.');
+      return;
+    }
+    try {
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      
+      doc.setFontSize(18);
+      doc.text(`Sanad Almoallem - Students & Schedules Report`, 105, 15, { align: 'center' });
+      
+      doc.setFontSize(11);
+      doc.text(`Teacher: ${profile.name} (${profile.subject || 'General'})`, 105, 22, { align: 'center' });
+      doc.text(`Date: ${new Date().toLocaleDateString()}`, 105, 28, { align: 'center' });
+
+      const tableData = students.map((s, idx) => {
+        const sSchedules = (schedules || []).filter((sc) => sc.studentId === s.id);
+        const schedStr = sSchedules.map((sc) => {
+          const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+          return `${dayNames[sc.dayOfWeek] || 'Day'} ${sc.time} (${sc.duration || 60}m)`;
+        }).join(', ') || 'No Schedule';
+
+        return [
+          idx + 1,
+          s.name,
+          s.subject || profile.subject || '-',
+          s.whatsapp || s.phone || '-',
+          s.classType || 'private',
+          s.paymentStatus === 'paid' ? 'Paid' : 'Unpaid',
+          schedStr
+        ];
+      });
+
+      autoTable(doc, {
+        startY: 35,
+        head: [['#', 'Student Name', 'Subject', 'Phone', 'Type', 'Status', 'Schedules']],
+        body: tableData,
+        styles: { font: 'helvetica', fontSize: 9, cellPadding: 4 },
+        headStyles: { fillColor: [124, 58, 237] },
+        alternateRowStyles: { fillColor: [245, 243, 255] },
+      });
+
+      doc.save(`students_schedules_report_${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (err) {
+      console.error('Error generating PDF with jspdf:', err);
+      alert('حدث خطأ أثناء تصدير ملف PDF.');
+    }
+  };
+
+  const handleExportStudentsExcel = () => {
+    if (students.length === 0) {
+      alert('لا يوجد طلاب لتصديرهم حالياً.');
+      return;
+    }
+    try {
+      let csvContent = '\uFEFF';
+      csvContent += 'ID,Student Name,Subject,Phone,Class Type,Payment Status,Remaining Paid Lessons,Schedules\n';
+
+      students.forEach((s) => {
+        const sSchedules = (schedules || []).filter((sc) => sc.studentId === s.id);
+        const dayNames = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+        const schedStr = sSchedules.map((sc) => `${dayNames[sc.dayOfWeek] || ''} ${sc.time}`).join(' | ');
+
+        const row = [
+          `"${s.id}"`,
+          `"${(s.name || '').replace(/"/g, '""')}"`,
+          `"${(s.subject || '').replace(/"/g, '""')}"`,
+          `"${(s.whatsapp || s.phone || '').replace(/"/g, '""')}"`,
+          `"${s.classType || 'private'}"`,
+          `"${s.paymentStatus === 'paid' ? 'مدفوع' : 'غير مدفوع'}"`,
+          `${s.remainingPaidLessons ?? 0}`,
+          `"${schedStr.replace(/"/g, '""')}"`
+        ];
+        csvContent += row.join(',') + '\n';
+      });
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `students_schedules_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Error generating Excel/CSV:', err);
+      alert('حدث خطأ أثناء تصدير ملف Excel.');
+    }
+  };
+
   return (
     <div className="space-y-4 pb-20">
-      {/* Top Header & Add Button */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-white">سجل الطلاب ({students.length})</h2>
-          <p className="text-xs text-slate-400">إدارة الطلاب، الحضور، التقارير والمدفوعات</p>
+      {/* Top View Mode Switcher & Quick Actions */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-900/90 border border-purple-500/30 shadow-inner flex-1">
+          <button
+            type="button"
+            onClick={() => setActiveMainView('groups_and_individuals')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              activeMainView === 'groups_and_individuals'
+                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-950/50 scale-[1.01]'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            <span>المجموعات والطلاب</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveMainView('records')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              activeMainView === 'records'
+                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-950/50 scale-[1.01]'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <BookOpen className="w-4 h-4" />
+            <span>سجل الطلاب المالي</span>
+          </button>
         </div>
+
+        <div className="flex items-center gap-1.5 justify-end">
+          <button
+            type="button"
+            onClick={handleExportStudentsPdf}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-purple-300 border border-purple-500/30 text-xs font-bold shadow-md transition cursor-pointer"
+            title="تصدير قائمة الطلاب والمواعيد إلى PDF"
+          >
+            <Download className="w-4 h-4 text-purple-400" />
+            <span>تصدير PDF</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleExportStudentsExcel}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-emerald-300 border border-emerald-500/30 text-xs font-bold shadow-md transition cursor-pointer"
+            title="تصدير قائمة الطلاب والمواعيد إلى Excel (CSV)"
+          >
+            <FileText className="w-4 h-4 text-emerald-400" />
+            <span>تصدير Excel</span>
+          </button>
+        </div>
+      </div>
+
+      {activeMainView === 'groups_and_individuals' ? (
+        <GroupManagementTab
+          teacherId={profile.id}
+          profile={profile}
+          currency={currency}
+          defaultSubject={profile.subject}
+          initialStudents={students}
+          onSelectStudent={(st) => handleOpenStudentProfile(st)}
+        />
+      ) : (
+        <>
+          {/* Top Header & Add Button */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-white">سجل الطلاب ({students.length})</h2>
+              <p className="text-xs text-slate-400">إدارة الطلاب، الحضور، التقارير والمدفوعات</p>
+            </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleExportStudentsPdf}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/30 text-xs font-bold shadow-md transition cursor-pointer"
+            title="تصدير قائمة الطلاب والمواعيد إلى PDF"
+          >
+            <Download className="w-4 h-4 text-purple-400" />
+            <span className="hidden md:inline">تصدير PDF</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleExportStudentsExcel}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/30 text-xs font-bold shadow-md transition cursor-pointer"
+            title="تصدير قائمة الطلاب والمواعيد إلى Excel (CSV)"
+          >
+            <FileText className="w-4 h-4 text-emerald-400" />
+            <span className="hidden md:inline">تصدير Excel</span>
+          </button>
           <button
             type="button"
             onClick={() => setShowDailyAttendanceModal(true)}
@@ -1036,81 +1589,215 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
             title="سجل الحضور والغياب اليومي للطلاب وتفعيل التذكيرات التلقائية"
           >
             <UserCheck className="w-4 h-4" />
-            <span>تسجيل الحضور اليومي 📋</span>
+            <span className="hidden sm:inline">تسجيل الحضور اليومي 📋</span>
           </button>
           <button
-            onClick={handleOpenAddModal}
+            onClick={() => setShowAddChoiceModal(true)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-950/50 active:scale-95 transition cursor-pointer"
           >
-            <UserPlus className="w-4 h-4" />
-            <span>إضافة طالب</span>
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">إضافة جديدة</span>
           </button>
         </div>
       </div>
+      
+      {/* Primary Floating Action Button (+) for all screens */}
+      <div className="fixed bottom-20 start-5 sm:bottom-24 sm:start-8 z-40">
+        <button
+          type="button"
+          onClick={() => setShowAddChoiceModal(true)}
+          className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-tr from-purple-600 via-indigo-600 to-purple-500 text-white flex items-center justify-center shadow-2xl shadow-purple-600/60 hover:shadow-purple-600/90 hover:scale-105 active:scale-95 transition-all cursor-pointer border-2 border-purple-400/50 group focus:outline-none focus:ring-4 focus:ring-purple-500/40"
+          title="إضافة جديدة (طالب فردي أو مجموعة)"
+          aria-label="إضافة جديدة"
+        >
+          <Plus className="w-7 h-7 sm:w-8 sm:h-8 group-hover:rotate-90 transition-transform duration-300" />
+        </button>
+      </div>
 
-      {/* Search & Filter Bar */}
-      <div className="space-y-2">
+      {/* Optional Performance Insights Toggle Button */}
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={togglePerformanceInsights}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-900 border border-purple-500/30 text-purple-300 hover:text-white transition cursor-pointer"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+          <span>{showPerformanceInsights ? 'إخفاء تحليلات أداء الطلاب 📊' : 'عرض تحليلات أداء الطلاب 📊'}</span>
+        </button>
+      </div>
+
+      {/* Performance Insights & Attendance Risk Analysis (Optional) */}
+      {showPerformanceInsights && (
+        <PerformanceInsights
+          students={students}
+          allLessonsMap={allLessonsMap}
+          currency={currency}
+        />
+      )}
+
+      {/* Search & Advanced Filter Bar */}
+      <div className="space-y-3 p-3.5 sm:p-4 rounded-3xl bg-slate-900/90 border border-purple-500/30 shadow-lg shadow-purple-950/20">
+        {/* Search Input Box with clear button */}
         <div className="relative">
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="بحث بالاسم، المادة، أو رقم الهاتف..."
-            className="w-full rounded-xl bg-slate-900/90 border border-slate-700/80 px-3.5 py-2.5 pr-10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400"
+            className="w-full rounded-2xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700/80 px-4 py-2.5 pr-10 pl-9 text-xs text-slate-900 dark:text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 transition"
           />
-          <Search className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
+          <Search className="w-4 h-4 text-purple-400 absolute right-3.5 top-3" />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute left-3 top-2.5 text-slate-400 hover:text-white p-0.5 rounded-lg transition cursor-pointer"
+              title="مسح البحث"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
-        {/* Filter Pills */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 text-[11px]">
-          <span className="text-slate-400 flex items-center gap-1">
-            <Filter className="w-3 h-3" />
-            <span>النوع:</span>
-          </span>
-          {[
-            { id: 'all', label: 'الكل' },
-            { id: 'online', label: 'أونلاين 🌐' },
-            { id: 'in_person', label: 'حضور شخصي 👤' },
-            { id: 'trial', label: 'حصة تجريبية ✨' },
-          ].map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTypeFilter(t.id as any)}
-              className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer whitespace-nowrap ${
-                typeFilter === t.id
-                  ? 'bg-purple-600 text-white shadow'
-                  : 'bg-slate-800/80 text-slate-400 hover:text-white'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+        {/* Filters Container */}
+        <div className="space-y-2.5 text-xs">
+          {/* Row 1: Status & Subject Filters */}
+          <div className="flex items-center gap-2.5 overflow-x-auto pb-1">
+            {/* Status Filter (حالة الطالب: نشط / غير نشط / الكل) */}
+            <div className="flex items-center gap-1.5 flex-nowrap shrink-0">
+              <span className="text-[11px] text-slate-400 flex items-center gap-1 font-bold">
+                <UserCheck className="w-3.5 h-3.5 text-purple-400" />
+                <span>الحالة:</span>
+              </span>
+              {[
+                { id: 'all', label: 'الكل' },
+                { id: 'active', label: 'نشط 🟢' },
+                { id: 'inactive', label: 'غير نشط 🔴' },
+              ].map((st) => (
+                <button
+                  key={st.id}
+                  type="button"
+                  onClick={() => setStatusFilter(st.id as any)}
+                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition cursor-pointer whitespace-nowrap border ${
+                    statusFilter === st.id
+                      ? st.id === 'active'
+                        ? 'bg-emerald-600 text-white border-emerald-500 shadow-md shadow-emerald-950/40'
+                        : st.id === 'inactive'
+                        ? 'bg-rose-600 text-white border-rose-500 shadow-md shadow-rose-950/40'
+                        : 'bg-purple-600 text-white border-purple-500 shadow-md shadow-purple-950/40'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {st.label}
+                </button>
+              ))}
+            </div>
 
-          <span className="text-slate-400 mr-2">الدفع:</span>
-          {(['all', 'paid', 'unpaid'] as const).map((p) => (
-            <button
-              key={p}
-              onClick={() => setPaymentFilter(p)}
-              className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer whitespace-nowrap ${
-                paymentFilter === p
-                  ? 'bg-purple-600 text-white shadow'
-                  : 'bg-slate-800/80 text-slate-400 hover:text-white'
-              }`}
-            >
-              {p === 'all' ? 'الكل' : p === 'paid' ? 'دفع ✅' : 'لم يدفع ❌'}
-            </button>
-          ))}
+            {/* Subject Dropdown Filter (المادة الدراسية) */}
+            <div className="flex items-center gap-1.5 min-w-[170px] max-w-[240px]">
+              <span className="text-[11px] text-slate-400 flex items-center gap-1 font-bold flex-shrink-0">
+                <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
+                <span>المادة:</span>
+              </span>
+              <select
+                value={subjectFilter}
+                onChange={(e) => setSubjectFilter(e.target.value)}
+                className="w-full rounded-xl bg-slate-950 border border-slate-800 px-2.5 py-1 text-[11px] text-white focus:outline-none focus:border-indigo-400 transition"
+              >
+                <option value="all">جميع المواد ({students.length})</option>
+                {availableSubjects.map((subj) => {
+                  const count = students.filter(
+                    (s) => normalizeArabicText(s.subject || '') === normalizeArabicText(subj)
+                  ).length;
+                  return (
+                    <option key={subj} value={subj}>
+                      {subj} ({count})
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          </div>
+
+          {/* Row 2: Secondary Filters (Class Type & Payment Status) */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-2 border-t border-slate-800/60">
+            <div className="flex items-center gap-2 flex-nowrap shrink-0 text-[11px]">
+              {/* Class Type */}
+              <div className="flex items-center gap-1">
+                <span className="text-slate-400 flex items-center gap-1">
+                  <Filter className="w-3 h-3 text-purple-400" />
+                  <span>النوع:</span>
+                </span>
+                {[
+                  { id: 'all', label: 'الكل' },
+                  { id: 'online', label: 'أونلاين 🌐' },
+                  { id: 'in_person', label: 'شخصي 👤' },
+                  { id: 'trial', label: 'تجريبية ✨' },
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setTypeFilter(t.id as any)}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer whitespace-nowrap ${
+                      typeFilter === t.id
+                        ? 'bg-purple-600 text-white shadow'
+                        : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Payment Filter */}
+              <div className="flex items-center gap-1 mr-2">
+                <span className="text-slate-400">الدفع:</span>
+                {(['all', 'paid', 'unpaid'] as const).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPaymentFilter(p)}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer whitespace-nowrap ${
+                      paymentFilter === p
+                        ? 'bg-purple-600 text-white shadow'
+                        : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {p === 'all' ? 'الكل' : p === 'paid' ? 'دفع ✅' : 'لم يدفع ❌'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Reset Button & Count */}
+            <div className="flex items-center gap-2 mr-auto pt-1 sm:pt-0">
+              <span className="text-[10px] text-slate-400 font-mono">
+                {filteredStudents.length} / {students.length} طالب
+              </span>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="inline-flex items-center gap-1 text-[11px] text-purple-400 hover:text-purple-300 font-bold transition cursor-pointer"
+                  title="إلغاء جميع الفلاتر"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>إعادة ضبط</span>
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Students List */}
       {filteredStudents.length === 0 ? (
-        <div className="rounded-2xl bg-slate-900/50 border border-slate-800 p-8 text-center">
-          <BookOpen className="w-10 h-10 mx-auto text-purple-400/60 mb-2" />
-          <p className="text-sm font-bold text-slate-200">
+        <div className="rounded-2xl bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 p-8 text-center">
+          <BookOpen className="w-10 h-10 mx-auto text-purple-600 dark:text-purple-400/60 mb-2" />
+          <p className="text-sm font-bold text-slate-900 dark:text-slate-200">
             {students.length === 0 ? 'لم تقم بإضافة أي طالب بعد' : 'لا توجد نتائج مطابقة للبحث'}
           </p>
-          <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xs mx-auto">
             {students.length === 0
               ? 'أضف أول طالب لك لبدء تسجيل الحضور ومتابعة الدروس والمدفوعات.'
               : 'جرب تغيير معايير البحث أو الفلترة.'}
@@ -1130,14 +1817,23 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
           {filteredStudents.map((s) => {
             const sLessons = allLessonsMap[s.id] || [];
             const hourlyRate = s.hourlyRate || (s.monthlyFee ? Math.round(s.monthlyFee / 4) : 100);
+            const isMonthly = s.billingType === 'monthly' || (!s.billingType && ((s.groupIds && s.groupIds.length > 0) || s.classType === 'center'));
+            const monthlyDue = s.monthlyFee || (s.customFees && s.groupIds && s.groupIds[0] ? s.customFees[s.groupIds[0]] : 300);
             const unsettledLessons = sLessons.filter((l) => !l.settled && isLessonFinanciallyCounted(l));
             const pendingMinutes = unsettledLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
             const pendingHours = (pendingMinutes / 60).toFixed(1);
-            const pendingAmount = unsettledLessons.reduce((acc, l) => {
-              const dur = l.duration || 60;
-              const rate = l.hourlyRate || hourlyRate;
-              return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
-            }, 0);
+
+            // Group students: fixed monthly fee unaffected by attendance/lessons
+            // Individual students: hourly rate * attended classes
+            const isPaid = s.paymentStatus === 'paid';
+            const isPartial = s.paymentStatus === 'partial';
+            const pendingAmount = isMonthly
+              ? (isPaid ? 0 : isPartial ? Math.round(monthlyDue / 2) : monthlyDue)
+              : unsettledLessons.reduce((acc, l) => {
+                  const dur = l.duration || 60;
+                  const rate = l.hourlyRate || hourlyRate;
+                  return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
+                }, 0);
             const totalMinutes = sLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
             const totalHours = (totalMinutes / 60).toFixed(1);
 
@@ -1153,9 +1849,10 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                     className="cursor-pointer flex-1"
                   >
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-sm font-bold text-white hover:text-purple-300 transition">
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white hover:text-purple-600 dark:hover:text-purple-300 transition">
                         {s.name}
                       </h3>
+                      <AttendanceIndicator student={s} />
                       {getClassTypeBadge(s.classType)}
 
                       {/* Paid Classes Running Low Alert Badge */}
@@ -1188,9 +1885,13 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                       )}
                     </div>
                     <p className="text-xs text-slate-400 mt-1">
-                      مادة: <span className="text-purple-300 font-medium">{s.subject}</span> •{' '}
+                      مادة: <span className="text-purple-300 font-medium">{s.subject}</span>
+                      <input type="date" defaultValue={new Date().toISOString().split('T')[0]} className="bg-slate-800 text-[10px] text-white rounded px-1 py-0.5 border border-slate-700 cursor-pointer mx-1" title="تعديل تاريخ الحصة" />
+                      •{' '}
                       <span className="text-amber-300 font-bold font-mono">
-                        المستحقات: {pendingAmount} {currency} ({pendingHours} ساعة)
+                        {isMonthly
+                          ? `المستحقات: ${pendingAmount} ${currency} (اشتراك شهري)`
+                          : `المستحقات: ${pendingAmount} ${currency} (${pendingHours} ساعة)`}
                       </span>
                       {s.learningStyle && (
                         <span className="mr-2 text-[11px] text-purple-300/80 truncate max-w-[150px] inline-block align-middle">
@@ -1199,56 +1900,87 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                       )}
                     </p>
                     <p className="text-[10px] text-slate-500 mt-0.5 font-mono">
-                      سعر الساعة: {hourlyRate} {currency} • إجمالي الساعات: {totalHours} س ({sLessons.length} حصص)
+                      {isMonthly
+                        ? `نظام الحساب: اشتراك شهري ثابت (${monthlyDue} ${currency}/شهر) • الحصص: ${sLessons.length}`
+                        : `سعر الساعة: ${hourlyRate} ${currency} • إجمالي الساعات: ${totalHours} س (${sLessons.length} حصص)`}
                     </p>
+                    {s.notes && (
+                      <p className="text-[11px] text-amber-200/90 bg-amber-950/40 border border-amber-500/30 rounded-lg px-2.5 py-1 mt-1.5 flex items-center gap-1.5 line-clamp-1" title={s.notes}>
+                        <FileText className="w-3 h-3 text-amber-400 flex-shrink-0" />
+                        <span className="font-medium text-[10px] text-amber-400 flex-shrink-0">ملاحظات خاصة:</span>
+                        <span className="truncate">{s.notes}</span>
+                      </p>
+                    )}
                   </div>
 
-                  {/* Dues Status Badge / Quick Settle Indicator */}
-                  <div
-                    onClick={() => handleOpenStudentProfile(s)}
-                    className="cursor-pointer flex-shrink-0"
-                  >
-                    {pendingAmount > 0 ? (
-                      <span
-                        className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-950/80 border border-amber-500/40 text-amber-300 hover:bg-amber-900/80 transition shadow"
-                        title="مستحقات معلقة - اضغط لتفاصيل الحساب والتصفية"
-                      >
-                        <Clock className="w-3 h-3 text-amber-400" />
-                        <span>مستحق: {pendingAmount} {currency}</span>
-                      </span>
-                    ) : (
-                      <span
-                        className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/80 transition shadow"
-                        title="خالص الحساب - لا توجد مستحقات معلقة"
-                      >
-                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                        <span>خالص الحساب ✅</span>
-                      </span>
-                    )}
+                  {/* Dues Status Badge / Quick Payment Toggle */}
+                  <div className="flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void toggleStudentPaymentStatus(profile.id, s.id, s.paymentStatus || 'unpaid').catch((err) => {
+                          console.error('Error toggling payment status:', err);
+                        });
+                      }}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold transition shadow cursor-pointer active:scale-95 ${
+                        s.paymentStatus === 'paid'
+                          ? 'bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/80'
+                          : s.paymentStatus === 'partial'
+                          ? 'bg-amber-950/80 border border-amber-500/40 text-amber-300 hover:bg-amber-900/80'
+                          : 'bg-rose-950/80 border border-rose-500/40 text-rose-300 hover:bg-rose-900/80'
+                      }`}
+                      title="حالة الدفع (اضغط للتبديل: دفع كامل / دفع جزئي / لم يدفع)"
+                    >
+                      {s.paymentStatus === 'paid' ? (
+                        <>
+                          <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                          <span>خالص الحساب ✅</span>
+                        </>
+                      ) : s.paymentStatus === 'partial' ? (
+                        <>
+                          <Clock className="w-3 h-3 text-amber-400" />
+                          <span>سداد جزئي ⏳ ({pendingAmount} {currency})</span>
+                        </>
+                      ) : (
+                        <>
+                          <Clock className="w-3 h-3 text-rose-400" />
+                          <span>مستحق: {pendingAmount} {currency} ❌</span>
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
 
                 {/* Action Buttons Row */}
-                <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    {s.whatsapp ? (
-                      <a
-                        href={`https://wa.me/${s.whatsapp.replace(/[^0-9]/g, '')}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-950/60 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-900/50 transition"
-                      >
-                        <MessageCircle className="w-3.5 h-3.5" />
-                        <span>واتساب</span>
-                      </a>
-                    ) : (
-                      <span className="text-[11px] text-slate-500 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800">
-                        بدون واتساب
-                      </span>
-                    )}
+                <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {/* WhatsApp Custom Reminder Button */}
                     <button
+                      type="button"
+                      onClick={() => handleOpenWhatsAppReminderModal(s)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-md shadow-emerald-950/40 active:scale-95 transition cursor-pointer"
+                      title="إرسال تذكير واتساب مخصص (موعد الحصة القادم / المستحقات المالية)"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span>تذكير واتساب 📲</span>
+                    </button>
+
+                    {/* Record Attendance Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleOpenAttendanceModal(s)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md shadow-blue-950/40 active:scale-95 transition cursor-pointer"
+                      title="تسجيل حالة الحضور (حاضر، غائب، متأخر) وحفظها في مجموعة attendance"
+                    >
+                      <UserCheck className="w-3.5 h-3.5" />
+                      <span>تسجيل الحضور 📋</span>
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => handleOpenStudentProfile(s)}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-950/60 border border-purple-500/30 text-purple-300 hover:bg-purple-900/50 transition cursor-pointer"
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-purple-950/60 border border-purple-500/30 text-purple-300 hover:bg-purple-900/50 transition cursor-pointer font-bold text-xs"
                     >
                       <BookOpen className="w-3.5 h-3.5" />
                       <span>متابعة وتصفية</span>
@@ -1296,6 +2028,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
             <X className="w-4 h-4" />
           </button>
         </div>
+      )}
+        </>
       )}
 
       {/* Add / Edit Student Modal */}
@@ -1370,18 +2104,39 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">المادة الدراسية *</label>
-                <input
-                  type="text"
-                  value={formSubject}
+                <select
+                  value={ALL_SUBJECTS.includes(formSubject) ? formSubject : 'أخرى'}
                   onChange={(e) => {
-                    setFormSubject(e.target.value);
+                    const val = e.target.value;
+                    if (val !== 'أخرى') {
+                      setFormSubject(val);
+                    } else {
+                      setFormSubject('');
+                    }
                     if (formErrors.subject) setFormErrors((prev) => ({ ...prev, subject: undefined }));
                   }}
-                  placeholder="مثال: رياضيات / فيزياء / لغة إنجليزية"
                   className={`w-full rounded-xl bg-slate-800 border px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 ${
                     formErrors.subject ? 'border-rose-500' : 'border-slate-700'
                   }`}
-                />
+                >
+                  <option value="" disabled>-- اختر المادة الدراسية --</option>
+                  {ALL_SUBJECTS.map((subj) => (
+                    <option key={subj} value={subj}>
+                      {subj}
+                    </option>
+                  ))}
+                </select>
+
+                {!ALL_SUBJECTS.includes(formSubject) && (
+                  <input
+                    type="text"
+                    value={formSubject}
+                    onChange={(e) => setFormSubject(e.target.value)}
+                    placeholder="اكتب اسم المادة المخصصة..."
+                    className="w-full mt-2 rounded-xl bg-slate-800 border border-purple-500/50 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
+                  />
+                )}
+
                 {formErrors.subject && (
                   <p className="text-[10px] text-rose-400 font-bold mt-1 flex items-center gap-1">
                     <AlertCircle className="w-3 h-3 shrink-0" />
@@ -1465,36 +2220,112 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                 )}
               </div>
 
+              {/* Billing Type Selector */}
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center justify-between">
-                  <span>سعر الساعة (Hourly Rate) *</span>
-                  <span className="text-[10px] text-amber-300 font-normal">تُحسب قيمة كل حصة تلقائياً</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    value={formHourlyRate}
-                    onChange={(e) => {
-                      setFormHourlyRate(Number(e.target.value));
-                      if (formErrors.hourlyRate) setFormErrors((prev) => ({ ...prev, hourlyRate: undefined }));
-                    }}
-                    placeholder="100"
-                    min={0}
-                    className={`w-full rounded-xl bg-slate-800 border px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 ${
-                      formErrors.hourlyRate ? 'border-rose-500' : 'border-slate-700'
-                    }`}
-                  />
-                  <span className="absolute left-3 top-2 text-xs text-slate-400 pointer-events-none">
-                    {currency} / ساعة
+                <label className="block text-xs font-medium text-slate-300 mb-1.5 flex items-center justify-between">
+                  <span>نظام الحساب والفوترة *</span>
+                  <span className="text-[10px] text-purple-300 font-normal">
+                    {formBillingType === 'monthly' ? 'اشتراك شهري ثابت (مجموعة)' : 'حساب بالساعة / الحصة (فردي)'}
                   </span>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormBillingType('monthly');
+                      if (formErrors.billingType) setFormErrors((prev) => ({ ...prev, billingType: undefined }));
+                    }}
+                    className={`p-2.5 rounded-2xl text-xs font-bold border transition cursor-pointer flex flex-col items-center justify-center gap-1 text-center ${
+                      formBillingType === 'monthly'
+                        ? 'bg-purple-600/30 border-purple-400 text-purple-200 ring-2 ring-purple-400/40 shadow-lg scale-[1.02]'
+                        : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span>اشتراك شهري ثابت 🏫</span>
+                    <span className="text-[9px] opacity-75 font-normal">طالب مجموعة / سنتر</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormBillingType('hourly');
+                      if (formErrors.billingType) setFormErrors((prev) => ({ ...prev, billingType: undefined }));
+                    }}
+                    className={`p-2.5 rounded-2xl text-xs font-bold border transition cursor-pointer flex flex-col items-center justify-center gap-1 text-center ${
+                      formBillingType === 'hourly'
+                        ? 'bg-sky-600/30 border-sky-400 text-sky-200 ring-2 ring-sky-400/40 shadow-lg scale-[1.02]'
+                        : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span>حساب بالساعة / الحصة 👤</span>
+                    <span className="text-[9px] opacity-75 font-normal">طالب فردي / خاص</span>
+                  </button>
                 </div>
-                {formErrors.hourlyRate && (
-                  <p className="text-[10px] text-rose-400 font-bold mt-1 flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3 shrink-0" />
-                    <span>{formErrors.hourlyRate}</span>
-                  </p>
-                )}
               </div>
+
+              {formBillingType === 'monthly' ? (
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center justify-between">
+                    <span>الاشتراك الشهري الثابت (Monthly Fee) *</span>
+                    <span className="text-[10px] text-amber-300 font-normal">ثابت ولا يتأثر بالحضور أو الغياب</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value={formMonthlyFee}
+                      onChange={(e) => {
+                        setFormMonthlyFee(Number(e.target.value));
+                        if (formErrors.monthlyFee) setFormErrors((prev) => ({ ...prev, monthlyFee: undefined }));
+                      }}
+                      placeholder="300"
+                      min={0}
+                      className={`w-full rounded-xl bg-slate-800 border px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 ${
+                        formErrors.monthlyFee ? 'border-rose-500' : 'border-slate-700'
+                      }`}
+                    />
+                    <span className="absolute left-3 top-2 text-xs text-slate-400 pointer-events-none">
+                      {currency} / شهرياً
+                    </span>
+                  </div>
+                  {formErrors.monthlyFee && (
+                    <p className="text-[10px] text-rose-400 font-bold mt-1 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3 shrink-0" />
+                      <span>{formErrors.monthlyFee}</span>
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center justify-between">
+                    <span>سعر الساعة (Hourly Rate) *</span>
+                    <span className="text-[10px] text-amber-300 font-normal">تُحسب قيمة كل حصة تلقائياً بالحضور</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value={formHourlyRate}
+                      onChange={(e) => {
+                        setFormHourlyRate(Number(e.target.value));
+                        if (formErrors.hourlyRate) setFormErrors((prev) => ({ ...prev, hourlyRate: undefined }));
+                      }}
+                      placeholder="100"
+                      min={0}
+                      className={`w-full rounded-xl bg-slate-800 border px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 ${
+                        formErrors.hourlyRate ? 'border-rose-500' : 'border-slate-700'
+                      }`}
+                    />
+                    <span className="absolute left-3 top-2 text-xs text-slate-400 pointer-events-none">
+                      {currency} / ساعة
+                    </span>
+                  </div>
+                  {formErrors.hourlyRate && (
+                    <p className="text-[10px] text-rose-400 font-bold mt-1 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3 shrink-0" />
+                      <span>{formErrors.hourlyRate}</span>
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Prepaid Class Balance (Optional) */}
               <div>
@@ -2000,22 +2831,33 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
               </div>
             </div>
 
-            {/* SECTION 1: SECTION "حسابات ومستحقات الطالب (نظام سعر الساعة)" */}
+            {/* SECTION 1: SECTION "حسابات ومستحقات الطالب" */}
             {(() => {
+              const isMonthly = selectedProfileStudent.billingType === 'monthly' || (!selectedProfileStudent.billingType && ((selectedProfileStudent.groupIds && selectedProfileStudent.groupIds.length > 0) || selectedProfileStudent.classType === 'center'));
+              const monthlyDue = selectedProfileStudent.monthlyFee || (selectedProfileStudent.customFees && selectedProfileStudent.groupIds && selectedProfileStudent.groupIds[0] ? selectedProfileStudent.customFees[selectedProfileStudent.groupIds[0]] : 300);
               const hourlyRate = selectedProfileStudent.hourlyRate || (selectedProfileStudent.monthlyFee ? Math.round(selectedProfileStudent.monthlyFee / 4) : 100);
               const unsettledLessons = studentLessons.filter((l) => !l.settled && isLessonFinanciallyCounted(l));
               const pendingMinutes = unsettledLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
               const pendingHours = (pendingMinutes / 60).toFixed(1);
-              const pendingAmount = unsettledLessons.reduce((acc, l) => {
-                const dur = l.duration || 60;
-                const rate = l.hourlyRate || hourlyRate;
-                return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
-              }, 0);
-              const collectedAmount = studentLessons.filter((l) => l.settled).reduce((acc, l) => {
-                const dur = l.duration || 60;
-                const rate = l.hourlyRate || hourlyRate;
-                return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
-              }, 0);
+              const isPaid = selectedProfileStudent.paymentStatus === 'paid';
+              const isPartial = selectedProfileStudent.paymentStatus === 'partial';
+
+              const pendingAmount = isMonthly
+                ? (isPaid ? 0 : isPartial ? Math.round(monthlyDue / 2) : monthlyDue)
+                : unsettledLessons.reduce((acc, l) => {
+                    const dur = l.duration || 60;
+                    const rate = l.hourlyRate || hourlyRate;
+                    return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
+                  }, 0);
+
+              const collectedAmount = isMonthly
+                ? (isPaid ? monthlyDue : isPartial ? Math.round(monthlyDue / 2) : 0)
+                : studentLessons.filter((l) => l.settled).reduce((acc, l) => {
+                    const dur = l.duration || 60;
+                    const rate = l.hourlyRate || hourlyRate;
+                    return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
+                  }, 0);
+
               const totalMinutes = studentLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
               const totalHours = (totalMinutes / 60).toFixed(1);
 
@@ -2028,7 +2870,11 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                       </div>
                       <div>
                         <span className="text-xs font-bold text-white block">حسابات ومستحقات الطالب</span>
-                        <span className="text-[10px] text-emerald-300 font-semibold">سعر الساعة: {hourlyRate} {currency}/ساعة</span>
+                        <span className="text-[10px] text-emerald-300 font-semibold">
+                          {isMonthly
+                            ? `نظام الحساب: اشتراك شهري ثابت (${monthlyDue} ${currency}/شهر)`
+                            : `سعر الساعة: ${hourlyRate} ${currency}/ساعة`}
+                        </span>
                       </div>
                     </div>
 
@@ -2051,7 +2897,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                       <span className="font-bold text-amber-300 font-mono text-sm block mt-0.5">
                         {pendingAmount} {currency}
                       </span>
-                      <span className="text-[9px] text-slate-400">({pendingHours} ساعة غير مصفاة)</span>
+                      <span className="text-[9px] text-slate-400">
+                        {isMonthly ? '(اشتراك شهري ثابت)' : `(${pendingHours} ساعة غير مصفاة)`}
+                      </span>
                     </div>
 
                     <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
@@ -2059,27 +2907,48 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                       <span className="font-bold text-emerald-400 font-mono text-sm block mt-0.5">
                         {collectedAmount} {currency}
                       </span>
-                      <span className="text-[9px] text-emerald-300/80">تم تصفيتها سابقاً</span>
+                      <span className="text-[9px] text-emerald-300/80">
+                        {isMonthly ? (isPaid ? 'تم السداد بالكامل' : 'لم يسدد بعد') : 'تم تصفيتها سابقاً'}
+                      </span>
                     </div>
 
                     <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
-                      <span className="text-[10px] text-slate-400 block">إجمالي الساعات</span>
-                      <span className="font-bold text-white font-mono text-sm block mt-0.5">
-                        {totalHours} س
+                      <span className="text-[10px] text-slate-400 block">
+                        {isMonthly ? 'إجمالي الحصص' : 'إجمالي الساعات'}
                       </span>
-                      <span className="text-[9px] text-purple-300">{studentLessons.length} حصة كلية</span>
+                      <span className="font-bold text-white font-mono text-sm block mt-0.5">
+                        {isMonthly ? `${studentLessons.length} حصص` : `${totalHours} س`}
+                      </span>
+                      <span className="text-[9px] text-purple-300">
+                        {isMonthly ? `${totalHours} س منفذة` : `${studentLessons.length} حصة كلية`}
+                      </span>
                     </div>
                   </div>
 
-                  {/* Actions: Settle Account Button, PDF Statement & WhatsApp Statement */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                  {/* Actions: Settle Account, Partial Payment, PDF Statement & WhatsApp Statement */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
                     <button
                       type="button"
                       onClick={() => setShowConfirmSettleStudent(selectedProfileStudent)}
                       className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-md active:scale-98"
                     >
                       <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
-                      <span>تصفية الحساب 💰</span>
+                      <span>تصفية كاملة 💰</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!selectedProfileStudent) return;
+                        const next: PaymentStatus = selectedProfileStudent.paymentStatus === 'partial' ? 'unpaid' : 'partial';
+                        await toggleStudentPaymentStatus(profile.id, selectedProfileStudent.id, selectedProfileStudent.paymentStatus || 'unpaid', next);
+                        setSelectedProfileStudent((prev) => prev ? { ...prev, paymentStatus: next } : null);
+                      }}
+                      className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-amber-600/30 hover:bg-amber-600/50 border border-amber-500/40 text-amber-200 text-xs font-bold transition cursor-pointer active:scale-98"
+                      title="تسجيل دفع جزئي للطالب"
+                    >
+                      <Clock className="w-3.5 h-3.5 text-amber-300 flex-shrink-0" />
+                      <span>{selectedProfileStudent.paymentStatus === 'partial' ? 'إلغاء الجزئي ↩️' : 'دفع جزئي ⏳'}</span>
                     </button>
 
                     <button
@@ -2098,7 +2967,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                       className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-xs font-semibold transition cursor-pointer active:scale-98"
                     >
                       <MessageCircle className="w-3.5 h-3.5 text-amber-300 flex-shrink-0" />
-                      <span>مطالبة مالية (واتساب)</span>
+                      <span>مطالبة (واتساب)</span>
                     </button>
                   </div>
                 </div>
@@ -2196,26 +3065,26 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
               )}
             </div>
 
-            {/* SECTION 2.5: SECTION "الملاحظات الإضافية" (Collapsible - مغلق افتراضياً) */}
-            <div className="rounded-2xl bg-slate-950/70 border border-slate-800 overflow-hidden transition-all shadow-md">
+            {/* SECTION 2.5: SECTION "الملاحظات الخاصة والتقدم الأكاديمي" */}
+            <div className="rounded-2xl bg-slate-950/70 border border-purple-500/30 overflow-hidden transition-all shadow-md">
               <button
                 type="button"
                 onClick={() => setIsProfileNotesOpen(!isProfileNotesOpen)}
                 className="w-full p-3.5 flex items-center justify-between text-right cursor-pointer hover:bg-slate-900/60 transition"
               >
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-slate-800 text-slate-300 flex items-center justify-center border border-slate-700 flex-shrink-0">
+                  <div className="w-8 h-8 rounded-xl bg-purple-950/80 text-purple-300 flex items-center justify-center border border-purple-500/40 flex-shrink-0">
                     <FileText className="w-4 h-4 text-purple-400" />
                   </div>
                   <div>
                     <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <span>الملاحظات الإضافية</span>
-                      <span className="text-[10px] text-slate-400 font-normal">
-                        ({profileNotes ? 'يوجد ملاحظات 📝' : 'ملاحظات خاصة'})
+                      <span>الملاحظات الخاصة والتقدم الأكاديمي</span>
+                      <span className="text-[10px] text-purple-300 font-medium px-2 py-0.5 rounded-full bg-purple-900/40 border border-purple-500/30">
+                        {profileNotes ? 'يوجد ملاحظات 📝' : 'ملاحظات المعلم'}
                       </span>
                     </h4>
                     <p className="text-[10px] text-slate-400">
-                      ملاحظات خاصة عن الطالب، المواعيد أو متطلبات ولي الأمر
+                      سجل الملاحظات الأكاديمية أو السلوكية والتوصيات الخاصة بالطالب
                     </p>
                   </div>
                 </div>
@@ -2232,22 +3101,62 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
               </button>
 
               {isProfileNotesOpen && (
-                <div className="p-3.5 pt-0 space-y-2 border-t border-slate-800/80 mt-1">
+                <div className="p-3.5 pt-1 space-y-3 border-t border-slate-800/80">
+                  {/* Quick Preset Tags */}
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1.5">
+                      💡 اختصارات وسوم سريعة للملاحظات:
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        'ممتاز في حل التمارين 🚀',
+                        'يلزمه متابعة التأسيس 📐',
+                        'ملتزم بالواجبات ✍️',
+                        'تحسن ملحوظ في الأداء 📈',
+                        'يحتاج تركيز على الحفظ 🧠',
+                        'يرجى التواصل مع ولي الأمر 📱',
+                      ].map((tag) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => {
+                            if (!profileNotes.trim()) {
+                              setProfileNotes(tag);
+                            } else if (!profileNotes.includes(tag)) {
+                              setProfileNotes(`${profileNotes.trim()}\n• ${tag}`);
+                            }
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-purple-900/40 border border-slate-700/80 text-[10px] text-slate-300 hover:text-purple-200 transition cursor-pointer active:scale-95"
+                        >
+                          + {tag}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <textarea
                     value={profileNotes}
                     onChange={(e) => setProfileNotes(e.target.value)}
-                    placeholder="سجل ملاحظاتك الإضافية عن الطالب هنا..."
-                    rows={2}
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2 text-xs text-slate-200 focus:outline-none focus:border-purple-400 mt-2"
+                    placeholder="سجل ملاحظاتك الخاصة، نقاط القوة والضعف، أو توصيات المتابعة..."
+                    rows={3}
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700/80 p-2.5 text-xs text-slate-200 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400/50 transition resize-y"
                   />
-                  <div className="flex justify-end">
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-[10px] text-slate-400">
+                      {profileNotes.length > 0 ? `${profileNotes.length} حرف` : 'تُحفظ في سجّل الطالب ومتاحة في التقارير'}
+                    </span>
                     <button
                       type="button"
                       disabled={savingNotes}
-                      onClick={handleSaveProfileNotes}
-                      className="px-3 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold transition disabled:opacity-50 cursor-pointer"
+                      onClick={async () => {
+                        await handleSaveProfileNotes();
+                        setToastMessage({ type: 'success', text: 'تم حفظ ملاحظات الطالب بنجاح! 📝' });
+                        setTimeout(() => setToastMessage(null), 3000);
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition shadow-md shadow-purple-950/40 disabled:opacity-50 cursor-pointer active:scale-95 flex items-center gap-1.5"
                     >
-                      {savingNotes ? 'جارٍ الحفظ...' : 'حفظ الملاحظات'}
+                      {savingNotes ? 'جارٍ الحفظ...' : 'حفظ الملاحظات 💾'}
                     </button>
                   </div>
                 </div>
@@ -3098,6 +4007,265 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
           defaultReportType={pdfExportReportType}
         />
       )}
+
+      {/* WhatsApp Custom Reminder Modal (تذكير مخصص عبر واتساب) */}
+      {reminderModalStudent && (
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 text-right animate-in fade-in duration-200"
+          dir="rtl"
+        >
+          <div className="w-full max-w-lg bg-slate-900 border border-emerald-500/40 rounded-3xl p-5 sm:p-6 shadow-2xl relative space-y-4 max-h-[92vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-emerald-900/40 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-600/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30 shadow-inner">
+                  <MessageCircle className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-white flex items-center gap-1.5">
+                    <span>تذكير واتساب مخصص</span>
+                    <span className="text-xs text-emerald-400 font-bold">📲</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    الطالب: <strong className="text-purple-300">{reminderModalStudent.name}</strong> •{' '}
+                    <span className="font-mono text-slate-300" dir="ltr">
+                      {reminderModalStudent.whatsapp || reminderModalStudent.phone || 'بدون رقم مسجل'}
+                    </span>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReminderModalStudent(null)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Reminder Type Selector Tabs */}
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-bold text-slate-300">اختر نوع التذكير:</label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                {[
+                  { id: 'schedule', label: 'موعد الحصة ⏰' },
+                  { id: 'dues', label: 'المستحقات 💰' },
+                  { id: 'prepaid', label: 'رصيد الحصص ⏳' },
+                  { id: 'custom', label: 'رسالة مخصصة ✍️' },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => handleSwitchReminderType(tab.id as any)}
+                    className={`px-2 py-2 rounded-xl text-xs font-bold transition cursor-pointer border text-center ${
+                      reminderType === tab.id
+                        ? 'bg-emerald-600 text-white border-emerald-500 shadow-md shadow-emerald-950/40'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Message Preview & Edit Box */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1">
+                  <span>نص الرسالة (يمكنك تعديلها بحرية قبل الإرسال):</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={handleCopyReminder}
+                  className="inline-flex items-center gap-1 text-[11px] text-purple-400 hover:text-purple-300 font-bold transition cursor-pointer"
+                >
+                  {copiedReminder ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-400">تم النسخ!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>نسخ النص</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <textarea
+                rows={7}
+                value={reminderCustomText}
+                onChange={(e) => setReminderCustomText(e.target.value)}
+                placeholder="اكتب أو عدل نص التذكير هنا..."
+                className="w-full rounded-2xl bg-slate-950 border border-slate-700/80 p-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition font-sans leading-relaxed resize-y"
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={handleSendReminderViaWhatsApp}
+                className="flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black shadow-lg shadow-emerald-950/50 transition active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+              >
+                <Send className="w-4 h-4" />
+                <span>إرسال عبر WhatsApp 🚀</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setReminderModalStudent(null)}
+                className="py-3 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition cursor-pointer"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Attendance Record Modal (تسجيل الحضور في مجموعة attendance بـ Firestore) */}
+      {attendanceModalStudent && (
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 text-right animate-in fade-in duration-200"
+          dir="rtl"
+        >
+          <div className="w-full max-w-md bg-slate-900 border border-blue-500/40 rounded-3xl p-5 sm:p-6 shadow-2xl relative space-y-4">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-blue-900/40 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-blue-600/20 text-blue-300 flex items-center justify-center border border-blue-500/30 shadow-inner">
+                  <UserCheck className="w-5 h-5 text-blue-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-white flex items-center gap-1.5">
+                    <span>تسجيل الحضور</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    الطالب: <strong className="text-purple-300">{attendanceModalStudent.name}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAttendanceModalStudent(null)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Success Message */}
+            {attendanceSuccessMsg && (
+              <div className="p-3 rounded-2xl bg-emerald-950/90 border border-emerald-500/50 text-emerald-300 text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                <span>{attendanceSuccessMsg}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveAttendanceSubmit} className="space-y-4">
+              {/* Status Selector */}
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <UserCheck className="w-3.5 h-3.5 text-blue-400" />
+                  <span>حالة الحضور <span className="text-rose-400">*</span></span>
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'present', label: 'حاضر ✅', activeClass: 'bg-emerald-600 border-emerald-500 text-white shadow-lg shadow-emerald-950/50' },
+                    { id: 'absent', label: 'غائب ❌', activeClass: 'bg-rose-600 border-rose-500 text-white shadow-lg shadow-rose-950/50' },
+                    { id: 'late', label: 'متأخر ⏳', activeClass: 'bg-amber-600 border-amber-500 text-white shadow-lg shadow-amber-950/50' },
+                  ].map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setAttendanceStatus(item.id as any)}
+                      className={`py-2.5 px-3 rounded-2xl text-xs font-bold transition cursor-pointer border text-center ${
+                        attendanceStatus === item.id
+                          ? item.activeClass
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Date Input */}
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-blue-400" />
+                  <span>تاريخ الحصة <span className="text-rose-400">*</span></span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={attendanceDate}
+                  onChange={(e) => setAttendanceDate(e.target.value)}
+                  className="w-full rounded-2xl bg-slate-950 border border-slate-700/80 px-4 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-blue-400 transition"
+                />
+              </div>
+
+              {/* Notes Input */}
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                  ملاحظات الحضور (اختياري)
+                </label>
+                <textarea
+                  rows={2}
+                  value={attendanceNotes}
+                  onChange={(e) => setAttendanceNotes(e.target.value)}
+                  placeholder="سبب التأخير أو الغياب أو تفاصيل الحصة..."
+                  className="w-full rounded-2xl bg-slate-950 border border-slate-700/80 px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-400 transition"
+                />
+              </div>
+
+              {/* Submit Buttons */}
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="submit"
+                  disabled={isSavingAttendance}
+                  className="flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-black shadow-lg shadow-blue-950/50 transition active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                >
+                  {isSavingAttendance ? (
+                    <span>جارٍ الحفظ في Firestore...</span>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>حفظ حالة الحضور</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setAttendanceModalStudent(null)}
+                  className="py-3 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition cursor-pointer"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Choice Modal: Individual Student or Group */}
+      <AddChoiceModal
+        isOpen={showAddChoiceModal}
+        onClose={() => setShowAddChoiceModal(false)}
+        onSelectIndividual={() => {
+          setShowAddChoiceModal(false);
+          handleOpenAddModal();
+        }}
+        onSelectGroup={() => {
+          setShowAddChoiceModal(false);
+          setActiveMainView('groups_and_individuals');
+        }}
+      />
     </div>
   );
 };

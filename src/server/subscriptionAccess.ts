@@ -176,14 +176,6 @@ export async function authorizeActiveSubscription(
 /* Express-compatible middleware (structural types, no express import) */
 /* ------------------------------------------------------------------ */
 
-interface GuardRequest {
-  user?: { uid?: string };
-}
-interface GuardResponse {
-  status(code: number): { json(body: unknown): unknown };
-}
-type GuardNext = () => void;
-
 /**
  * Builds a middleware that must run AFTER the Firebase ID-token middleware
  * (which sets req.user from the verified token).

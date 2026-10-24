@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Remix سند المعلم | المنصة الذكية للمعلمين الخصوصيين</title>
+    <meta name="description" content="تطبيق ويب متكامل لتنظيم الحصص والطلاب والمواعيد والمدفوعات للمعلمين الخصوصيين مع إدارة الاشتراكات." />
+    <meta property="og:title" content="Remix سند المعلم | المنصة الذكية للمعلمين الخصوصيين" />
+    <meta property="og:description" content="تطبيق ويب متكامل لتنظيم الحصص والطلاب والمواعيد والمدفوعات للمعلمين الخصوصيين مع إدارة الاشتراكات." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#4c1d95" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="سند المعلم" />
+    <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+    <script>
+      // Preamble initialization for React Fast Refresh
+      window.$RefreshReg$ = window.$RefreshReg$ || function() {};
+      window.$RefreshSig$ = window.$RefreshSig$ || function() { return function(type) { return type; }; };
+      window.__vite_plugin_react_preamble_installed__ = true;
+
+      // Comply with environment constraint: "HMR: Disabled. Ignore WebSocket errors."
+      (function() {
+        if (typeof window !== 'undefined' && window.WebSocket) {
+          const OrigWebSocket = window.WebSocket;
+          function isViteHmr(url, protocols) {
+            if (protocols === 'vite-hmr' || protocols === 'vite-ping') return true;
+            if (Array.isArray(protocols) && (protocols.includes('vite-hmr') || protocols.includes('vite-ping'))) return true;
+            if (typeof url === 'string' && (url.includes('token=') || url.includes('/@vite/client') || url.includes('vite-hmr'))) return true;
+            return false;
+          }
+
+          try {
+            window.WebSocket = new Proxy(OrigWebSocket, {
+              construct(target, args, newTarget) {
+                const [url, protocols] = args;
+                if (isViteHmr(url, protocols)) {
+                  const mockWs = new EventTarget();
+                  mockWs.url = url;
+                  mockWs.protocols = protocols;
+                  mockWs.readyState = 1; // WebSocket.OPEN
+                  mockWs.bufferedAmount = 0;
+                  mockWs.extensions = '';
+                  mockWs.protocol = typeof protocols === 'string' ? protocols : 'vite-hmr';
+                  mockWs.binaryType = 'blob';
+                  mockWs.send = function() {};
+                  mockWs.close = function() {
+                    mockWs.readyState = 3; // WebSocket.CLOSED
+                    const ev = new Event('close');
+                    mockWs.dispatchEvent(ev);
+                    if (typeof mockWs.onclose === 'function') mockWs.onclose(ev);
+                  };
+                  setTimeout(() => {
+                    if (mockWs.readyState === 1) {
+                      const ev = new Event('open');
+                      mockWs.dispatchEvent(ev);
+                      if (typeof mockWs.onopen === 'function') mockWs.onopen(ev);
+                    }
+                  }, 5);
+                  return mockWs;
+                }
+                return Reflect.construct(target, args, newTarget);
+              }
+            });
+          } catch (_) {}
+        }
+
+        function shouldSuppress(msg) {
+          if (!msg) return false;
+          const str = String(msg);
+          return str.includes('[vite]') ||
+                 str.includes('WebSocket') ||
+                 str.includes('websocket') ||
+                 str.includes('SendBeforeConnectError') ||
+                 str.includes('preamble') ||
+                 str.includes('server connection lost') ||
+                 str.includes('connecting...') ||
+                 str.includes('Illegal invocation');
+        }
+
+        ['log', 'info', 'warn', 'error', 'debug'].forEach(function(method) {
+          const orig = console[method];
+          if (typeof orig === 'function') {
+            console[method] = function(...args) {
+              try {
+                for (let i = 0; i < args.length; i++) {
+                  const arg = args[i];
+                  const str = typeof arg === 'object' && arg !== null
+                    ? (arg.message || arg.stack || JSON.stringify(arg))
+                    : String(arg);
+                  if (shouldSuppress(str)) return;
+                }
+              } catch (_) {}
+              return Function.prototype.apply.call(orig, console, args);
+            };
+          }
+        });
+
+        window.onerror = function(msg, url, line, col, error) {
+          const str = String(msg || (error && (error.message || error.stack)) || '');
+          if (shouldSuppress(str)) {
+            return true;
+          }
+        };
+
+        window.addEventListener('error', function(e) {
+          const msg = (e && (e.message || (e.error && (e.error.message || e.error.stack)))) || '';
+          if (shouldSuppress(msg)) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+          }
+        }, true);
+
+        window.addEventListener('unhandledrejection', function(e) {
+          const reason = (e && (e.reason && (e.reason.message || e.reason.stack || String(e.reason)))) || '';
+          if (shouldSuppress(reason)) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+          }
+        }, true);
+      })();
+    </script>
+  </head>
+  <body class="bg-slate-950 text-slate-100 font-sans antialiased select-none">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

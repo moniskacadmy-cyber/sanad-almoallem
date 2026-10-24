@@ -17,11 +17,8 @@ import {
   Trash2,
   Edit2,
   Copy,
-  CheckCircle2,
   Clock,
-  Sparkles,
   X,
-  AlertCircle,
   Lightbulb,
 } from 'lucide-react';
 
@@ -179,7 +176,7 @@ export const QuickNotes: React.FC<QuickNotesProps> = ({ profile }) => {
   const formatNoteDate = (timestamp: any) => {
     if (!timestamp) return 'الآن';
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    if (isNaN(date.getTime())) return '';
+    if (Number.isNaN(date.getTime())) return '';
 
     const now = new Date();
     const isToday =
@@ -275,7 +272,6 @@ export const QuickNotes: React.FC<QuickNotesProps> = ({ profile }) => {
 
           <div>
             <textarea
-              autoFocus
               required
               rows={3}
               value={newText}

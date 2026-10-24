@@ -10,8 +10,6 @@ function evaluateClaimTransaction(
   existingDoc: MockSentReminderDoc,
   nowMs: number = Date.now()
 ): { shouldSend: boolean; action: 'create' | 'update_stale' | 'update_failed' | 'skip_sent' | 'skip_active_claiming' } {
-  const nowIso = new Date(nowMs).toISOString();
-
   if (!existingDoc.exists) {
     return { shouldSend: true, action: 'create' };
   }
