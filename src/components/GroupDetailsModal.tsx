@@ -15,7 +15,6 @@ import {
 } from '../firebase';
 import { useBackHandler } from '../services/backHandler';
 import { PaymentDialog } from './PaymentDialog';
-import { PaymentDialog } from './PaymentDialog';
 import {
   Users,
   X,
