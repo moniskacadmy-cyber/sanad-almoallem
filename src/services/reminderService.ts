@@ -20,8 +20,8 @@ const DEFAULT_SETTINGS: ReminderSettings = {
   autoOpenWhatsApp: false,
   endOfDaySummaryEnabled: true,
   endOfDaySummaryTime: '21:00',
-  morningSummaryEnabled: true,
-  morningSummaryTime: '07:00',
+  dailyDigestEnabled: true,
+  dailyDigestTime: '08:00',
 };
 
 // Play a pleasant two-tone audio alert using Web Audio API
@@ -370,6 +370,95 @@ export function sendEndOfDaySummaryNotification(params: {
     completedStudentNames,
     message: body,
   };
+}
+
+// Daily Scheduled Digest Notification Helpers
+export function generateDailyDigestMessage(params: {
+  schedules: ScheduleSlot[];
+  students?: Student[];
+}): { title: string; body: string; count: number } {
+  const { schedules } = params;
+  const now = new Date();
+  const currentDayOfWeek = now.getDay(); // 0 is Sunday, 1 is Monday ... 6 is Saturday
+
+  // Filter today's slots and sort chronologically by time
+  const todaySlots = schedules
+    .filter((s) => s.dayOfWeek === currentDayOfWeek)
+    .sort((a, b) => {
+      const [ha, ma] = (a.time || '00:00').split(':').map(Number);
+      const [hb, mb] = (b.time || '00:00').split(':').map(Number);
+      return (ha * 60 + ma) - (hb * 60 + mb);
+    });
+
+  const count = todaySlots.length;
+
+  if (count === 0) {
+    return {
+      title: 'جدول اليوم - سند المعلم ☕',
+      body: 'ليس لديك حصص مجدولة اليوم. نتمنى لك يوماً سعيداً ومريحاً!',
+      count: 0,
+    };
+  }
+
+  // Format times e.g. 18:00 -> 6:00 م
+  const formatTime12h = (time24: string) => {
+    if (!time24 || !time24.includes(':')) return time24;
+    const [h, m] = time24.split(':').map(Number);
+    const period = h >= 12 ? 'م' : 'ص';
+    const h12 = h % 12 || 12;
+    return `${h12}:${m.toString().padStart(2, '0')} ${period}`;
+  };
+
+  // Build class list items e.g. "عائشة (6:00 م)"
+  const classItems = todaySlots.map((slot) => {
+    const timeFormatted = formatTime12h(slot.time);
+    return `${slot.studentName || 'حصة'} (${timeFormatted})`;
+  });
+
+  const title = `عندك ${count} ${count === 1 ? 'حصة' : count === 2 ? 'حصتان' : count <= 10 ? 'حصص' : 'حصة'} اليوم`;
+  const body = classItems.join('، ');
+
+  return { title, body, count };
+}
+
+export function sendDailyDigestNotification(params: {
+  teacher: TeacherProfile;
+  schedules: ScheduleSlot[];
+  students: Student[];
+  force?: boolean;
+}): { sent: boolean; title: string; body: string; count: number } {
+  const { teacher, schedules, students, force = false } = params;
+  const now = new Date();
+  const todayStr = new Intl.DateTimeFormat('en-CA').format(now);
+  const digestKey = `sanad_daily_digest_sent_${teacher.id}_${todayStr}`;
+
+  if (!force) {
+    // This phone/browser is registered for server push (works even when the app is closed): the server
+    // sends the digest, so do not show a second one here.
+    if (localStorage.getItem('sanad_fcm_uid') === teacher.id) {
+      return { sent: false, title: '', body: 'يصل ملخص اليوم من السيرفر على إشعارات الهاتف.', count: 0 };
+    }
+    const alreadySent = localStorage.getItem(digestKey);
+    if (alreadySent) {
+      return { sent: false, title: '', body: 'تم إرسال تذكير الجدول اليومي مسبقاً اليوم.', count: 0 };
+    }
+  }
+
+  // Check Do Not Disturb settings
+  if (isInDoNotDisturbPeriod(teacher.doNotDisturb)) {
+    return { sent: false, title: '', body: 'وضع عدم الإزعاج نشط.', count: 0 };
+  }
+
+  const { title, body, count } = generateDailyDigestMessage({ schedules, students });
+
+  showBrowserNotification(title, body);
+  playNotificationChime();
+
+  if (!force) {
+    localStorage.setItem(digestKey, new Date().toISOString());
+  }
+
+  return { sent: true, title, body, count };
 }
 
 // Student Absence Automatic Reminder Generator & Notification Dispatcher

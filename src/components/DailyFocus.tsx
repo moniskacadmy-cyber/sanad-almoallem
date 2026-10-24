@@ -60,6 +60,21 @@ export const DailyFocus: React.FC<DailyFocusProps> = ({ profile }) => {
           <p className="text-[10px] text-slate-400">حدد أهم 3 أهداف لإنجازها اليوم</p>
         </div>
       </div>
+      
+      {goals.length > 0 && (
+        <div className="space-y-1">
+          <div className="flex justify-between text-[10px] text-slate-400">
+            <span>نسبة الإنجاز</span>
+            <span>{Math.round((goals.filter(g => g.completed).length / goals.length) * 100)}%</span>
+          </div>
+          <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-emerald-500 transition-all duration-300" 
+              style={{ width: `${(goals.filter(g => g.completed).length / goals.length) * 100}%` }}
+            ></div>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-2">
         {goals.map(goal => (

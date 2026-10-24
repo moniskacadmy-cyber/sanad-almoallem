@@ -1630,6 +1630,11 @@ export async function requestAndSaveFCMToken(force = false): Promise<{
       if (user) {
         // Mark session as registered for this user
         fcmRegisteredUid = user.uid;
+        try {
+          localStorage.setItem('sanad_fcm_uid', user.uid);
+        } catch {
+          /* storage unavailable: the client digest may then show too, which is harmless */
+        }
 
         // Unified storage: Save in teachers/{uid}/fcmTokens/{tokenId}
         const teacherTokenRef = doc(db, 'teachers', user.uid, 'fcmTokens', token);

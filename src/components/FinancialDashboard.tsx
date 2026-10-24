@@ -61,7 +61,7 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
   }, [profile.id]);
 
   useEffect(() => {
-    loadReminderLogs();
+    void loadReminderLogs();
   }, [loadReminderLogs]);
 
   useEffect(() => {
@@ -123,7 +123,7 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
 
   useEffect(() => {
     if (students.length > 0) {
-      loadLessons();
+      void loadLessons();
     } else {
       setLoadingLessons(false);
     }

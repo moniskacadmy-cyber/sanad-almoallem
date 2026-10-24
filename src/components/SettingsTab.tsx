@@ -24,6 +24,8 @@ import {
   fetchCronStatusApi,
   triggerTestReminderApi,
   sendEndOfDaySummaryNotification,
+  sendDailyDigestNotification,
+  generateDailyDigestMessage,
 } from '../services/reminderService';
 import {
   CreditCard,
@@ -232,6 +234,19 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     setTimeout(() => setEodNotice(null), 4000);
   };
 
+  const [dailyDigestNotice, setDailyDigestNotice] = useState<string | null>(null);
+
+  const handleTestDailyDigest = () => {
+    const res = sendDailyDigestNotification({
+      teacher: profile,
+      schedules,
+      students,
+      force: true,
+    });
+    setDailyDigestNotice(`تم إرسال إشعار تذكير جدول اليوم بنجاح! ("${res.title}") 🔔`);
+    setTimeout(() => setDailyDigestNotice(null), 4000);
+  };
+
   // WhatsApp Template Customization States
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<'welcome' | 'payment' | 'report' | 'lessonPrep' | 'absenceReminder'>('welcome');
   const [templateText, setTemplateText] = useState('');
@@ -283,13 +298,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       key === 'minutesBefore' ||
       key === 'enabled' ||
       key === 'notifyTeacher' ||
-      key === 'morningSummaryEnabled' ||
-      key === 'morningSummaryTime'
+      key === 'dailyDigestEnabled' ||
+      key === 'dailyDigestTime'
     ) {
       try {
         await updateTeacherProfile(profile.id, {
-          ...(key === 'morningSummaryEnabled' ? { morningSummaryEnabled: Boolean(val) } : {}),
-          ...(key === 'morningSummaryTime' && /^\d{1,2}:\d{2}$/.test(String(val)) ? { morningSummaryTime: String(val) } : {}),
+          ...(key === 'dailyDigestEnabled' ? { dailyDigestEnabled: Boolean(val) } : {}),
+          ...(key === 'dailyDigestTime' && /^\d{1,2}:\d{2}$/.test(String(val)) ? { dailyDigestTime: String(val) } : {}),
           ...(key === 'minutesBefore' ? { reminderMinutesBefore: Math.min(120, Math.max(5, Number(val) || 15)) } : {}),
           ...(key === 'enabled' ? { remindersEnabled: Boolean(val) } : {}),
           ...(key === 'notifyTeacher' ? { teacherNotificationsEnabled: Boolean(val) } : {}),
@@ -1070,6 +1085,97 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         </div>
       </div>
 
+      {/* Daily Scheduled Schedule Digest Notification Section */}
+      <div className="p-4 sm:p-5 rounded-3xl bg-slate-900/90 border border-purple-500/30 shadow-xl space-y-4">
+        <div className="flex items-center justify-between border-b border-purple-900/40 pb-3 flex-wrap gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-2xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30">
+              <Clock className="w-5 h-5 text-amber-400" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>تذكير جدول حصص اليوم المجدول (Daily Schedule Digest)</span>
+              </h4>
+              <p className="text-xs text-slate-400">
+                تحديد وقت يومي يتلقى فيه المعلم إشعاراً ملخصاً بحصص اليوم مرتبة حسب أوقاتها
+              </p>
+            </div>
+          </div>
+
+          {dailyDigestNotice && (
+            <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-emerald-950/90 border border-emerald-500/40 text-emerald-300 animate-in fade-in">
+              {dailyDigestNotice}
+            </span>
+          )}
+        </div>
+
+        {/* Master Toggle */}
+        <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
+          <div className="flex items-center gap-2.5">
+            <Sparkles className="w-4 h-4 text-amber-300" />
+            <div>
+              <span className="text-xs font-bold text-white block">تفعيل إشعار جدول حصص اليوم</span>
+              <span className="text-[10px] text-slate-400">إرسال إشعار تلقائي بالحصص المجدولة لليوم</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleUpdateReminderSetting('dailyDigestEnabled', !(reminderSettings.dailyDigestEnabled !== false))}
+            className={`w-11 h-6 rounded-full transition-colors flex items-center p-1 cursor-pointer ${
+              reminderSettings.dailyDigestEnabled !== false ? 'bg-purple-600 justify-end' : 'bg-slate-700 justify-start'
+            }`}
+          >
+            <div className="w-4 h-4 rounded-full bg-white shadow" />
+          </button>
+        </div>
+
+        {/* Time Picker & Preview (when enabled) */}
+        {reminderSettings.dailyDigestEnabled !== false && (
+          <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-purple-500/20 space-y-3.5 animate-in fade-in duration-200">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                  توقيت التذكير الصباحي المفضل (Daily Notification Time):
+                </label>
+                <input
+                  type="time"
+                  value={reminderSettings.dailyDigestTime || '08:00'}
+                  onChange={(e) => handleUpdateReminderSetting('dailyDigestTime', e.target.value)}
+                  className="bg-slate-900 border border-purple-500/40 rounded-xl px-3 py-1.5 text-xs text-amber-300 font-mono font-bold focus:outline-none focus:border-purple-500 cursor-pointer"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={handleTestDailyDigest}
+                className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-lg shadow-purple-600/30 cursor-pointer"
+              >
+                <Bell className="w-3.5 h-3.5" />
+                <span>إرسال إشعار تجريبي الآن 🔔</span>
+              </button>
+            </div>
+
+            {/* Notification Live Preview Box */}
+            {(() => {
+              const preview = generateDailyDigestMessage({ schedules, students });
+              return (
+                <div className="p-3 rounded-2xl bg-purple-950/40 border border-purple-500/30 space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-purple-200 font-bold border-b border-purple-800/40 pb-1 mb-1">
+                    <span className="flex items-center gap-1.5">
+                      <Bell className="w-3.5 h-3.5 text-amber-400" />
+                      <span>معاينة شكل الإشعار المستلم:</span>
+                    </span>
+                    <span className="text-[10px] text-amber-300 font-mono">{reminderSettings.dailyDigestTime || '08:00'}</span>
+                  </div>
+                  <p className="font-extrabold text-white text-xs">{preview.title}</p>
+                  <p className="text-slate-300 text-[11px] font-medium leading-relaxed">{preview.body}</p>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+      </div>
+
       {/* Do Not Disturb (وضع عدم الإزعاج والهدوء) Section */}
       <div className="p-4 sm:p-5 rounded-3xl bg-slate-900/90 border border-indigo-500/30 shadow-xl space-y-4">
         <div className="flex items-center justify-between border-b border-indigo-900/40 pb-3 flex-wrap gap-2">
@@ -1642,49 +1748,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               >
                 {reminderSettings.soundEnabled ? 'مفعل 🔊' : 'صامت 🔇'}
               </button>
-            </div>
-
-            {/* Morning summary: a phone push every morning with today's classes (sent by the server, works with the phone locked) */}
-            <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-950/30 via-slate-950/60 to-purple-950/30 border border-amber-500/30 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30">
-                    <Bell className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-white">ملخص الصباح ☀️</h4>
-                    <p className="text-[10px] text-slate-400">إشعار على الموبايل كل صباح بحصص اليوم، حتى لو التطبيق مقفول</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleUpdateReminderSetting(
-                      'morningSummaryEnabled',
-                      reminderSettings.morningSummaryEnabled === false
-                    )
-                  }
-                  className={`w-10 h-5 flex items-center rounded-full p-0.5 transition cursor-pointer ${
-                    reminderSettings.morningSummaryEnabled !== false
-                      ? 'bg-amber-600 justify-end'
-                      : 'bg-slate-700 justify-start'
-                  }`}
-                >
-                  <span className="bg-white w-4 h-4 rounded-full shadow-md" />
-                </button>
-              </div>
-
-              {reminderSettings.morningSummaryEnabled !== false && (
-                <div className="flex items-center gap-2 pt-1 border-t border-white/5 text-xs">
-                  <span className="text-[11px] text-slate-300">وقت الإشعار:</span>
-                  <input
-                    type="time"
-                    value={reminderSettings.morningSummaryTime || '07:00'}
-                    onChange={(e) => handleUpdateReminderSetting('morningSummaryTime', e.target.value)}
-                    className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white"
-                  />
-                </div>
-              )}
             </div>
 
             {/* End-of-Day Summary Report Section */}

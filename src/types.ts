@@ -124,8 +124,8 @@ export interface TeacherProfile {
   reminderMinutesBefore?: number;
   remindersEnabled?: boolean;
   teacherNotificationsEnabled?: boolean;
-  morningSummaryEnabled?: boolean;
-  morningSummaryTime?: string; // "HH:MM" in the teacher's time zone
+  dailyDigestEnabled?: boolean; // phone push every morning with today's classes (default on)
+  dailyDigestTime?: string; // "HH:MM" in the teacher's time zone (default 08:00)
   timezone?: string;
   doNotDisturb?: DoNotDisturbSettings;
   absencePolicy?: AbsencePolicySettings;
@@ -375,8 +375,8 @@ export interface ReminderSettings {
   autoOpenWhatsApp?: boolean;
   endOfDaySummaryEnabled?: boolean;
   endOfDaySummaryTime?: string; // e.g. "21:00"
-  morningSummaryEnabled?: boolean; // push every morning with today's classes (default on)
-  morningSummaryTime?: string; // e.g. "07:00"
+  dailyDigestEnabled?: boolean; // تذكير جدول حصص اليوم المجدول
+  dailyDigestTime?: string;    // وقت التذكير الصباحي e.g. "08:00"
   timezone?: string;
 }
 
