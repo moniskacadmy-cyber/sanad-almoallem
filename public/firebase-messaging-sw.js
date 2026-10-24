@@ -1,8 +1,8 @@
 // Firebase Service Worker for Background Web Push Notifications
 // Reads configuration dynamically from query parameters passed during registration.
 
-importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/12.19.0/firebase-messaging-compat.js');
 
 function getFirebaseConfigFromLocation() {
   const params = new URLSearchParams(self.location.search);
@@ -24,19 +24,12 @@ function getFirebaseConfigFromLocation() {
     };
   }
 
-  return {
-    apiKey: 'AIzaSyCW-2H9dXUvJEpWKs9x1Cr7ME9gqV3uZMk',
-    projectId: 'gen-lang-client-0886550561',
-    messagingSenderId: '65313535187',
-    appId: '1:65313535187:web:7652704feb5f4a04e85026',
-    authDomain: 'gen-lang-client-0886550561.firebaseapp.com',
-    storageBucket: 'gen-lang-client-0886550561.firebasestorage.app',
-  };
+  return null;
 }
 
 const firebaseConfig = getFirebaseConfigFromLocation();
 
-if (firebaseConfig.apiKey && firebaseConfig.projectId) {
+if (firebaseConfig?.apiKey && firebaseConfig?.projectId) {
   try {
     firebase.initializeApp(firebaseConfig);
     const messaging = firebase.messaging();

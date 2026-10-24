@@ -55,26 +55,18 @@ import {
   StudentPaymentRecord,
 } from './types';
 
-import rawFirebaseConfig from '../firebase-applet-config.json';
-
 const env = import.meta.env;
 
-const pick = (envValue: unknown, fileValue: unknown): string =>
-  (typeof envValue === 'string' && envValue.trim()) ||
-  (typeof fileValue === 'string' && fileValue.trim()) ||
-  '';
-
 const firebaseConfig = {
-  apiKey: pick(env.VITE_FIREBASE_API_KEY, rawFirebaseConfig.apiKey),
-  authDomain: pick(env.VITE_FIREBASE_AUTH_DOMAIN, rawFirebaseConfig.authDomain),
-  projectId: pick(env.VITE_FIREBASE_PROJECT_ID, rawFirebaseConfig.projectId),
-  storageBucket: pick(env.VITE_FIREBASE_STORAGE_BUCKET, rawFirebaseConfig.storageBucket),
-  messagingSenderId: pick(env.VITE_FIREBASE_MESSAGING_SENDER_ID, rawFirebaseConfig.messagingSenderId),
-  appId: pick(env.VITE_FIREBASE_APP_ID, rawFirebaseConfig.appId),
+  apiKey: env.VITE_FIREBASE_API_KEY || '',
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || '',
+  projectId: env.VITE_FIREBASE_PROJECT_ID || '',
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || '',
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+  appId: env.VITE_FIREBASE_APP_ID || '',
 };
 
-const effectiveDatabaseId =
-  pick(env.VITE_FIREBASE_DATABASE_ID, (rawFirebaseConfig as any).firestoreDatabaseId) || '(default)';
+const effectiveDatabaseId = env.VITE_FIREBASE_DATABASE_ID || '(default)';
 
 export let app: FirebaseApp = null as any;
 export let auth: Auth = null as any;
@@ -1586,13 +1578,9 @@ export async function requestAndSaveFCMToken(force = false): Promise<{
         try {
           const swUrl = `/firebase-messaging-sw.js?apiKey=${encodeURIComponent(firebaseConfig.apiKey || '')}&projectId=${encodeURIComponent(firebaseConfig.projectId || '')}&messagingSenderId=${encodeURIComponent(firebaseConfig.messagingSenderId || '')}&appId=${encodeURIComponent(firebaseConfig.appId || '')}&authDomain=${encodeURIComponent(firebaseConfig.authDomain || '')}&storageBucket=${encodeURIComponent(firebaseConfig.storageBucket || '')}`;
 
-          // Check if already registered for this scope first
-          const existingReg = await navigator.serviceWorker.getRegistration(FCM_SW_SCOPE);
-          if (existingReg) {
-            swReg = existingReg;
-          } else {
-            swReg = await navigator.serviceWorker.register(swUrl, { scope: FCM_SW_SCOPE });
-          }
+          // Always register the current URL. Reusing an existing registration without
+          // updating it can keep an old service worker/config after Firebase settings change.
+          swReg = await navigator.serviceWorker.register(swUrl, { scope: FCM_SW_SCOPE });
         } catch (swErr) {
           console.warn('Could not register firebase-messaging-sw.js directly:', swErr);
         }
