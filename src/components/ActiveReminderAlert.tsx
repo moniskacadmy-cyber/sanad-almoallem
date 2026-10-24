@@ -33,8 +33,8 @@ function parseClassTimeToDate(classTimeStr: string, targetTime?: Date | number):
     return new Date(now.getTime() + 15 * 60 * 1000);
   }
 
-  let hours = parseInt(match[1], 10);
-  const minutes = parseInt(match[2], 10);
+  let hours = Number.parseInt(match[1], 10);
+  const minutes = Number.parseInt(match[2], 10);
 
   // Handle 12-hour AM/PM modifiers if present
   if (/pm|م/i.test(classTimeStr) && hours < 12) {

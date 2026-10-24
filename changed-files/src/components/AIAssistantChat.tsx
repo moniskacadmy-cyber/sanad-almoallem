@@ -63,7 +63,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
       expiryDate = new Date(effectiveExpiry.seconds * 1000);
     } else {
       const d = new Date(effectiveExpiry);
-      if (!isNaN(d.getTime())) expiryDate = d;
+      if (!Number.isNaN(d.getTime())) expiryDate = d;
     }
 
     if (expiryDate) {

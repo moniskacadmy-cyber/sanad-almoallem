@@ -374,7 +374,7 @@ export const GroupManagementTab: React.FC<GroupManagementTabProps> = ({
       setGroupFormError('يرجى تحديد المادة الدراسية');
       return;
     }
-    if (isNaN(feeNum) || feeNum < 0) {
+    if (Number.isNaN(feeNum) || feeNum < 0) {
       setGroupFormError('يرجى تحديد اشتراك الشهر بشكل صحيح (0 أو أكثر)');
       return;
     }
@@ -479,7 +479,7 @@ export const GroupManagementTab: React.FC<GroupManagementTabProps> = ({
       setIndividualFormError('يرجى كتابة اسم الطالب');
       return;
     }
-    if (isNaN(rateNum) || rateNum < 0) {
+    if (Number.isNaN(rateNum) || rateNum < 0) {
       setIndividualFormError('يرجى تحديد سعر الساعة بشكل صحيح');
       return;
     }
@@ -1252,7 +1252,7 @@ export const GroupManagementTab: React.FC<GroupManagementTabProps> = ({
                       <select
                         value={slot.day}
                         onChange={(e) =>
-                          handleUpdateScheduleSlot(idx, { day: parseInt(e.target.value) })
+                          handleUpdateScheduleSlot(idx, { day: Number.parseInt(e.target.value, 10) })
                         }
                         className="rounded-lg bg-slate-950 border border-slate-700 px-2 py-1.5 text-xs text-white"
                       >
@@ -1278,7 +1278,7 @@ export const GroupManagementTab: React.FC<GroupManagementTabProps> = ({
                         value={slot.duration || 90}
                         onChange={(e) =>
                           handleUpdateScheduleSlot(idx, {
-                            duration: parseInt(e.target.value),
+                            duration: Number.parseInt(e.target.value, 10),
                           })
                         }
                         className="rounded-lg bg-slate-950 border border-slate-700 px-2 py-1.5 text-xs text-white"

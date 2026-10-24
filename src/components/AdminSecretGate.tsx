@@ -92,7 +92,9 @@ export const AdminSecretGate: React.FC<AdminSecretGateProps> = ({
           <div className="pt-2 space-y-2">
             <button
               type="button"
-              onClick={handleSignOut}
+              onClick={() => {
+                void handleSignOut();
+              }}
               className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5"
             >
               <LogOut className="w-4 h-4 text-rose-400" />
@@ -139,10 +141,11 @@ export const AdminSecretGate: React.FC<AdminSecretGateProps> = ({
 
         <form onSubmit={handleAdminSignIn} className="space-y-3">
           <div>
-            <label className="block text-xs font-bold text-slate-300 mb-1">
+            <label htmlFor="admin-email-input" className="block text-xs font-bold text-slate-300 mb-1">
               البريد الإلكتروني للمشرف
             </label>
             <input
+              id="admin-email-input"
               type="email"
               required
               value={adminEmail}
@@ -154,11 +157,12 @@ export const AdminSecretGate: React.FC<AdminSecretGateProps> = ({
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-300 mb-1">
+            <label htmlFor="admin-password-input" className="block text-xs font-bold text-slate-300 mb-1">
               كلمة المرور
             </label>
             <div className="relative">
               <input
+                id="admin-password-input"
                 type={showPassword ? 'text' : 'password'}
                 required
                 value={adminPassword}
