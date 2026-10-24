@@ -73,7 +73,7 @@ export async function requestBrowserNotificationPermission(): Promise<Notificati
 }
 
 // Show OS/Browser Notification
-export function showBrowserNotification(title: string, body: string, icon = '/icons/icon-192x192.png') {
+export function showBrowserNotification(title: string, body: string, icon = '/pwa-192x192.png') {
   if (typeof window === 'undefined' || !('Notification' in window)) {
     return;
   }

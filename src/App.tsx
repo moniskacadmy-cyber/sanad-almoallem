@@ -258,7 +258,9 @@ export default function App() {
       // 6. If user is ALREADY at the Main Dashboard (Tab 0) and pressed Back:
       const now = Date.now();
       if (now - lastBackPressTimeRef.current < 2000) {
-        return; // default exit behavior
+        // Second press within 2 seconds: really leave the app (rewinds every entry we pushed).
+        exitApplication();
+        return;
       }
       lastBackPressTimeRef.current = now;
       setExitToastMessage('اضغط مرة أخرى للخروج');
@@ -742,6 +744,7 @@ export default function App() {
               onClick={() => {
                 const now = Date.now();
                 if (now - lastBackPressTimeRef.current < 2000) {
+                  exitApplication();
                   return;
                 }
                 lastBackPressTimeRef.current = now;
