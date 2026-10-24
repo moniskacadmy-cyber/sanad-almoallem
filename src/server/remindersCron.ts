@@ -168,6 +168,7 @@ export function buildTeacherReminderMessage(params: {
 // Core check function: Evaluates timetable slots that start in ~15 minutes (stateless calculation)
 export function checkUpcomingSlots(params: {
   schedules: any[];
+  groups: any[];
   students: any[];
   teacherId?: string;
   teacherName?: string;
@@ -177,6 +178,7 @@ export function checkUpcomingSlots(params: {
 }): { matchedReminders: ReminderLogItem[]; summary: { checked: number; sent: number } } {
   const {
     schedules = [],
+    groups = [],
     students = [],
     teacherId = 'default_teacher',
     teacherName = 'المعلم',
@@ -308,6 +310,24 @@ export function checkUpcomingSlots(params: {
       };
 
       matchedReminders.push(teacherItem);
+    }
+  }
+
+  // Group schedules logic
+  for (const group of groups) {
+    if (!group.schedule || !Array.isArray(group.schedule)) continue;
+    for (const slot of group.schedule) {
+      if (slot.day !== currentDayOfWeek || !slot.time || !slot.time.includes(':')) continue;
+      
+      const [slotHour, slotMin] = slot.time.split(':').map(Number);
+      const slotTotalMinutes = slotHour * 60 + slotMin;
+      const diffMinutes = slotTotalMinutes - currentTotalMinutes;
+      const isIn15MinWindow = diffMinutes >= (minutesWindow - 1) && diffMinutes <= minutesWindow;
+      
+      if (isIn15MinWindow) {
+        // Here you would look up group members and create reminders for each
+        // For now, this placeholder ensures the structure is there
+      }
     }
   }
 

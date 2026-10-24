@@ -14,6 +14,8 @@ import {
   getPaymentRecordId,
 } from '../firebase';
 import { useBackHandler } from '../services/backHandler';
+import { PaymentDialog } from './PaymentDialog';
+import { PaymentDialog } from './PaymentDialog';
 import {
   Users,
   X,
@@ -89,50 +91,12 @@ export const GroupDetailsModal: React.FC<GroupDetailsModalProps> = ({
     return () => unsub();
   }, [isOpen, teacherId, group.id, currentMonth]);
 
-  const handleTogglePayment = async (student: Student) => {
-    const rec = paymentsMap[student.id];
-    const currentStatus: PaymentStatus = rec?.status || (student.paymentStatus as PaymentStatus) || 'unpaid';
-    const nextStatus: PaymentStatus =
-      currentStatus === 'unpaid' ? 'paid' : currentStatus === 'paid' ? 'partial' : 'unpaid';
-    const fee = group.monthlyFee || 0;
-    const amountPaid = nextStatus === 'paid' ? fee : nextStatus === 'partial' ? Math.round(fee / 2) : 0;
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [selectedStudentForPayment, setSelectedStudentForPayment] = useState<Student | null>(null);
 
-    // Optimistic UI update
-    setPaymentsMap((prev) => ({
-      ...prev,
-      [student.id]: {
-        id: getPaymentRecordId(student.id, group.id, currentMonth),
-        studentId: student.id,
-        studentName: student.name,
-        groupId: group.id,
-        groupName: group.name,
-        month: currentMonth,
-        status: nextStatus,
-        amountPaid,
-        amountDue: fee,
-      },
-    }));
-
-    try {
-      await recordStudentPayment(teacherId, {
-        studentId: student.id,
-        studentName: student.name,
-        groupId: group.id,
-        groupName: group.name,
-        month: currentMonth,
-        status: nextStatus,
-        amountPaid,
-        amountDue: fee,
-      });
-      onShowToast(
-        `تم تحديث حالة الدفع لـ ${student.name}: ${
-          nextStatus === 'paid' ? 'دفع ✅' : nextStatus === 'partial' ? 'جزئي ⏳' : 'لم يدفع ❌'
-        }`
-      );
-    } catch (err) {
-      console.error('Error updating payment status:', err);
-      onShowToast('حدث خطأ أثناء حفظ حالة الدفع', true);
-    }
+  const handleOpenPaymentDialog = (student: Student) => {
+    setSelectedStudentForPayment(student);
+    setPaymentDialogOpen(true);
   };
 
   const [activeSubTab, setActiveSubTab] = useState<'students' | 'add' | 'edit'>('students');
@@ -592,36 +556,15 @@ export const GroupDetailsModal: React.FC<GroupDetailsModalProps> = ({
 
                       {/* 1-Click Monthly Payment Status Button */}
                       <div className="flex items-center gap-2">
-                        {(() => {
-                          const rec = paymentsMap[st.id];
-                          const status: PaymentStatus =
-                            rec?.status || (st.paymentStatus as PaymentStatus) || 'unpaid';
-                          return (
-                            <button
-                              type="button"
-                              onClick={() => handleTogglePayment(st)}
-                              className={`px-2.5 py-1 rounded-xl text-[11px] font-bold border transition cursor-pointer flex items-center gap-1 shadow-sm active:scale-95 ${
-                                status === 'paid'
-                                  ? 'bg-emerald-600/25 border-emerald-500/50 text-emerald-300 hover:bg-emerald-600/35'
-                                  : status === 'partial'
-                                  ? 'bg-amber-500/25 border-amber-500/50 text-amber-300 hover:bg-amber-500/35'
-                                  : 'bg-rose-500/20 border-rose-500/40 text-rose-300 hover:bg-rose-500/30'
-                              }`}
-                              title="حالة دفع اشتراك هذا الشهر (اضغط للتبديل: دفع / جزئي / لم يدفع)"
-                            >
-                              {status === 'paid' && <Check className="w-3 h-3 text-emerald-400" />}
-                              {status === 'partial' && <Clock className="w-3 h-3 text-amber-400" />}
-                              {status === 'unpaid' && <X className="w-3 h-3 text-rose-400" />}
-                              <span>
-                                {status === 'paid'
-                                  ? 'دفع ✅'
-                                  : status === 'partial'
-                                  ? 'جزئي ⏳'
-                                  : 'لم يدفع ❌'}
-                              </span>
-                            </button>
-                          );
-                        })()}
+                      {/* Manual Payment Entry Button */}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenPaymentDialog(st)}
+                        className="px-2.5 py-1 rounded-xl text-[11px] font-bold border bg-purple-950/40 border-purple-500/30 text-purple-200 hover:bg-purple-900/60 transition cursor-pointer flex items-center gap-1"
+                      >
+                        <DollarSign className="w-3 h-3" />
+                        <span>دفع يدوي</span>
+                      </button>
                       </div>
 
                       {/* Quick Contact & Actions */}
@@ -950,6 +893,48 @@ export const GroupDetailsModal: React.FC<GroupDetailsModalProps> = ({
               </div>
             </div>
           </div>
+        )}
+        {paymentDialogOpen && selectedStudentForPayment && (
+          <PaymentDialog
+            isOpen={paymentDialogOpen}
+            onClose={() => setPaymentDialogOpen(false)}
+            student={selectedStudentForPayment}
+            group={group}
+            initialAmountDue={group.monthlyFee}
+            onSave={async (data) => {
+              // Implementation here using recordStudentPayment
+              await recordStudentPayment(teacherId, {
+                studentId: selectedStudentForPayment.id,
+                studentName: selectedStudentForPayment.name,
+                groupId: group.id,
+                groupName: group.name,
+                month: currentMonth,
+                ...data
+              });
+              onShowToast('تم تسجيل الدفعة بنجاح!');
+            }}
+          />
+        )}
+        {paymentDialogOpen && selectedStudentForPayment && (
+          <PaymentDialog
+            isOpen={paymentDialogOpen}
+            onClose={() => setPaymentDialogOpen(false)}
+            student={selectedStudentForPayment}
+            group={group}
+            initialAmountDue={group.monthlyFee}
+            onSave={async (data) => {
+              // Implementation here using recordStudentPayment
+              await recordStudentPayment(teacherId, {
+                studentId: selectedStudentForPayment.id,
+                studentName: selectedStudentForPayment.name,
+                groupId: group.id,
+                groupName: group.name,
+                month: currentMonth,
+                ...data
+              });
+              onShowToast('تم تسجيل الدفعة بنجاح!');
+            }}
+          />
         )}
       </div>
     </div>
