@@ -222,14 +222,14 @@ export async function fetchCronStatusApi(): Promise<{
     const headers = await getAuthenticatedHeaders();
     const res = await fetch('/api/reminders/status', { headers });
     if (res.status === 401) {
-       return {
-         isRunning: true,
-         intervalMinutes: 15,
-         lastRun: null,
-         nextRun: null,
-         totalDispatched: 0,
-         recentLogs: []
-       };
+      return {
+        isRunning: true,
+        intervalMinutes: 15,
+        lastRun: null,
+        nextRun: null,
+        totalDispatched: 0,
+        recentLogs: [],
+      };
     }
     if (!res.ok) throw new Error('فشل جلب حالة Cron Job.');
     return await res.json();
@@ -246,7 +246,6 @@ export async function fetchCronStatusApi(): Promise<{
 }
 
 // Asks the server to push "notifications are on + today's classes" to the teacher's phone right after sign-in.
-// The server sends it at most once per 6 hours and respects Do-Not-Disturb; failures are silent on purpose.
 export async function sendLoginSummaryApi(): Promise<void> {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
   try {
@@ -379,7 +378,7 @@ export function generateDailyDigestMessage(params: {
 }): { title: string; body: string; count: number } {
   const { schedules } = params;
   const now = new Date();
-  const currentDayOfWeek = now.getDay(); // 0 is Sunday, 1 is Monday ... 6 is Saturday
+  const currentDayOfWeek = now.getDay();
 
   // Filter today's slots and sort chronologically by time
   const todaySlots = schedules
