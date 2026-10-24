@@ -362,8 +362,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     const day = WEEK_DAYS.find((d) => d.dayIndex === slot.dayOfWeek);
     const dayName = day ? day.name : 'السبت';
     const [hStr, mStr] = (slot.time || '16:00').split(':');
-    const h = parseInt(hStr, 10) || 0;
-    const m = parseInt(mStr, 10) || 0;
+    const h = Number.parseInt(hStr, 10) || 0;
+    const m = Number.parseInt(mStr, 10) || 0;
     const period = h < 12 ? 'صباحاً' : 'مساءً';
     const displayHour = h === 0 ? 12 : h > 12 ? h - 12 : h;
     const timeFormatted = `${displayHour.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${period}`;
@@ -551,7 +551,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   };
 
   useEffect(() => {
-    loadAllLessons();
+    void loadAllLessons();
   }, [profile.id, students]);
 
   // Subscribe to selected student's lessons
@@ -713,10 +713,10 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     if (!formClassType) {
       errors.classType = 'يرجى اختيار تصنيف نوع الحصة';
     }
-    if (formBillingType === 'hourly' && (formHourlyRate === undefined || formHourlyRate === null || isNaN(formHourlyRate) || Number(formHourlyRate) < 0)) {
+    if (formBillingType === 'hourly' && (formHourlyRate === undefined || formHourlyRate === null || Number.isNaN(Number(formHourlyRate)) || Number(formHourlyRate) < 0)) {
       errors.hourlyRate = 'يرجى إدخال سعر الساعة بشكل صحيح';
     }
-    if (formBillingType === 'monthly' && (formMonthlyFee === undefined || formMonthlyFee === null || isNaN(formMonthlyFee) || Number(formMonthlyFee) < 0)) {
+    if (formBillingType === 'monthly' && (formMonthlyFee === undefined || formMonthlyFee === null || Number.isNaN(Number(formMonthlyFee)) || Number(formMonthlyFee) < 0)) {
       errors.monthlyFee = 'يرجى إدخال قيمة الاشتراك الشهري بشكل صحيح';
     }
 
@@ -750,11 +750,11 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
       const rate = Math.max(0, Number(formHourlyRate) || 100);
       const mFee = formBillingType === 'monthly' ? Math.max(0, Number(formMonthlyFee) || 300) : (Number(formMonthlyFee) || rate * 4);
       const remPaid =
-        formRemainingPaidLessons.trim() !== '' && !isNaN(Number(formRemainingPaidLessons))
+        formRemainingPaidLessons.trim() !== '' && !Number.isNaN(Number(formRemainingPaidLessons))
           ? Math.max(0, Number(formRemainingPaidLessons))
           : 0;
       const totPrepaid =
-        formTotalPrepaidLessons.trim() !== '' && !isNaN(Number(formTotalPrepaidLessons))
+        formTotalPrepaidLessons.trim() !== '' && !Number.isNaN(Number(formTotalPrepaidLessons))
           ? Math.max(remPaid, Number(formTotalPrepaidLessons))
           : remPaid;
 
@@ -1063,7 +1063,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
   const handleCopyReport = () => {
     const textToCopy = reportEditableText || generateMonthlyReportText();
-    navigator.clipboard.writeText(textToCopy);
+    void navigator.clipboard.writeText(textToCopy).catch((err) => {
+      console.warn('Copy report error:', err);
+    });
     setCopiedReport(true);
     setTimeout(() => setCopiedReport(false), 2500);
   };
@@ -1119,7 +1121,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
 
   const handleCopyLessonPrep = () => {
     const textToCopy = prepEditableText || generateLessonPrepText();
-    navigator.clipboard.writeText(textToCopy);
+    void navigator.clipboard.writeText(textToCopy).catch((err) => {
+      console.warn('Copy prep error:', err);
+    });
     setCopiedPrep(true);
     setTimeout(() => setCopiedPrep(false), 2500);
   };
@@ -1362,7 +1366,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
   };
 
   const handleCopyReminder = () => {
-    navigator.clipboard.writeText(reminderCustomText);
+    void navigator.clipboard.writeText(reminderCustomText).catch((err) => {
+      console.warn('Copy reminder error:', err);
+    });
     setCopiedReminder(true);
     setTimeout(() => setCopiedReminder(false), 2500);
   };
@@ -1913,7 +1919,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        toggleStudentPaymentStatus(profile.id, s.id, s.paymentStatus || 'unpaid');
+                        void toggleStudentPaymentStatus(profile.id, s.id, s.paymentStatus || 'unpaid').catch((err) => {
+                          console.error('Error toggling payment status:', err);
+                        });
                       }}
                       className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold transition shadow cursor-pointer active:scale-95 ${
                         s.paymentStatus === 'paid'

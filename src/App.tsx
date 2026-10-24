@@ -202,15 +202,19 @@ export default function App() {
 
       // Ask for native notification permission immediately upon app startup
       if ('Notification' in window && Notification.permission === 'default') {
-        Notification.requestPermission().then((perm) => {
-          if (perm === 'granted') {
-            showBrowserNotification(
-              'سند المعلم 🔔',
-              'تم تفعيل إشعارات الهاتف والنظام بنجاح لحصصك المجدولة!'
-            );
-            playNotificationChime();
-          }
-        });
+        Notification.requestPermission()
+          .then((perm) => {
+            if (perm === 'granted') {
+              showBrowserNotification(
+                'سند المعلم 🔔',
+                'تم تفعيل إشعارات الهاتف والنظام بنجاح لحصصك المجدولة!'
+              );
+              playNotificationChime();
+            }
+          })
+          .catch((err) => {
+            console.warn('Notification permission error:', err);
+          });
       }
     }
   }, []);
@@ -407,7 +411,9 @@ export default function App() {
   // Run database automatic cleanup script for orphaned schedules and lessons (IIFE triggered)
   useEffect(() => {
     if (!currentUser || !profile || students.length === 0) return;
-    runOrphanCleanup(currentUser.uid, students.map(s => s.id));
+    void runOrphanCleanup(currentUser.uid, students.map(s => s.id)).catch((err) => {
+      console.warn('Orphan cleanup warning:', err);
+    });
   }, [currentUser, profile?.id, students]);
 
   // Automated 15-Minute Class Reminders Periodic Check
@@ -436,7 +442,7 @@ export default function App() {
           const [hStr, mStr] = (first.classTime || '').split(':');
           const target = new Date();
           if (hStr !== undefined && mStr !== undefined) {
-            target.setHours(parseInt(hStr, 10), parseInt(mStr, 10), 0, 0);
+            target.setHours(Number.parseInt(hStr, 10), Number.parseInt(mStr, 10), 0, 0);
             if (now.getTime() - target.getTime() > 6 * 60 * 60 * 1000) {
               target.setDate(target.getDate() + 1);
             }
@@ -522,10 +528,12 @@ export default function App() {
     };
 
     // Initial check
-    performCheck();
+    void performCheck();
 
     // Check periodically every 60 seconds
-    const timer = setInterval(performCheck, 60 * 1000);
+    const timer = setInterval(() => {
+      void performCheck();
+    }, 60 * 1000);
     return () => {
       isMounted = false;
       clearInterval(timer);
@@ -641,7 +649,7 @@ export default function App() {
       expiryDate = new Date(effectiveExpiry.seconds * 1000);
     } else {
       const d = new Date(effectiveExpiry);
-      if (!isNaN(d.getTime())) expiryDate = d;
+      if (!Number.isNaN(d.getTime())) expiryDate = d;
     }
   }
 

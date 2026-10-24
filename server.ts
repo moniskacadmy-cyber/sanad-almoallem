@@ -25,36 +25,34 @@ function safeParseServiceAccount(raw: string | undefined): any {
     str = str.slice(1, -1).trim();
   }
 
-  // Normalize repeated JSON-stringification while preserving private-key newlines.
-  const newlinePlaceholder = '__FIREBASE_ESCAPED_NEWLINE__';
-  str = str.replace(/\\+n/g, newlinePlaceholder);
-  for (let pass = 0; pass < 3; pass += 1) {
-    str = str.replace(/\\+"/g, '"').replace(/^\\+/, '').trim();
-    if ((str.startsWith('"') && str.endsWith('"')) || (str.startsWith("'") && str.endsWith("'"))) {
-      str = str.slice(1, -1).trim();
-    }
-  }
-  str = str.replace(/\\+/g, '');
-  str = str.replace(new RegExp(newlinePlaceholder, 'g'), '\\\\n').trim();
-
-  // Some dashboard pastes omit the outer object braces.
-  const typeIndex = str.indexOf('"type"');
-  if (!str.startsWith('{') && typeIndex >= 0) {
-    str = `{${str.slice(typeIndex)}`;
-  }
-
-  // Handle base64-encoded service-account JSON.
-  if (!str.startsWith('{') && /^(?:ey|eyJ)/.test(str)) {
+  // Handle base64-encoded service-account JSON without backtracking regex
+  if (!str.startsWith('{') && str.startsWith('ey')) {
     try {
       const decoded = Buffer.from(str, 'base64').toString('utf-8').trim();
       if (decoded.startsWith('{')) str = decoded;
     } catch (_) {}
   }
 
+  // Some dashboard pastes omit the outer object braces
+  const typeIndex = str.indexOf('"type"');
+  if (!str.startsWith('{') && typeIndex >= 0) {
+    str = `{${str.slice(typeIndex)}`;
+  }
+
   const startIdx = str.indexOf('{');
   const endIdx = str.lastIndexOf('}');
   if (startIdx !== -1 && endIdx > startIdx) {
     str = str.substring(startIdx, endIdx + 1);
+  }
+
+  // Linear unescaping without backtracking regexes
+  for (let pass = 0; pass < 3; pass += 1) {
+    if (str.includes('\\"')) {
+      str = str.split('\\"').join('"');
+    }
+    if ((str.startsWith('"') && str.endsWith('"')) || (str.startsWith("'") && str.endsWith("'"))) {
+      str = str.slice(1, -1).trim();
+    }
   }
 
   try {
@@ -128,6 +126,28 @@ const adminAuth = getAuth();
 const app = express();
 const PORT = 3000;
 
+// Security: Disable Express identification banner
+app.disable('x-powered-by');
+
+// Enhanced Security Headers (Clickjacking, MIME sniffing, HSTS, Referrer Policy)
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+  res.setHeader('X-XSS-Protection', '0');
+  next();
+});
+
+// Prevent caching of sensitive API responses
+app.use('/api', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
+
 // Body parser: 4.5mb limit for /api/ai/transcribe and 2mb limit for all other routes
 app.use((req, res, next) => {
   if (req.path === '/api/ai/transcribe') {
@@ -136,12 +156,6 @@ app.use((req, res, next) => {
   return express.json({ limit: '2mb' })(req, res, next);
 });
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
-
-// Set Cross-Origin-Opener-Policy to allow Firebase Auth popups without browser cancellation blocking
-app.use((_req, res, next) => {
-  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
-  next();
-});
 
 // Shared Gemini client utility
 const ai = new GoogleGenAI({
@@ -776,8 +790,8 @@ function getTimezoneNowParts(tz = 'Africa/Cairo') {
     const month = getPart('month');
     const day = getPart('day');
     const weekdayStr = getPart('weekday');
-    const hour = (parseInt(getPart('hour'), 10) || 0) % 24;
-    const minute = (parseInt(getPart('minute'), 10) || 0) % 60;
+    const hour = (Number.parseInt(getPart('hour'), 10) || 0) % 24;
+    const minute = (Number.parseInt(getPart('minute'), 10) || 0) % 60;
 
     const weekdayMap: Record<string, number> = {
       Sun: 0,

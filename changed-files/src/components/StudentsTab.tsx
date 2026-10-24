@@ -209,8 +209,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     const day = WEEK_DAYS.find((d) => d.dayIndex === slot.dayOfWeek);
     const dayName = day ? day.name : 'السبت';
     const [hStr, mStr] = (slot.time || '16:00').split(':');
-    const h = parseInt(hStr, 10) || 0;
-    const m = parseInt(mStr, 10) || 0;
+    const h = Number.parseInt(hStr, 10) || 0;
+    const m = Number.parseInt(mStr, 10) || 0;
     const period = h < 12 ? 'صباحاً' : 'مساءً';
     const displayHour = h === 0 ? 12 : h > 12 ? h - 12 : h;
     const timeFormatted = `${displayHour.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${period}`;
@@ -489,7 +489,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     if (!formClassType) {
       errors.classType = 'يرجى اختيار تصنيف نوع الحصة';
     }
-    if (formHourlyRate === undefined || formHourlyRate === null || isNaN(formHourlyRate) || Number(formHourlyRate) < 0) {
+    if (formHourlyRate === undefined || formHourlyRate === null || Number.isNaN(Number(formHourlyRate)) || Number(formHourlyRate) < 0) {
       errors.hourlyRate = 'يرجى إدخال سعر الساعة بشكل صحيح';
     }
 
@@ -517,11 +517,11 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     try {
       const rate = Math.max(0, Number(formHourlyRate) || 100);
       const remPaid =
-        formRemainingPaidLessons.trim() !== '' && !isNaN(Number(formRemainingPaidLessons))
+        formRemainingPaidLessons.trim() !== '' && !Number.isNaN(Number(formRemainingPaidLessons))
           ? Math.max(0, Number(formRemainingPaidLessons))
           : 0;
       const totPrepaid =
-        formTotalPrepaidLessons.trim() !== '' && !isNaN(Number(formTotalPrepaidLessons))
+        formTotalPrepaidLessons.trim() !== '' && !Number.isNaN(Number(formTotalPrepaidLessons))
           ? Math.max(remPaid, Number(formTotalPrepaidLessons))
           : remPaid;
 

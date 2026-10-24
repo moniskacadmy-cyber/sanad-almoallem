@@ -168,7 +168,7 @@ export const AddGroupModal: React.FC<AddGroupModalProps> = ({
       setErrorMsg('يرجى تحديد المادة الدراسية');
       return;
     }
-    if (isNaN(feeNum) || feeNum < 0) {
+    if (Number.isNaN(feeNum) || feeNum < 0) {
       setErrorMsg('يرجى كتابة اشتراك الشهر بشكل صحيح (0 أو أكثر)');
       return;
     }
@@ -468,7 +468,7 @@ export const AddGroupModal: React.FC<AddGroupModalProps> = ({
                     <select
                       value={slot.day}
                       onChange={(e) =>
-                        handleUpdateScheduleSlot(index, { day: parseInt(e.target.value, 10) })
+                        handleUpdateScheduleSlot(index, { day: Number.parseInt(e.target.value, 10) })
                       }
                       className="rounded-xl bg-slate-950 border border-slate-700 px-2 py-1.5 text-xs text-white focus:outline-none"
                     >
