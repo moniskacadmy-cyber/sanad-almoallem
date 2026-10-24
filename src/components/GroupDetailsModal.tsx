@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Group, Student, GroupMembership, PaymentStatus, StudentPaymentRecord } from '../types';
+import { Group, Student, GroupMembership } from '../types';
 import {
   addStudentToGroup,
   removeStudentFromGroup,
@@ -9,11 +9,17 @@ import {
   archiveGroup,
   updateGroup,
   addStudent,
-  recordStudentPayment,
-  subscribeToMonthlyPayments,
-  getPaymentRecordId,
 } from '../firebase';
 import { useBackHandler } from '../services/backHandler';
+import { useMonthlyPaymentRecords } from '../services/useBilling';
+import {
+  buildEntitlement,
+  getMonthKey,
+  getStudentGroupFee,
+  getStudentMonthEntitlements,
+  MonthlyEntitlement,
+} from '../services/billing';
+import { PaymentChip, PaymentDialog } from './PaymentDialog';
 import {
   Users,
   X,
@@ -72,67 +78,30 @@ export const GroupDetailsModal: React.FC<GroupDetailsModalProps> = ({
 }) => {
   useBackHandler(isOpen, onClose, 'group_details_modal');
 
-  const currentMonth = useMemo(() => new Date().toISOString().substring(0, 7), []);
-  const [paymentsMap, setPaymentsMap] = useState<Record<string, StudentPaymentRecord>>({});
+  // Cairo-time month (the 1st of a month must not flip at 3 AM because of UTC)
+  const currentMonth = useMemo(() => getMonthKey(), []);
+  const monthRecords = useMonthlyPaymentRecords(teacherId, currentMonth, isOpen);
+  const [paymentStudentId, setPaymentStudentId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!isOpen || !teacherId) return;
-    const unsub = subscribeToMonthlyPayments(teacherId, currentMonth, (records) => {
-      const map: Record<string, StudentPaymentRecord> = {};
-      records.forEach((r) => {
-        if (r.groupId === group.id) {
-          map[r.studentId] = r;
-        }
-      });
-      setPaymentsMap(map);
+  /** What this student owes (and has paid) in THIS group this month, from the live payment records. */
+  const getEntitlement = (student: Student): MonthlyEntitlement => {
+    const found = getStudentMonthEntitlements({
+      student,
+      groups: allGroups,
+      memberships,
+      records: monthRecords,
+      monthKey: currentMonth,
+    }).find((e) => e.groupId === group.id);
+    if (found) return found;
+    return buildEntitlement({
+      studentId: student.id,
+      studentName: student.name,
+      groupId: group.id,
+      groupName: group.name,
+      standardFee: getStudentGroupFee(student, group),
+      monthKey: currentMonth,
+      record: monthRecords.find((r) => r.studentId === student.id && r.groupId === group.id) || null,
     });
-    return () => unsub();
-  }, [isOpen, teacherId, group.id, currentMonth]);
-
-  const handleTogglePayment = async (student: Student) => {
-    const rec = paymentsMap[student.id];
-    const currentStatus: PaymentStatus = rec?.status || (student.paymentStatus as PaymentStatus) || 'unpaid';
-    const nextStatus: PaymentStatus =
-      currentStatus === 'unpaid' ? 'paid' : currentStatus === 'paid' ? 'partial' : 'unpaid';
-    const fee = group.monthlyFee || 0;
-    const amountPaid = nextStatus === 'paid' ? fee : nextStatus === 'partial' ? Math.round(fee / 2) : 0;
-
-    // Optimistic UI update
-    setPaymentsMap((prev) => ({
-      ...prev,
-      [student.id]: {
-        id: getPaymentRecordId(student.id, group.id, currentMonth),
-        studentId: student.id,
-        studentName: student.name,
-        groupId: group.id,
-        groupName: group.name,
-        month: currentMonth,
-        status: nextStatus,
-        amountPaid,
-        amountDue: fee,
-      },
-    }));
-
-    try {
-      await recordStudentPayment(teacherId, {
-        studentId: student.id,
-        studentName: student.name,
-        groupId: group.id,
-        groupName: group.name,
-        month: currentMonth,
-        status: nextStatus,
-        amountPaid,
-        amountDue: fee,
-      });
-      onShowToast(
-        `تم تحديث حالة الدفع لـ ${student.name}: ${
-          nextStatus === 'paid' ? 'دفع ✅' : nextStatus === 'partial' ? 'جزئي ⏳' : 'لم يدفع ❌'
-        }`
-      );
-    } catch (err) {
-      console.error('Error updating payment status:', err);
-      onShowToast('حدث خطأ أثناء حفظ حالة الدفع', true);
-    }
   };
 
   const [activeSubTab, setActiveSubTab] = useState<'students' | 'add' | 'edit'>('students');
@@ -592,36 +561,11 @@ export const GroupDetailsModal: React.FC<GroupDetailsModalProps> = ({
 
                       {/* 1-Click Monthly Payment Status Button */}
                       <div className="flex items-center gap-2">
-                        {(() => {
-                          const rec = paymentsMap[st.id];
-                          const status: PaymentStatus =
-                            rec?.status || (st.paymentStatus as PaymentStatus) || 'unpaid';
-                          return (
-                            <button
-                              type="button"
-                              onClick={() => handleTogglePayment(st)}
-                              className={`px-2.5 py-1 rounded-xl text-[11px] font-bold border transition cursor-pointer flex items-center gap-1 shadow-sm active:scale-95 ${
-                                status === 'paid'
-                                  ? 'bg-emerald-600/25 border-emerald-500/50 text-emerald-300 hover:bg-emerald-600/35'
-                                  : status === 'partial'
-                                  ? 'bg-amber-500/25 border-amber-500/50 text-amber-300 hover:bg-amber-500/35'
-                                  : 'bg-rose-500/20 border-rose-500/40 text-rose-300 hover:bg-rose-500/30'
-                              }`}
-                              title="حالة دفع اشتراك هذا الشهر (اضغط للتبديل: دفع / جزئي / لم يدفع)"
-                            >
-                              {status === 'paid' && <Check className="w-3 h-3 text-emerald-400" />}
-                              {status === 'partial' && <Clock className="w-3 h-3 text-amber-400" />}
-                              {status === 'unpaid' && <X className="w-3 h-3 text-rose-400" />}
-                              <span>
-                                {status === 'paid'
-                                  ? 'دفع ✅'
-                                  : status === 'partial'
-                                  ? 'جزئي ⏳'
-                                  : 'لم يدفع ❌'}
-                              </span>
-                            </button>
-                          );
-                        })()}
+                        <PaymentChip
+                          entitlement={getEntitlement(st)}
+                          currency={currency}
+                          onClick={() => setPaymentStudentId(st.id)}
+                        />
                       </div>
 
                       {/* Quick Contact & Actions */}
@@ -952,6 +896,21 @@ export const GroupDetailsModal: React.FC<GroupDetailsModalProps> = ({
           </div>
         )}
       </div>
+
+      {paymentStudentId &&
+        (() => {
+          const st = groupStudents.find((x) => x.id === paymentStudentId);
+          if (!st) return null;
+          return (
+            <PaymentDialog
+              teacherId={teacherId}
+              entitlement={getEntitlement(st)}
+              currency={currency}
+              onClose={() => setPaymentStudentId(null)}
+              onToast={onShowToast}
+            />
+          );
+        })()}
     </div>
   );
 };

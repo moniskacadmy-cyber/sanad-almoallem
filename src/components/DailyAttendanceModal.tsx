@@ -6,8 +6,6 @@ import {
   LessonLog,
   AbsencePolicySettings,
   DEFAULT_ABSENCE_POLICY,
-  PaymentStatus,
-  StudentPaymentRecord,
 } from '../types';
 import { useBackHandler } from '../services/backHandler';
 import {
@@ -16,10 +14,16 @@ import {
   updateStudent,
   fetchAllStudentLessons,
   addSchedule,
-  recordStudentPayment,
-  subscribeToMonthlyPayments,
-  getPaymentRecordId,
 } from '../firebase';
+import {
+  buildEntitlement,
+  getStudentGroupFee,
+  getStudentMonthEntitlements,
+  isMonthlyStudent,
+  MonthlyEntitlement,
+} from '../services/billing';
+import { useGroupsAndMemberships, useMonthlyPaymentRecords } from '../services/useBilling';
+import { PaymentChip, PaymentDialog } from './PaymentDialog';
 import {
   createAbsenceReminderMessage,
   triggerAbsenceNotificationAndChime,
@@ -56,6 +60,7 @@ interface DailyAttendanceModalProps {
   targetGroupId?: string | null;
   targetDate?: string;
   targetGroupName?: string;
+  currency?: string;
 }
 
 interface ActiveAbsenceAlert {
@@ -77,6 +82,7 @@ export const DailyAttendanceModal: React.FC<DailyAttendanceModalProps> = ({
   targetGroupId,
   targetDate,
   targetGroupName,
+  currency: currencyProp,
 }) => {
   useBackHandler(isOpen, onClose, 'daily_attendance_modal');
 
@@ -96,59 +102,32 @@ export const DailyAttendanceModal: React.FC<DailyAttendanceModalProps> = ({
 
   // Payment status tracking for current selected month
   const currentMonthKey = useMemo(() => (selectedDate ? selectedDate.substring(0, 7) : todayIso.substring(0, 7)), [selectedDate, todayIso]);
-  const [paymentsMap, setPaymentsMap] = useState<Record<string, StudentPaymentRecord>>({});
+  const [paymentStudentId, setPaymentStudentId] = useState<string | null>(null);
+  const currency = currencyProp || profile.currency || 'ج.م';
+  const monthRecords = useMonthlyPaymentRecords(profile.id, currentMonthKey, isOpen);
+  const { groups: allGroups, memberships } = useGroupsAndMemberships(profile.id, isOpen);
 
-  useEffect(() => {
-    if (!isOpen || !profile.id) return;
-    const unsub = subscribeToMonthlyPayments(profile.id, currentMonthKey, (records) => {
-      const map: Record<string, StudentPaymentRecord> = {};
-      records.forEach((r) => {
-        map[r.studentId] = r;
-      });
-      setPaymentsMap(map);
+  /** What this student owes (and has paid) this month: fixed monthly fee, pro-rata if joined mid-month. */
+  const getEntitlement = (student: Student): MonthlyEntitlement => {
+    const list = getStudentMonthEntitlements({
+      student,
+      groups: allGroups,
+      memberships,
+      records: monthRecords,
+      monthKey: currentMonthKey,
     });
-    return () => unsub();
-  }, [isOpen, profile.id, currentMonthKey]);
-
-  const handleTogglePayment = async (student: Student) => {
-    const rec = paymentsMap[student.id];
-    const currentStatus: PaymentStatus = rec?.status || (student.paymentStatus as PaymentStatus) || 'unpaid';
-    const nextStatus: PaymentStatus =
-      currentStatus === 'unpaid' ? 'paid' : currentStatus === 'paid' ? 'partial' : 'unpaid';
-    const fee = student.monthlyFee || (student.hourlyRate ? student.hourlyRate * 4 : 300);
-    const amountPaid = nextStatus === 'paid' ? fee : nextStatus === 'partial' ? Math.round(fee / 2) : 0;
-    const gId = targetGroupId || (student.groupIds && student.groupIds[0]) || 'individual';
-
-    // Optimistic update
-    setPaymentsMap((prev) => ({
-      ...prev,
-      [student.id]: {
-        id: getPaymentRecordId(student.id, gId, currentMonthKey),
-        studentId: student.id,
-        studentName: student.name,
-        groupId: gId,
-        groupName: targetGroupName || '',
-        month: currentMonthKey,
-        status: nextStatus,
-        amountPaid,
-        amountDue: fee,
-      },
-    }));
-
-    try {
-      await recordStudentPayment(profile.id, {
-        studentId: student.id,
-        studentName: student.name,
-        groupId: gId,
-        groupName: targetGroupName || '',
-        month: currentMonthKey,
-        status: nextStatus,
-        amountPaid,
-        amountDue: fee,
-      });
-    } catch (err) {
-      console.error('Error toggling payment in attendance:', err);
-    }
+    const found = (targetGroupId && list.find((e) => e.groupId === targetGroupId)) || list[0];
+    if (found) return found;
+    const group = allGroups.find((g) => g.id === (targetGroupId || (student.groupIds && student.groupIds[0])));
+    return buildEntitlement({
+      studentId: student.id,
+      studentName: student.name,
+      groupId: group?.id || targetGroupId || null,
+      groupName: group?.name || targetGroupName || '',
+      standardFee: group ? getStudentGroupFee(student, group) : student.monthlyFee || 0,
+      monthKey: currentMonthKey,
+      record: monthRecords.find((r) => r.studentId === student.id) || null,
+    });
   };
 
   // Auto-reminder toggle
@@ -331,7 +310,8 @@ export const DailyAttendanceModal: React.FC<DailyAttendanceModalProps> = ({
       const hourlyRate =
         student.hourlyRate ||
         (student.monthlyFee ? Math.round(student.monthlyFee / 4) : 100);
-      const cost = Math.round((duration / 60) * hourlyRate);
+      const monthly = isMonthlyStudent(student);
+      const cost = monthly ? 0 : Math.round((duration / 60) * hourlyRate);
 
       await addLessonLog(profile.id, student.id, {
         date: selectedDate,
@@ -344,8 +324,8 @@ export const DailyAttendanceModal: React.FC<DailyAttendanceModalProps> = ({
         settled: false,
         rating: 5,
         notes: 'تم تسجيل الحضور عبر سجل الحضور والغياب اليومي',
-        isFinancialCounted: true,
-        is_financial_counted: true,
+        isFinancialCounted: !monthly,
+        is_financial_counted: !monthly,
         hasMakeupClass: false,
         has_makeup_class: false,
       });
@@ -386,10 +366,11 @@ export const DailyAttendanceModal: React.FC<DailyAttendanceModalProps> = ({
         (student.monthlyFee ? Math.round(student.monthlyFee / 4) : 100);
 
       // Determine default financial & makeup behavior from Teacher's policy settings
-      const isFinancialCounted =
-        attendanceType === 'excused'
-          ? policy.excusedCountsFinancially
-          : policy.unexcusedCountsFinancially;
+      const isFinancialCounted = isMonthlyStudent(student)
+        ? false
+        : attendanceType === 'excused'
+        ? policy.excusedCountsFinancially
+        : policy.unexcusedCountsFinancially;
 
       const hasMakeupClass =
         attendanceType === 'excused'
@@ -500,7 +481,8 @@ export const DailyAttendanceModal: React.FC<DailyAttendanceModalProps> = ({
         const hourlyRate =
           student.hourlyRate ||
           (student.monthlyFee ? Math.round(student.monthlyFee / 4) : 100);
-        const cost = Math.round((duration / 60) * hourlyRate);
+        const monthly = isMonthlyStudent(student);
+        const cost = monthly ? 0 : Math.round((duration / 60) * hourlyRate);
 
         await addLessonLog(profile.id, student.id, {
           date: selectedDate,
@@ -512,8 +494,8 @@ export const DailyAttendanceModal: React.FC<DailyAttendanceModalProps> = ({
           settled: false,
           rating: 5,
           notes: 'تحضير جماعي عبر سجل الحضور اليومي',
-          isFinancialCounted: true,
-          is_financial_counted: true,
+          isFinancialCounted: !monthly,
+          is_financial_counted: !monthly,
           hasMakeupClass: false,
           has_makeup_class: false,
         });
@@ -559,9 +541,8 @@ export const DailyAttendanceModal: React.FC<DailyAttendanceModalProps> = ({
       const hourlyRate =
         student.hourlyRate ||
         (student.monthlyFee ? Math.round(student.monthlyFee / 4) : 100);
-      const cost = result.isFinancialCounted
-        ? Math.round((duration / 60) * hourlyRate)
-        : 0;
+      const counted = isMonthlyStudent(student) ? false : result.isFinancialCounted;
+      const cost = counted ? Math.round((duration / 60) * hourlyRate) : 0;
 
       await addLessonLog(profile.id, student.id, {
         date: selectedDate,
@@ -576,8 +557,8 @@ export const DailyAttendanceModal: React.FC<DailyAttendanceModalProps> = ({
         cost,
         settled: false,
         notes: result.notes || '',
-        isFinancialCounted: result.isFinancialCounted,
-        is_financial_counted: result.isFinancialCounted,
+        isFinancialCounted: counted,
+        is_financial_counted: counted,
         hasMakeupClass: result.hasMakeupClass,
         has_makeup_class: result.hasMakeupClass,
         makeupClassDate: result.makeupClassDate || null,
@@ -979,34 +960,15 @@ export const DailyAttendanceModal: React.FC<DailyAttendanceModalProps> = ({
 
                     {/* Recorded Status & 1-Click Monthly Payment Status */}
                     <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                      {/* Payment Status Toggle */}
-                      {(() => {
-                        const rec = paymentsMap[student.id];
-                        const status: PaymentStatus =
-                          rec?.status || (student.paymentStatus as PaymentStatus) || 'unpaid';
-                        return (
-                          <button
-                            type="button"
-                            onClick={() => handleTogglePayment(student)}
-                            className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition cursor-pointer flex items-center gap-1 shadow-sm active:scale-95 ${
-                              status === 'paid'
-                                ? 'bg-emerald-600/25 border-emerald-500/50 text-emerald-300 hover:bg-emerald-600/35'
-                                : status === 'partial'
-                                ? 'bg-amber-500/25 border-amber-500/50 text-amber-300 hover:bg-amber-500/35'
-                                : 'bg-rose-500/20 border-rose-500/40 text-rose-300 hover:bg-rose-500/30'
-                            }`}
-                            title="حالة دفع اشتراك هذا الشهر (اضغط للتبديل السريع: دفع / جزئي / لم يدفع)"
-                          >
-                            <span>
-                              {status === 'paid'
-                                ? 'دفع ✅'
-                                : status === 'partial'
-                                ? 'جزئي ⏳'
-                                : 'لم يدفع ❌'}
-                            </span>
-                          </button>
-                        );
-                      })()}
+                      {/* Monthly fee: only for group/center students (fixed monthly, not per lesson) */}
+                      {isMonthlyStudent(student) && (
+                        <PaymentChip
+                          entitlement={getEntitlement(student)}
+                          currency={currency}
+                          onClick={() => setPaymentStudentId(student.id)}
+                          size="sm"
+                        />
+                      )}
 
                       {lesson ? (
                         <div className="flex items-center gap-1">
@@ -1193,6 +1155,20 @@ export const DailyAttendanceModal: React.FC<DailyAttendanceModalProps> = ({
           </button>
         </div>
       </div>
+
+      {paymentStudentId &&
+        (() => {
+          const st = students.find((x) => x.id === paymentStudentId);
+          if (!st) return null;
+          return (
+            <PaymentDialog
+              teacherId={profile.id}
+              entitlement={getEntitlement(st)}
+              currency={currency}
+              onClose={() => setPaymentStudentId(null)}
+            />
+          );
+        })()}
 
       {/* Sub-modal: Detailed Absence / Makeup Configuration */}
       {absenceSubModalStudent && (

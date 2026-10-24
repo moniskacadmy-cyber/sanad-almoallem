@@ -10,6 +10,17 @@ import { GoogleGenAI } from '@google/genai';
 import fs from 'fs';
 import { createRemindersRouter, sendWhatsAppReminderTemplate } from './src/server/remindersCron.js';
 import { createSubscriptionGuard, evaluateSubscription, type TeacherSubscriptionData } from './src/server/subscriptionAccess.js';
+import {
+  buildAgendaMessage,
+  buildClassReminderMessage,
+  dueForReminder,
+  getGroupAgenda,
+  getIndividualAgenda,
+  isInMorningWindow,
+  isMutedByDnd,
+  timeToMinutes,
+  type PushMessage,
+} from './src/server/agenda.js';
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -829,6 +840,88 @@ function getTimezoneNowParts(tz = 'Africa/Cairo') {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Push helpers shared by the group / morning / login notifications
+// ---------------------------------------------------------------------------
+
+/** Atomically claims a reminder so that only one cron tick (or request) sends it. Same rules as the individual-class claim. */
+async function claimReminder(dbAdmin: any, sentRef: any, meta: Record<string, unknown>): Promise<boolean> {
+  let shouldSend = false;
+  try {
+    await dbAdmin.runTransaction(async (transaction: any) => {
+      shouldSend = false; // a retried transaction must start from a clean decision
+      const currentDoc = await transaction.get(sentRef);
+      const nowIso = new Date().toISOString();
+      if (!currentDoc.exists) {
+        transaction.set(sentRef, { ...meta, status: 'claiming', claimedAt: nowIso });
+        shouldSend = true;
+        return;
+      }
+      const data = currentDoc.data();
+      if (data?.status === 'sent') return;
+      if (data?.status === 'claiming') {
+        const claimedAtMs = data.claimedAt ? new Date(data.claimedAt).getTime() : 0;
+        if (Date.now() - claimedAtMs > 2 * 60 * 1000) {
+          transaction.update(sentRef, { status: 'claiming', claimedAt: nowIso, retried: true });
+          shouldSend = true;
+        }
+        return;
+      }
+      if (data?.status === 'failed') {
+        transaction.update(sentRef, { status: 'claiming', claimedAt: nowIso, retriedFromFailed: true });
+        shouldSend = true;
+      }
+    });
+  } catch {
+    return false;
+  }
+  return shouldSend;
+}
+
+/** Web Push with high urgency, so a locked / dozing phone is woken up; the message is dropped after ttlSeconds. */
+async function sendPush(
+  messagingAdmin: any,
+  tokens: string[],
+  msg: PushMessage,
+  data: Record<string, string> = {},
+  ttlSeconds = 3600
+) {
+  return messagingAdmin.sendEachForMulticast({
+    tokens,
+    notification: { title: msg.title, body: msg.body },
+    data: { tag: msg.tag, ...data },
+    webpush: {
+      headers: { Urgency: 'high', TTL: String(ttlSeconds) },
+      notification: {
+        title: msg.title,
+        body: msg.body,
+        icon: '/pwa-192x192.png',
+        badge: '/favicon.ico',
+      },
+      fcmOptions: { link: '/' },
+    },
+  });
+}
+
+/** Deletes tokens that FCM reports as dead, so they are not retried every minute. */
+function removeBadTokens(
+  dbAdmin: any,
+  teacherId: string,
+  tokens: string[],
+  tokenDocPaths: Map<string, string> | undefined,
+  response: any
+) {
+  response.responses.forEach((resp: any, idx: number) => {
+    if (resp.success || !resp.error) return;
+    const code = resp.error.code;
+    if (code !== 'messaging/invalid-registration-token' && code !== 'messaging/registration-token-not-registered') return;
+    const bad = tokens[idx];
+    if (!bad) return;
+    const docPath = tokenDocPaths?.get(bad) || `teachers/${teacherId}/fcmTokens/${bad}`;
+    dbAdmin.doc(docPath).delete().catch(() => {});
+  });
+}
+
 // Cron Job Web Push Notification Endpoint (Protected by CRON_SECRET)
 app.get('/api/reminders/cron', async (req, res) => {
   try {
@@ -897,6 +990,9 @@ app.get('/api/reminders/cron', async (req, res) => {
       const fcmTokens = entry.tokens;
 
       if (fcmTokens.length === 0) continue;
+
+      // Respect the teacher's Do-Not-Disturb setting (quiet hours / weekends / vacation).
+      if (isMutedByDnd(teacherData.doNotDisturb, currentDayOfWeek, currentTotalMinutes)) continue;
 
       // Optimize reads: Query ONLY today's schedule slots (where dayOfWeek == currentDayOfWeek)
       const schedulesSnap = await dbAdmin
@@ -1023,6 +1119,7 @@ app.get('/api/reminders/cron', async (req, res) => {
                 icon: '/pwa-192x192.png',
                 badge: '/favicon.ico',
               },
+              headers: { Urgency: 'high', TTL: '3600' },
               fcmOptions: {
                 link: '/',
               },
@@ -1089,6 +1186,91 @@ app.get('/api/reminders/cron', async (req, res) => {
         }
       }
 
+      // ---- Group class reminders + morning summary ----
+      try {
+        const groupsSnap = await dbAdmin.collection('teachers').doc(teacherId).collection('groups').get();
+        const groups = groupsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const groupItems = getGroupAgenda(groups, currentDayOfWeek);
+        const sentCol = dbAdmin.collection('teachers').doc(teacherId).collection('sentReminders');
+
+        for (const item of dueForReminder(groupItems, currentTotalMinutes, minutesBefore)) {
+          const groupSentRef = sentCol.doc(`sent_${teacherId}_${item.id}_${todayStr}`);
+          if (!(await claimReminder(dbAdmin, groupSentRef, { teacherId, groupSlotId: item.id, day: todayStr }))) continue;
+          try {
+            const msg = buildClassReminderMessage(teacherData.name, item);
+            const resp = await sendPush(messagingAdmin, fcmTokens, msg, { groupSlotId: item.id, time: item.time }, 3600);
+            await groupSentRef.set({
+              status: 'sent',
+              teacherId,
+              groupSlotId: item.id,
+              day: todayStr,
+              sentAt: new Date().toISOString(),
+              fcmSuccessCount: resp.successCount,
+            });
+            notificationsSent += resp.successCount;
+            removeBadTokens(dbAdmin, teacherId, fcmTokens, entry.tokenDocPaths, resp);
+          } catch (groupFcmErr: any) {
+            console.error(`FCM group reminder error for teacher ${teacherId}:`, groupFcmErr);
+            await groupSentRef
+              .set({
+                status: 'failed',
+                error: groupFcmErr instanceof Error ? groupFcmErr.message : String(groupFcmErr),
+                teacherId,
+                groupSlotId: item.id,
+                day: todayStr,
+                failedAt: new Date().toISOString(),
+              })
+              .catch(() => {});
+          }
+        }
+
+        // Morning summary: once a day, from the teacher's chosen time (default 07:00) for up to 2 hours.
+        const morningAt = timeToMinutes(teacherData.morningSummaryTime) ?? 7 * 60;
+        if (teacherData.morningSummaryEnabled !== false && isInMorningWindow(currentTotalMinutes, morningAt)) {
+          const todayItems = [
+            ...groupItems,
+            ...getIndividualAgenda(
+              schedulesSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+              currentDayOfWeek,
+              todayStr
+            ),
+          ];
+          const morningMsg = buildAgendaMessage({ teacherName: teacherData.name, items: todayItems, mode: 'morning' });
+          if (morningMsg) {
+            const morningRef = sentCol.doc(`sent_morning_${teacherId}_${todayStr}`);
+            if (await claimReminder(dbAdmin, morningRef, { teacherId, kind: 'morning', day: todayStr })) {
+              try {
+                const resp = await sendPush(messagingAdmin, fcmTokens, morningMsg, { kind: 'morning' }, 10800);
+                await morningRef.set({
+                  status: 'sent',
+                  teacherId,
+                  kind: 'morning',
+                  day: todayStr,
+                  sentAt: new Date().toISOString(),
+                  fcmSuccessCount: resp.successCount,
+                });
+                notificationsSent += resp.successCount;
+                removeBadTokens(dbAdmin, teacherId, fcmTokens, entry.tokenDocPaths, resp);
+              } catch (morningErr: any) {
+                console.error(`FCM morning summary error for teacher ${teacherId}:`, morningErr);
+                await morningRef
+                  .set({
+                    status: 'failed',
+                    error: morningErr instanceof Error ? morningErr.message : String(morningErr),
+                    teacherId,
+                    kind: 'morning',
+                    day: todayStr,
+                    failedAt: new Date().toISOString(),
+                  })
+                  .catch(() => {});
+              }
+            }
+          }
+        }
+      } catch (groupErr) {
+        console.warn(`Group / morning reminder error for teacher ${teacherId}:`, groupErr);
+      }
+
       // Check due tasks for teacher
       try {
         const tasksSnap = await dbAdmin
@@ -1132,6 +1314,7 @@ app.get('/api/reminders/cron', async (req, res) => {
                     icon: '/pwa-192x192.png',
                     badge: '/favicon.ico',
                   },
+                  headers: { Urgency: 'high', TTL: '10800' },
                   fcmOptions: {
                     link: '/',
                   },
@@ -1154,6 +1337,90 @@ app.get('/api/reminders/cron', async (req, res) => {
   } catch (err: any) {
     console.error('Error in GET /api/reminders/cron:', err);
     return res.status(500).json({ error: 'حدث خطأ أثناء تشغيل تذكيرات الـ Cron.' });
+  }
+});
+
+// Sent right after the teacher signs in on a device: confirms that notifications work and lists today's classes.
+// At most once per 6-hour block per day; respects the subscription, reminder switches and Do-Not-Disturb.
+app.post('/api/reminders/login-summary', verifyFirebaseToken, userRateLimiter, async (req, res) => {
+  try {
+    const uid = (req as any).user?.uid as string | undefined;
+    if (!uid) return res.status(401).json({ error: 'رمز الدخول غير صالح.' });
+
+    const dbAdmin = getAdminDb();
+    const teacherDoc = await dbAdmin.collection('teachers').doc(uid).get();
+    if (!teacherDoc.exists) return res.json({ success: true, sent: 0, reason: 'no-profile' });
+    const teacherData = teacherDoc.data() || {};
+
+    if (evaluateSubscription(teacherData, new Date()) !== 'active') {
+      return res.json({ success: true, sent: 0, reason: 'subscription' });
+    }
+    if (teacherData.remindersEnabled === false || teacherData.teacherNotificationsEnabled === false) {
+      return res.json({ success: true, sent: 0, reason: 'disabled' });
+    }
+
+    const tz = teacherData.timezone || 'Africa/Cairo';
+    const { todayStr, currentDayOfWeek, currentTotalMinutes } = getTimezoneNowParts(tz);
+    if (isMutedByDnd(teacherData.doNotDisturb, currentDayOfWeek, currentTotalMinutes)) {
+      return res.json({ success: true, sent: 0, reason: 'dnd' });
+    }
+
+    const teacherRef = dbAdmin.collection('teachers').doc(uid);
+    const tokensSnap = await teacherRef.collection('fcmTokens').get();
+    const tokenDocPaths = new Map<string, string>();
+    const tokens: string[] = [];
+    tokensSnap.forEach((d) => {
+      const t = d.data()?.token || d.id;
+      if (t && !tokens.includes(t)) {
+        tokens.push(t);
+        tokenDocPaths.set(t, d.ref.path);
+      }
+    });
+    if (tokens.length === 0) return res.json({ success: true, sent: 0, reason: 'no-tokens' });
+
+    const bucket = Math.floor(currentTotalMinutes / 360);
+    const sentRef = teacherRef.collection('sentReminders').doc(`sent_login_${uid}_${todayStr}_${bucket}`);
+    if (!(await claimReminder(dbAdmin, sentRef, { teacherId: uid, kind: 'login', day: todayStr }))) {
+      return res.json({ success: true, sent: 0, reason: 'already-sent' });
+    }
+
+    try {
+      const [schedSnap, groupsSnap] = await Promise.all([
+        teacherRef.collection('schedules').where('dayOfWeek', '==', currentDayOfWeek).get(),
+        teacherRef.collection('groups').get(),
+      ]);
+      const items = [
+        ...getGroupAgenda(groupsSnap.docs.map((d) => ({ id: d.id, ...d.data() })), currentDayOfWeek),
+        ...getIndividualAgenda(schedSnap.docs.map((d) => ({ id: d.id, ...d.data() })), currentDayOfWeek, todayStr),
+      ];
+      const msg = buildAgendaMessage({ teacherName: teacherData.name, items, mode: 'login' })!;
+      const resp = await sendPush(getAdminMessaging(getApps()[0]), tokens, msg, { kind: 'login' }, 600);
+      await sentRef.set({
+        status: 'sent',
+        teacherId: uid,
+        kind: 'login',
+        day: todayStr,
+        sentAt: new Date().toISOString(),
+        fcmSuccessCount: resp.successCount,
+      });
+      removeBadTokens(dbAdmin, uid, tokens, tokenDocPaths, resp);
+      return res.json({ success: true, sent: resp.successCount, failed: resp.failureCount });
+    } catch (sendErr: any) {
+      await sentRef
+        .set({
+          status: 'failed',
+          teacherId: uid,
+          kind: 'login',
+          day: todayStr,
+          error: sendErr instanceof Error ? sendErr.message : String(sendErr),
+          failedAt: new Date().toISOString(),
+        })
+        .catch(() => {});
+      throw sendErr;
+    }
+  } catch (err) {
+    console.error('Error in POST /api/reminders/login-summary:', err);
+    return res.status(500).json({ error: 'تعذر إرسال إشعار الدخول.' });
   }
 });
 

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 type BackHandler = () => boolean | void;
 
@@ -31,13 +31,21 @@ export function getIsExitingApp(): boolean {
   return isExitingApp;
 }
 
+/** How many history entries above the app's first entry we are (stored in every state we push). */
+export function getCurrentHistoryDepth(): number {
+  if (typeof window === 'undefined') return 0;
+  const d = (window.history.state as any)?.depth;
+  return typeof d === 'number' && d > 0 ? d : 0;
+}
+
 /**
- * Pushes a new browser history state and tracks the count.
+ * Pushes a new browser history state. The real depth is stored in the state itself, so we always
+ * know how far we are from the first entry (a plain counter never goes down when the user presses Back).
  */
 export function pushAppHistoryState(stateObj: any = {}): void {
   if (typeof window !== 'undefined') {
     window.history.pushState(
-      { app: 'sanad-almoallem', ...stateObj, depth: pushedStatesCount + 1 },
+      { app: 'sanad-almoallem', ...stateObj, depth: getCurrentHistoryDepth() + 1 },
       '',
       window.location.pathname
     );
@@ -84,10 +92,16 @@ export function useBackHandler(
   id: string,
   pushState = true
 ): void {
+  // Keep the latest onClose in a ref. Callers usually pass an inline arrow function, which has a new
+  // identity on every render: depending on it would re-register the handler (and push a new history
+  // entry) on every re-render while the modal is open, so Back would need many presses to leave.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!isOpen) return;
-    return registerBackHandler(id, onClose, pushState);
-  }, [isOpen, onClose, id, pushState]);
+    return registerBackHandler(id, () => onCloseRef.current(), pushState);
+  }, [isOpen, id, pushState]);
 }
 
 /**
@@ -116,24 +130,34 @@ export function handleTopmostBack(): boolean {
 }
 
 /**
- * Exits the application cleanly by rewinding history by exactly the number
- * of states pushed by our app, or closes the window if possible.
+ * Leaves the app. A web page cannot close itself, so we rewind the history entries we pushed
+ * (back to the first one) and then go back once more, which is exactly what the system Back
+ * button does at the root of an installed app (it closes the PWA on Android).
  */
 export function exitApplication(): void {
+  if (typeof window === 'undefined') return;
   setIsExitingApp(true);
-  const statesToGo = Math.max(1, pushedStatesCount);
-  try {
-    window.history.go(-(statesToGo + 1));
-  } catch {
-    try {
-      window.close();
-    } catch {}
+  const depth = getCurrentHistoryDepth();
+
+  if (depth > 0) {
+    const leave = () => {
+      window.history.back();
+    };
+    window.addEventListener('popstate', leave, { once: true });
+    window.history.go(-depth);
+  } else {
+    window.history.back();
   }
 
-  // Fallback close after a short delay if window is still open (e.g. standalone PWA)
+  // If we are still here a moment later (e.g. a normal browser tab with nothing behind it),
+  // make the app react to Back normally again instead of staying "exiting" forever.
   setTimeout(() => {
     try {
       window.close();
-    } catch {}
-  }, 120);
+    } catch {
+      /* ignored: only works for windows opened by script */
+    }
+    setIsExitingApp(false);
+    resetPushedStates();
+  }, 1500);
 }
