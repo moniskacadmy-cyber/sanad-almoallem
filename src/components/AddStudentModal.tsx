@@ -19,6 +19,7 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClos
     paymentType: 'hourly' as 'hourly' | 'monthly',
     rate: 0,
     sessionType: 'in_person' as ClassType,
+    notes: '',
   });
 
   if (!isOpen) return null;
@@ -36,7 +37,6 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClos
         <input type="text" placeholder="رقم واتساب (01xxxxxxxxx)" className="w-full bg-slate-800 p-3 rounded-xl mb-3 text-white border border-slate-700" onChange={(e) => setFormData({...formData, whatsapp: e.target.value})} />
         <select className="w-full bg-slate-800 p-3 rounded-xl mb-3 text-white border border-slate-700" value={formData.subject} onChange={(e) => setFormData({...formData, subject: e.target.value})}>
           <option value={defaultSubject}>{defaultSubject}</option>
-          {/* Add other subjects as needed */}
         </select>
         <input type="text" placeholder="الصف الدراسي" className="w-full bg-slate-800 p-3 rounded-xl mb-3 text-white border border-slate-700" onChange={(e) => setFormData({...formData, grade: e.target.value})} />
 
@@ -48,7 +48,15 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({ isOpen, onClos
               <button className={`flex-1 p-2 rounded-lg ${formData.paymentType === 'hourly' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400'}`} onClick={() => setFormData({...formData, paymentType: 'hourly'})}>بالساعة</button>
               <button className={`flex-1 p-2 rounded-lg ${formData.paymentType === 'monthly' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400'}`} onClick={() => setFormData({...formData, paymentType: 'monthly'})}>شهري</button>
             </div>
-            <input type="number" placeholder={formData.paymentType === 'hourly' ? "سعر الساعة" : "الاشتراك الشهري"} className="w-full bg-slate-800 p-3 rounded-xl text-white border border-slate-700" onChange={(e) => setFormData({...formData, rate: Number(e.target.value)})} />
+            <input type="number" placeholder={formData.paymentType === 'hourly' ? "سعر الساعة" : "الاشتراك الشهري"} className="w-full bg-slate-800 p-3 rounded-xl text-white border border-slate-700 text-xs" onChange={(e) => setFormData({...formData, rate: Number(e.target.value)})} />
+            
+            <textarea
+              placeholder="ملاحظات ومراقبة أكاديمية خاصة للطالب..."
+              rows={2}
+              className="w-full bg-slate-800 p-3 rounded-xl text-white border border-slate-700 text-xs focus:outline-none focus:border-purple-400"
+              value={formData.notes}
+              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+            />
           </div>
         )}
 

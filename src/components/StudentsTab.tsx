@@ -563,7 +563,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
     setProfileLearningStyle(selectedProfileStudent.learningStyle || '');
     setProfileNotes(selectedProfileStudent.notes || '');
     setIsProfileLearningStyleOpen(false);
-    setIsProfileNotesOpen(false);
+    setIsProfileNotesOpen(!!selectedProfileStudent.notes);
     const unsub = subscribeToStudentLessons(profile.id, selectedProfileStudent.id, (lessons) => {
       setStudentLessons(lessons);
     });
@@ -1898,6 +1898,13 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
                         ? `نظام الحساب: اشتراك شهري ثابت (${monthlyDue} ${currency}/شهر) • الحصص: ${sLessons.length}`
                         : `سعر الساعة: ${hourlyRate} ${currency} • إجمالي الساعات: ${totalHours} س (${sLessons.length} حصص)`}
                     </p>
+                    {s.notes && (
+                      <p className="text-[11px] text-amber-200/90 bg-amber-950/40 border border-amber-500/30 rounded-lg px-2.5 py-1 mt-1.5 flex items-center gap-1.5 line-clamp-1" title={s.notes}>
+                        <FileText className="w-3 h-3 text-amber-400 flex-shrink-0" />
+                        <span className="font-medium text-[10px] text-amber-400 flex-shrink-0">ملاحظات خاصة:</span>
+                        <span className="truncate">{s.notes}</span>
+                      </p>
+                    )}
                   </div>
 
                   {/* Dues Status Badge / Quick Payment Toggle */}
@@ -3050,26 +3057,26 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
               )}
             </div>
 
-            {/* SECTION 2.5: SECTION "الملاحظات الإضافية" (Collapsible - مغلق افتراضياً) */}
-            <div className="rounded-2xl bg-slate-950/70 border border-slate-800 overflow-hidden transition-all shadow-md">
+            {/* SECTION 2.5: SECTION "الملاحظات الخاصة والتقدم الأكاديمي" */}
+            <div className="rounded-2xl bg-slate-950/70 border border-purple-500/30 overflow-hidden transition-all shadow-md">
               <button
                 type="button"
                 onClick={() => setIsProfileNotesOpen(!isProfileNotesOpen)}
                 className="w-full p-3.5 flex items-center justify-between text-right cursor-pointer hover:bg-slate-900/60 transition"
               >
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-slate-800 text-slate-300 flex items-center justify-center border border-slate-700 flex-shrink-0">
+                  <div className="w-8 h-8 rounded-xl bg-purple-950/80 text-purple-300 flex items-center justify-center border border-purple-500/40 flex-shrink-0">
                     <FileText className="w-4 h-4 text-purple-400" />
                   </div>
                   <div>
                     <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <span>الملاحظات الإضافية</span>
-                      <span className="text-[10px] text-slate-400 font-normal">
-                        ({profileNotes ? 'يوجد ملاحظات 📝' : 'ملاحظات خاصة'})
+                      <span>الملاحظات الخاصة والتقدم الأكاديمي</span>
+                      <span className="text-[10px] text-purple-300 font-medium px-2 py-0.5 rounded-full bg-purple-900/40 border border-purple-500/30">
+                        {profileNotes ? 'يوجد ملاحظات 📝' : 'ملاحظات المعلم'}
                       </span>
                     </h4>
                     <p className="text-[10px] text-slate-400">
-                      ملاحظات خاصة عن الطالب، المواعيد أو متطلبات ولي الأمر
+                      سجل الملاحظات الأكاديمية أو السلوكية والتوصيات الخاصة بالطالب
                     </p>
                   </div>
                 </div>
@@ -3086,22 +3093,62 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
               </button>
 
               {isProfileNotesOpen && (
-                <div className="p-3.5 pt-0 space-y-2 border-t border-slate-800/80 mt-1">
+                <div className="p-3.5 pt-1 space-y-3 border-t border-slate-800/80">
+                  {/* Quick Preset Tags */}
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1.5">
+                      💡 اختصارات وسوم سريعة للملاحظات:
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        'ممتاز في حل التمارين 🚀',
+                        'يلزمه متابعة التأسيس 📐',
+                        'ملتزم بالواجبات ✍️',
+                        'تحسن ملحوظ في الأداء 📈',
+                        'يحتاج تركيز على الحفظ 🧠',
+                        'يرجى التواصل مع ولي الأمر 📱',
+                      ].map((tag) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => {
+                            if (!profileNotes.trim()) {
+                              setProfileNotes(tag);
+                            } else if (!profileNotes.includes(tag)) {
+                              setProfileNotes(`${profileNotes.trim()}\n• ${tag}`);
+                            }
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-purple-900/40 border border-slate-700/80 text-[10px] text-slate-300 hover:text-purple-200 transition cursor-pointer active:scale-95"
+                        >
+                          + {tag}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <textarea
                     value={profileNotes}
                     onChange={(e) => setProfileNotes(e.target.value)}
-                    placeholder="سجل ملاحظاتك الإضافية عن الطالب هنا..."
-                    rows={2}
-                    className="w-full rounded-xl bg-slate-900 border border-slate-700 p-2 text-xs text-slate-200 focus:outline-none focus:border-purple-400 mt-2"
+                    placeholder="سجل ملاحظاتك الخاصة، نقاط القوة والضعف، أو توصيات المتابعة..."
+                    rows={3}
+                    className="w-full rounded-xl bg-slate-900 border border-slate-700/80 p-2.5 text-xs text-slate-200 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400/50 transition resize-y"
                   />
-                  <div className="flex justify-end">
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-[10px] text-slate-400">
+                      {profileNotes.length > 0 ? `${profileNotes.length} حرف` : 'تُحفظ في سجّل الطالب ومتاحة في التقارير'}
+                    </span>
                     <button
                       type="button"
                       disabled={savingNotes}
-                      onClick={handleSaveProfileNotes}
-                      className="px-3 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold transition disabled:opacity-50 cursor-pointer"
+                      onClick={async () => {
+                        await handleSaveProfileNotes();
+                        setToastMessage({ type: 'success', text: 'تم حفظ ملاحظات الطالب بنجاح! 📝' });
+                        setTimeout(() => setToastMessage(null), 3000);
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition shadow-md shadow-purple-950/40 disabled:opacity-50 cursor-pointer active:scale-95 flex items-center gap-1.5"
                     >
-                      {savingNotes ? 'جارٍ الحفظ...' : 'حفظ الملاحظات'}
+                      {savingNotes ? 'جارٍ الحفظ...' : 'حفظ الملاحظات 💾'}
                     </button>
                   </div>
                 </div>

@@ -373,6 +373,8 @@ export interface ReminderSettings {
   autoOpenWhatsApp?: boolean;
   endOfDaySummaryEnabled?: boolean;
   endOfDaySummaryTime?: string; // e.g. "21:00"
+  dailyDigestEnabled?: boolean; // تذكير جدول حصص اليوم المجدول
+  dailyDigestTime?: string;    // وقت التذكير الصباحي e.g. "08:00"
   timezone?: string;
 }
 
