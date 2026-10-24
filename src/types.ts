@@ -44,6 +44,8 @@ export interface AbsencePolicySettings {
   unexcusedCountsFinancially: boolean;
   unexcusedHasMakeup: boolean;
   autoAbsenceReminder?: boolean;
+  absenceThreshold?: number; // عدد الحصص المسموح بها قبل التنبيه
+  autoWarningEnabled?: boolean; // تفعيل رسائل الواتساب التلقائية
 }
 
 export const DEFAULT_ABSENCE_POLICY: AbsencePolicySettings = {
