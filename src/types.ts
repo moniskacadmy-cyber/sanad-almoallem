@@ -461,6 +461,25 @@ export interface QuickNote {
   updatedAt?: any;
 }
 
+export interface ReminderLogItem {
+  id: string;
+  teacherId: string;
+  studentId: string;
+  studentName: string;
+  target: 'parent' | 'teacher';
+  recipientName: string;
+  recipientPhone: string;
+  classTime: string;
+  classType: ClassType;
+  subject: string;
+  locationOrLink?: string;
+  messageText: string;
+  whatsappUrl: string;
+  status: 'sent' | 'scheduled' | 'delivered';
+  minutesBefore: number;
+  sentAt: string;
+}
+
 export function renderTemplate(templateText: string, vars: Record<string, any>): string {
   let result = templateText;
   Object.entries(vars).forEach(([key, val]) => {

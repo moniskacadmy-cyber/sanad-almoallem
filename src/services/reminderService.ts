@@ -125,6 +125,7 @@ export async function checkRemindersApi(
   params: {
     teacher: TeacherProfile;
     schedules: ScheduleSlot[];
+    groups: any[];
     students: Student[];
     minutesBefore?: number;
   },
@@ -161,6 +162,7 @@ export async function checkRemindersApi(
         teacherName: params.teacher.name,
         teacherWhatsapp: params.teacher.whatsapp,
         schedules: params.schedules,
+        groups: params.groups,
         students: params.students,
         clientTime: new Date().toISOString(),
         minutesBefore: params.minutesBefore || 15,

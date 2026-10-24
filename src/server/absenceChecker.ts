@@ -39,12 +39,12 @@ export async function checkAbsenceThreshold(
       const student = studentSnap.data();
       
       if (student && student.whatsapp) {
-        await sendWhatsAppReminderTemplate(
-          teacherId,
-          studentId,
-          'absence_warning',
-          { studentName: student.name, count: absenceCount }
-        );
+        await sendWhatsAppReminderTemplate({
+          to: student.whatsapp,
+          studentName: student.name,
+          subject: teacher.subject,
+          classTime: '---', // Or fetch last class time
+        });
       }
     }
   }

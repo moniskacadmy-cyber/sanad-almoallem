@@ -430,6 +430,7 @@ export default function App() {
         const res = await checkRemindersApi({
           teacher: profile,
           schedules,
+          groups: [],
           students,
           minutesBefore: settings.minutesBefore || 15,
         });

@@ -53,6 +53,7 @@ import {
   AttendanceRecord,
   PaymentStatus,
   StudentPaymentRecord,
+  ReminderLogItem,
 } from './types';
 
 import rawFirebaseConfig from '../firebase-applet-config.json';
@@ -2494,14 +2495,14 @@ export function subscribeToAdminNotifications(callback: (notifications: AdminNot
   });
 }
 
-export async function fetchReminderLogs(teacherId: string): Promise<ReminderLog[]> {
+export async function fetchReminderLogs(teacherId: string): Promise<ReminderLogItem[]> {
   const collRef = collection(db, 'teachers', teacherId, 'reminderLogs');
   const q = query(collRef, orderBy('sentAt', 'desc'), limit(100));
   try {
     const snapshot = await getDocs(q);
-    const logs: ReminderLog[] = [];
+    const logs: ReminderLogItem[] = [];
     snapshot.forEach((docSnap) => {
-      logs.push({ id: docSnap.id, ...docSnap.data() } as ReminderLog);
+      logs.push({ id: docSnap.id, ...docSnap.data() } as ReminderLogItem);
     });
     return logs;
   } catch (err) {
