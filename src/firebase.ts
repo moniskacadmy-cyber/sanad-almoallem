@@ -19,8 +19,9 @@ import {
   doc,
   getDoc,
   getDocs,
-  setDoc,
-  updateDoc,
+  setDoc as firestoreSetDoc,
+  updateDoc as firestoreUpdateDoc,
+  addDoc as firestoreAddDoc,
   deleteDoc,
   collection,
   serverTimestamp,
@@ -32,7 +33,14 @@ import {
   where,
   orderBy,
   limit,
-  Firestore
+  Firestore,
+  DocumentReference,
+  CollectionReference,
+  DocumentData,
+  UpdateData,
+  WithFieldValue,
+  PartialWithFieldValue,
+  SetOptions,
 } from 'firebase/firestore';
 import {
   TeacherProfile,
@@ -69,7 +77,7 @@ import {
 
 import rawFirebaseConfig from '../firebase-applet-config.json';
 
-const env = import.meta.env;
+const env = (typeof import.meta !== 'undefined' && (import.meta as any).env) || (typeof process !== 'undefined' ? (process.env as any) : {}) || {};
 
 const pick = (envValue: unknown, fileValue: unknown): string =>
   (typeof envValue === 'string' && envValue.trim()) ||
@@ -163,6 +171,92 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
+
+/**
+ * Recursively removes all properties with an `undefined` value from an object or array.
+ * Preserves Date, FieldValues (serverTimestamp, deleteField, etc.), Timestamps, and primitives.
+ */
+export function cleanUndefined<T>(value: T): T {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  if (typeof value !== 'object') {
+    return value;
+  }
+
+  // Preserve Date instances
+  if (value instanceof Date) {
+    return value;
+  }
+
+  // Preserve Firestore Timestamp and FieldValue instances
+  if (
+    typeof (value as any).toMillis === 'function' ||
+    typeof (value as any).toDate === 'function' ||
+    typeof (value as any).isEqual === 'function' ||
+    (value as any)._methodName !== undefined ||
+    (value.constructor && value.constructor.name !== 'Object' && value.constructor.name !== 'Array')
+  ) {
+    return value;
+  }
+
+  // Handle arrays: filter out undefined elements and clean nested values
+  if (Array.isArray(value)) {
+    return value
+      .filter((item) => item !== undefined)
+      .map((item) => cleanUndefined(item)) as unknown as T;
+  }
+
+  // Handle plain objects: omit keys whose value is undefined
+  const cleaned: Record<string, any> = {};
+  for (const [key, val] of Object.entries(value)) {
+    if (val !== undefined) {
+      cleaned[key] = cleanUndefined(val);
+    }
+  }
+
+  return cleaned as T;
+}
+
+export const removeUndefined = cleanUndefined;
+
+/**
+ * Safe wrapper for Firestore setDoc that automatically strips `undefined` fields from payloads.
+ */
+export async function setDoc<T extends DocumentData>(
+  reference: DocumentReference<T>,
+  data: WithFieldValue<T> | PartialWithFieldValue<T>,
+  options?: SetOptions
+) {
+  const sanitized = cleanUndefined(data);
+  return options
+    ? firestoreSetDoc(reference, sanitized as any, options)
+    : firestoreSetDoc(reference, sanitized as any);
+}
+
+/**
+ * Safe wrapper for Firestore updateDoc that automatically strips `undefined` fields from payloads.
+ */
+export async function updateDoc<T extends DocumentData>(
+  reference: DocumentReference<T>,
+  data: UpdateData<T>
+) {
+  const sanitized = cleanUndefined(data);
+  return firestoreUpdateDoc(reference, sanitized as any);
+}
+
+/**
+ * Safe wrapper for Firestore addDoc that automatically strips `undefined` fields from payloads.
+ */
+export async function addDoc<T extends DocumentData>(
+  reference: CollectionReference<T>,
+  data: WithFieldValue<T>
+) {
+  const sanitized = cleanUndefined(data);
+  return firestoreAddDoc(reference, sanitized as any);
+}
+
 
 // Check if user is system admin based purely on uid existence in admins collection
 export async function checkIsAdmin(user: User | null): Promise<boolean> {
@@ -393,8 +487,9 @@ export async function updateTeacherProfile(teacherId: string, updates: {
 }) {
   const path = `teachers/${teacherId}`;
   try {
+    const sanitizedUpdates = cleanUndefined(updates);
     await updateDoc(doc(db, 'teachers', teacherId), {
-      ...updates,
+      ...sanitizedUpdates,
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
@@ -823,26 +918,32 @@ export function addStudentWithSchedules(
     const newDoc = doc(colRef);
     const studentId = newDoc.id;
 
-    batch.set(newDoc, {
-      ...student,
-      id: studentId,
-      teacherId,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+    batch.set(
+      newDoc,
+      cleanUndefined({
+        ...student,
+        id: studentId,
+        teacherId,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+    );
 
     const schedColRef = collection(db, 'teachers', teacherId, 'schedules');
     for (const s of schedules) {
       const newSchedDoc = doc(schedColRef);
-      batch.set(newSchedDoc, {
-        ...s,
-        id: newSchedDoc.id,
-        studentId,
-        studentName: s.studentName || student.name,
-        teacherId,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      batch.set(
+        newSchedDoc,
+        cleanUndefined({
+          ...s,
+          id: newSchedDoc.id,
+          studentId,
+          studentName: s.studentName || student.name,
+          teacherId,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
+      );
     }
 
     const commitPromise = batch.commit();
@@ -860,8 +961,9 @@ export async function updateStudent(
 ) {
   const path = `teachers/${teacherId}/students/${studentId}`;
   try {
+    const sanitizedUpdates = cleanUndefined(updates);
     await updateDoc(doc(db, 'teachers', teacherId, 'students', studentId), {
-      ...updates,
+      ...sanitizedUpdates,
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
@@ -1068,13 +1170,16 @@ export async function addSchedule(
   try {
     const colRef = collection(db, 'teachers', teacherId, 'schedules');
     const newDoc = doc(colRef);
-    await setDoc(newDoc, {
-      ...schedule,
-      id: newDoc.id,
-      teacherId,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+    await setDoc(
+      newDoc,
+      cleanUndefined({
+        ...schedule,
+        id: newDoc.id,
+        teacherId,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+    );
     return newDoc.id;
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
@@ -1088,8 +1193,9 @@ export async function updateSchedule(
 ) {
   const path = `teachers/${teacherId}/schedules/${scheduleId}`;
   try {
+    const sanitizedUpdates = cleanUndefined(updates);
     await updateDoc(doc(db, 'teachers', teacherId, 'schedules', scheduleId), {
-      ...updates,
+      ...sanitizedUpdates,
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
@@ -1967,8 +2073,9 @@ export async function updateGroup(
       }
     }
 
+    const sanitizedUpdates = cleanUndefined(updates);
     await updateDoc(doc(db, 'teachers', teacherId, 'groups', groupId), {
-      ...updates,
+      ...sanitizedUpdates,
       updatedAt: serverTimestamp(),
     });
   } catch (err) {
@@ -2406,7 +2513,7 @@ export async function recordStudentPayment(
     const paymentRef = doc(db, 'teachers', teacherId, 'payments', paymentId);
     await setDoc(
       paymentRef,
-      {
+      cleanUndefined({
         id: paymentId,
         teacherId,
         studentId: record.studentId,
@@ -2420,18 +2527,21 @@ export async function recordStudentPayment(
         notes: record.notes || '',
         paidAt: record.status === 'paid' ? serverTimestamp() : null,
         updatedAt: serverTimestamp(),
-      },
+      }),
       { merge: true }
     );
 
     // Also update student document directly for quick querying/filtering
     const studentRef = doc(db, 'teachers', teacherId, 'students', record.studentId);
-    await updateDoc(studentRef, {
-      paymentStatus: record.status,
-      lastPaymentMonth: record.month,
-      collectedDues: record.amountPaid,
-      updatedAt: serverTimestamp(),
-    }).catch(() => {});
+    await updateDoc(
+      studentRef,
+      cleanUndefined({
+        paymentStatus: record.status,
+        lastPaymentMonth: record.month,
+        collectedDues: record.amountPaid,
+        updatedAt: serverTimestamp(),
+      })
+    ).catch(() => {});
 
     return paymentId;
   } catch (err) {
@@ -2471,7 +2581,7 @@ async function writePaymentRecord(
     const paymentRef = doc(db, 'teachers', teacherId, 'payments', paymentId);
     await setDoc(
       paymentRef,
-      {
+      cleanUndefined({
         id: paymentId,
         teacherId,
         studentId: target.studentId,
@@ -2486,18 +2596,21 @@ async function writePaymentRecord(
         ...(notes !== undefined ? { notes } : {}),
         paidAt: fields.status === 'paid' ? serverTimestamp() : null,
         updatedAt: serverTimestamp(),
-      },
+      }),
       { merge: true }
     );
 
     // Cache for older screens that still read student.paymentStatus: only for the CURRENT month,
     // so last month's "paid" never leaks into this month.
     if (target.month === getMonthKey()) {
-      updateDoc(doc(db, 'teachers', teacherId, 'students', target.studentId), {
-        paymentStatus: fields.status,
-        lastPaymentMonth: target.month,
-        updatedAt: serverTimestamp(),
-      }).catch(() => {});
+      updateDoc(
+        doc(db, 'teachers', teacherId, 'students', target.studentId),
+        cleanUndefined({
+          paymentStatus: fields.status,
+          lastPaymentMonth: target.month,
+          updatedAt: serverTimestamp(),
+        })
+      ).catch(() => {});
     }
     return paymentId;
   } catch (err) {
@@ -2518,7 +2631,7 @@ export async function addPaymentInstallment(
   const paidSoFar = existing.reduce((a, p) => a + (Number(p.amount) || 0), 0);
   const message = validateInstallmentAmount(Number(installment.amount), roundMoney(due - paidSoFar));
   if (message) throw new Error(message);
-  const item = newPaymentItem(Number(installment.amount), installment);
+  const item = cleanUndefined(newPaymentItem(Number(installment.amount), installment));
   return writePaymentRecord(teacherId, target, due, [...existing, item]);
 }
 
