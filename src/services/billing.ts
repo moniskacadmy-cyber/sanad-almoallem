@@ -176,7 +176,14 @@ export function validateInstallmentAmount(amount: number, remaining: number): st
 export function newPaymentId(): string {
   const c: any = typeof globalThis !== 'undefined' ? (globalThis as any).crypto : undefined;
   if (c && typeof c.randomUUID === 'function') return c.randomUUID();
-  return `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  // Cryptographically secure fallback for environments without randomUUID (never Math.random).
+  if (c && typeof c.getRandomValues === 'function') {
+    const bytes = new Uint8Array(12);
+    c.getRandomValues(bytes);
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    return `p_${Date.now().toString(36)}_${hex}`;
+  }
+  throw new Error('Secure random generator is not available.');
 }
 
 export function newPaymentItem(
