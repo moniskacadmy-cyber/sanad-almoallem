@@ -177,7 +177,7 @@ export default function App() {
   };
 
   // Collections state for current teacher (handled by SWR via useFirebaseSubscription)
-  const { data: studentsData } = useFirebaseSubscription(
+  const { data: studentsData } = useFirebaseSubscription<Student[]>(
     currentUser ? `students/${currentUser.uid}` : null,
     (cb) => subscribeToStudents(currentUser!.uid, cb)
   );
