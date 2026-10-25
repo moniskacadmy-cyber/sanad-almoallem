@@ -227,3 +227,32 @@ export function buildAgendaMessage(opts: {
     tag: 'login-summary',
   };
 }
+
+export interface TokenEntry {
+  token: string;
+  /** Random id the app keeps in localStorage; the browser tab and the installed app on one phone share it. */
+  deviceId?: string;
+  /** Milliseconds of the last registration (updatedAt). */
+  updatedMs: number;
+}
+
+/**
+ * One notification per physical device: when several tokens carry the same deviceId (for example Chrome
+ * and the installed app, or an old token after re-registering) only the newest token is kept.
+ * Tokens without a deviceId (registered by older app versions) are all kept.
+ */
+export function pickLatestPerDevice<T extends TokenEntry>(items: T[]): { keep: T[]; drop: T[] } {
+  const newest = new Map<string, T>();
+  for (const it of items) {
+    if (!it.deviceId) continue;
+    const cur = newest.get(it.deviceId);
+    if (!cur || it.updatedMs > cur.updatedMs) newest.set(it.deviceId, it);
+  }
+  const keep: T[] = [];
+  const drop: T[] = [];
+  for (const it of items) {
+    if (!it.deviceId || newest.get(it.deviceId) === it) keep.push(it);
+    else drop.push(it);
+  }
+  return { keep, drop };
+}
