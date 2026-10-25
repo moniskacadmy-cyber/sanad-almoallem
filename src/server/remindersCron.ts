@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { ReminderLogItem } from '../types';
-import { isStudentPaused, getPauseEndingSoonStudents } from '../services/studentStatus';
+import type { ReminderLogItem } from '../types.js';
+import { isStudentPaused, getPauseEndingSoonStudents } from '../services/studentStatus.js';
 
 // Helper to format clean Egyptian/international WhatsApp number
 export function formatWhatsAppPhone(phone: string): string {
