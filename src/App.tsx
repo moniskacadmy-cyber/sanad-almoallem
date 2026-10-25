@@ -177,23 +177,23 @@ export default function App() {
   };
 
   // Collections state for current teacher (handled by SWR via useFirebaseSubscription)
-  const { data: studentsData } = useFirebaseSubscription(
+  const { data: studentsData } = useFirebaseSubscription<Student[]>(
     currentUser ? `students/${currentUser.uid}` : null,
     (cb) => subscribeToStudents(currentUser!.uid, cb)
   );
-  const students = studentsData || [];
+  const students: Student[] = (studentsData as Student[] | null | undefined) || [];
 
-  const { data: schedulesData } = useFirebaseSubscription(
+  const { data: schedulesData } = useFirebaseSubscription<ScheduleSlot[]>(
     currentUser ? `schedules/${currentUser.uid}` : null,
     (cb) => subscribeToSchedules(currentUser!.uid, cb)
   );
-  const schedules = schedulesData || [];
+  const schedules: ScheduleSlot[] = (schedulesData as ScheduleSlot[] | null | undefined) || [];
 
-  const { data: libraryData } = useFirebaseSubscription(
+  const { data: libraryData } = useFirebaseSubscription<LibraryItem[]>(
     currentUser ? `library/${currentUser.uid}` : null,
     (cb) => subscribeToLibrary(currentUser!.uid, cb)
   );
-  const libraryItems = libraryData || [];
+  const libraryItems: LibraryItem[] = (libraryData as LibraryItem[] | null | undefined) || [];
 
   // Automated Class Reminders Alert Banner State
   const [activeReminderAlert, setActiveReminderAlert] = useState<ActiveReminderAlertData | null>(null);
