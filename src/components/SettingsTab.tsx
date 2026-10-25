@@ -6,6 +6,7 @@ import { updateTeacherProfile, auth, fetchAllStudentLessons, importFullTeacherBa
 import { useBackHandler } from '../services/backHandler';
 import { signOut } from 'firebase/auth';
 import { PWAInstallButton } from '../PWAInstallButton';
+import { DailyReminderSetup } from './DailyReminderSetup';
 
 const triggerConfetti = (opts: Record<string, any>) => {
   import('canvas-confetti').then((m) => m.default(opts)).catch(() => {});
@@ -972,6 +973,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               {notifPrefsNotice}
             </span>
           )}
+        </div>
+        
+        {/* Daily Digest Setup */}
+        <div className="pt-2">
+            <DailyReminderSetup profile={profile} onUpdate={(updated) => { /* Update local state */ }} />
         </div>
 
         {/* Preferences Toggles List */}

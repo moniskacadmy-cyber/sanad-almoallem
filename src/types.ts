@@ -388,6 +388,8 @@ export interface NotificationPreferences {
   studentAbsenceRecorded: boolean; // تسجيل غياب أو اعتذار طالب
   paymentRecorded: boolean; // تسجيل دفعة مالية أو تصفية
   dailySummaryReport: boolean; // تقرير ملخص نهاية اليوم
+  dailyDigestEnabled: boolean; // تذكير جدول حصص اليوم
+  dailyDigestTime: string; // وقت التذكير الصباحي
 
   // Delivery channels
   browserPush: boolean; // إشعارات المتصفح والنظام
@@ -403,6 +405,8 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   studentAbsenceRecorded: true,
   paymentRecorded: true,
   dailySummaryReport: true,
+  dailyDigestEnabled: true,
+  dailyDigestTime: '08:00',
   browserPush: true,
   inAppBanner: true,
   soundChime: true,
