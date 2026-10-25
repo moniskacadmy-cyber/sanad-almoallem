@@ -1,4 +1,4 @@
-import { Student, GroupMembership, StudentStatus, PauseType } from '../types';
+import type { Student, GroupMembership, StudentStatus, PauseType } from '../types.js';
 
 /**
  * Returns today's date in YYYY-MM-DD format using Cairo timezone (Africa/Cairo)
