@@ -1186,7 +1186,7 @@ app.get('/api/reminders/cron', async (req, res) => {
           notificationsSent += sendResponse.successCount;
 
           // Delete bad tokens: Find and delete the exact matching token document in teachers/{uid}/fcmTokens
-          sendResponse.responses.forEach((resp, idx) => {
+          sendResponse.responses.forEach((resp: any, idx: number) => {
             if (!resp.success && resp.error) {
               const errCode = resp.error.code;
               if (
