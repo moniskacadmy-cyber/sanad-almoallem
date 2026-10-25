@@ -100,6 +100,7 @@ export default function App() {
   // Safety net timer: Ensure loadingAuth never hangs indefinitely
   useEffect(() => {
     const timer = setTimeout(() => {
+      // Force exit loading mode if auth listener hasn't responded after 6 seconds
       setLoadingAuth(false);
     }, 6000);
     return () => clearTimeout(timer);
@@ -122,7 +123,7 @@ export default function App() {
     return typeof window !== 'undefined' ? window.location.pathname : '/';
   });
 
-  // Admin Dashboard View State
+  // Admin Dashboard View State (opened via Settings tab PIN or direct route)
   const [showAdminView, setShowAdminView] = useState(false);
 
   // Near Expiry Warning Dismiss State
@@ -182,7 +183,7 @@ export default function App() {
   // Automated Class Reminders Alert Banner State
   const [activeReminderAlert, setActiveReminderAlert] = useState<ActiveReminderAlertData | null>(null);
 
-  // AI Assistant Chat state
+  // AI Assistant Chat state (Header Icon trigger)
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
 
   // Register top-level modals & subviews on back handler stack
@@ -200,6 +201,7 @@ export default function App() {
       window.history.replaceState({ app: 'sanad-almoallem', tab: 0 }, '', window.location.pathname);
       pushAppHistoryState({ tab: 0 });
 
+      // Ask for native notification permission immediately upon app startup
       if ('Notification' in window && Notification.permission === 'default') {
         Notification.requestPermission()
           .then((perm) => {
@@ -224,35 +226,42 @@ export default function App() {
       if (getIsExitingApp()) return;
       setCurrentPath(window.location.pathname);
 
+      // 1. If any modal or popup registered on the back stack is open, close it first
       if (handleTopmostBack()) {
         pushAppHistoryState({ tab: activeTab });
         return;
       }
 
+      // 2. If Financial Dashboard is open, return to Main Dashboard
       if (showFinancialDashboard) {
         setShowFinancialDashboard(false);
         pushAppHistoryState({ tab: 0 });
         return;
       }
 
+      // 3. If Admin view is open, return to Main Dashboard
       if (showAdminView) {
         setShowAdminView(false);
         pushAppHistoryState({ tab: 0 });
         return;
       }
 
+      // 4. If Upgrade modal is open, close it
       if (showUpgradeModal) {
         setShowUpgradeModal(false);
         pushAppHistoryState({ tab: activeTab });
         return;
       }
 
+      // 5. If user is in any sub-tab other than 'الرئيسية' (Tab 0) (Students, Schedule, Library, Settings),
+      // redirect them back to the Main Dashboard (Tab 0) instead of exiting
       if (activeTab !== 0) {
         setActiveTab(0);
         pushAppHistoryState({ tab: 0 });
         return;
       }
 
+      // 6. If user is ALREADY at the Main Dashboard (Tab 0) and pressed Back:
       const now = Date.now();
       if (now - lastBackPressTimeRef.current < 2000) {
         exitApplication();
@@ -274,6 +283,8 @@ export default function App() {
     pushAppHistoryState({ tab: idx });
   };
 
+
+
   const navigateTo = (path: string) => {
     if (window.location.pathname !== path) {
       pushAppHistoryState({ path });
@@ -283,6 +294,7 @@ export default function App() {
 
   // Listen to Auth State
   useEffect(() => {
+    // Process any redirect sign-in results gracefully (e.g. mobile or COOP fallbacks)
     getRedirectResult(auth).catch((e) => {
       console.warn('Redirect auth result warning:', e?.message || e);
     });
@@ -327,7 +339,7 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // Listen to Teacher Profile
+  // Listen to Teacher Profile (with auto-provision fallback)
   useEffect(() => {
     if (!currentUser) {
       setProfile(null);
@@ -345,6 +357,7 @@ export default function App() {
           setProfile(p);
           setProfileLoadError(null);
         } else {
+          // If profile doc does not exist yet for signed-in user, auto-provision
           try {
             console.log('Teacher profile document missing for user, auto-creating...');
             const newP = await registerTeacher({
@@ -401,7 +414,7 @@ export default function App() {
     };
   }, [currentUser?.uid]);
 
-  // Run database automatic cleanup script
+  // Run database automatic cleanup script for orphaned schedules and lessons (IIFE triggered)
   useEffect(() => {
     if (!currentUser || !profile || students.length === 0) return;
     void runOrphanCleanup(currentUser.uid, students.map(s => s.id)).catch((err) => {
@@ -409,7 +422,7 @@ export default function App() {
     });
   }, [currentUser, profile?.id, students]);
 
-  // Automated Reminders Periodic Check
+  // Automated 15-Minute Class Reminders Periodic Check
   useEffect(() => {
     if (!profile || !schedules || schedules.length === 0) return;
     const settings = getStoredReminderSettings();
@@ -455,6 +468,7 @@ export default function App() {
             });
           }
 
+          // Automatically open WhatsApp API link with populated class details if enabled
           if ((settings.autoOpenWhatsApp || notifPrefs.whatsappAlerts) && first.whatsappUrl) {
             try {
               window.open(first.whatsappUrl, '_blank');
@@ -474,6 +488,7 @@ export default function App() {
           }
         }
 
+        // Automatic Daily Morning Digest Schedule check ("عندك X حصص اليوم")
         if (settings.dailyDigestEnabled !== false && isMounted) {
           const nowTime = new Date();
           const currentHour = nowTime.getHours();
@@ -494,6 +509,7 @@ export default function App() {
           }
         }
 
+        // Automatic End-of-Day Summary check
         if (settings.endOfDaySummaryEnabled !== false && notifPrefs.dailySummaryReport !== false && isMounted) {
           const nowTime = new Date();
           const currentHour = nowTime.getHours();
@@ -518,8 +534,10 @@ export default function App() {
       }
     };
 
+    // Initial check
     void performCheck();
 
+    // Check periodically every 60 seconds
     const timer = setInterval(() => {
       void performCheck();
     }, 60 * 1000);
@@ -529,7 +547,7 @@ export default function App() {
     };
   }, [profile?.id, schedules, students]);
 
-  // Direct URL access: /admin
+  // Direct URL access: /admin (Protected by AdminSecretGate)
   if (currentPath === '/admin') {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex justify-center">
@@ -546,7 +564,7 @@ export default function App() {
     );
   }
 
-  // Admin Dashboard View
+  // Admin Dashboard View (activated from Settings Tab or LockScreen for verified admins)
   if (showAdminView) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex justify-center">
@@ -579,7 +597,7 @@ export default function App() {
     );
   }
 
-  // Profile not loaded or created yet
+  // If user signed in but profile document is not loaded or created yet
   if (!profile) {
     return (
       <div className="min-h-screen bg-[#070314] flex flex-col justify-center items-center p-4 text-center text-white dir-rtl" dir="rtl">
@@ -626,7 +644,7 @@ export default function App() {
     );
   }
 
-  // Expiration Calculation
+  // Expiration & Remaining Days Calculation (Safe timestamp resolver)
   const effectiveExpiry = profile.subscriptionEndDate || profile.subscriptionExpiresAt || profile.trialEndDate;
   let expiryDate: Date | null = null;
   if (effectiveExpiry) {
@@ -648,6 +666,7 @@ export default function App() {
   const daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
   const isNearExpiry = !isSubscriptionExpired && daysLeft <= 3 && daysLeft >= 0;
 
+  // Complete Lockout Upon Expiration (Expired Access Block)
   if (isSubscriptionExpired) {
     return (
       <div className="min-h-screen bg-[#070314] flex flex-col items-center justify-center p-4">
@@ -674,6 +693,7 @@ export default function App() {
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex justify-center transition-colors duration-200">
       <OfflineIndicator />
 
+      {/* Near Expiry Overlay Alert (3 days or less) */}
       {isNearExpiry && !dismissNearExpiry && (
         <NearExpiryOverlay
           profile={profile}
@@ -682,7 +702,9 @@ export default function App() {
         />
       )}
 
+      {/* Mobile-first centered frame (up to 460px) */}
       <div className="w-full max-w-[460px] min-h-screen bg-white/95 dark:bg-slate-950/95 border-x border-slate-200 dark:border-purple-950/40 flex flex-col relative shadow-2xl transition-colors duration-200">
+        {/* Sidebar Navigation Drawer */}
         <Sidebar
           isOpen={isSidebarOpen}
           onClose={() => setIsSidebarOpen(false)}
@@ -691,6 +713,7 @@ export default function App() {
           profile={profile}
         />
 
+        {/* Top App Header */}
         <header className="sticky top-0 z-40 bg-white/90 dark:bg-slate-950/80 backdrop-blur-md border-b border-slate-200 dark:border-purple-900/30 px-3.5 py-2.5 flex items-center justify-between transition-colors duration-200">
           <div className="flex items-center gap-2">
             <button
@@ -706,7 +729,7 @@ export default function App() {
                 type="button"
                 onClick={() => handleSelectTab(0)}
                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-purple-100 dark:bg-purple-900/50 hover:bg-purple-200 dark:hover:bg-purple-800/70 border border-purple-300 dark:border-purple-500/40 text-xs font-bold text-purple-800 dark:text-purple-200 hover:text-purple-950 dark:hover:text-white transition cursor-pointer shadow-sm active:scale-95"
-                title="الرجوع للواجهة الرئيسية"
+                title="الرجوع للواجهة الرئيسية (Main Dashboard)"
               >
                 <ChevronRight className="w-4 h-4 text-purple-700 dark:text-amber-300" />
                 <span>الرئيسية</span>
@@ -724,6 +747,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Quick AI Assistant Icon in Header */}
             <button
               type="button"
               onClick={() => setIsAIAssistantOpen(true)}
@@ -738,6 +762,7 @@ export default function App() {
               <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
             </button>
 
+            {/* Quick Theme Toggle Button */}
             <ThemeToggleCompact />
 
             <div
@@ -748,6 +773,7 @@ export default function App() {
               <span>{profile.subscriptionStatus === 'active' ? 'مشترك 💎' : 'تجريبي 🎁'}</span>
             </div>
 
+            {/* Exit Application Trigger Button */}
             <button
               type="button"
               onClick={() => {
@@ -768,6 +794,7 @@ export default function App() {
           </div>
         </header>
 
+        {/* Active Class Dynamic Reminder Banner with Countdown */}
         {activeReminderAlert && (
           <ActiveReminderAlert
             alert={activeReminderAlert}
@@ -775,6 +802,7 @@ export default function App() {
           />
         )}
 
+        {/* Persistent Warning Bar for Near Expiry (when popup was dismissed) */}
         {isNearExpiry && dismissNearExpiry && (
           <div className="bg-gradient-to-r from-amber-950/90 via-slate-900 to-amber-950/90 border-b border-amber-500/40 px-3.5 py-2 flex items-center justify-between text-xs font-bold text-amber-200 shadow-md">
             <div className="flex items-center gap-2">
@@ -783,99 +811,104 @@ export default function App() {
             </div>
             <a
               href={`https://wa.me/201025967471?text=${encodeURIComponent(
-                `مرحباً، أود تجديد اشتراكي في سند المعلم للمعلم: ${profile.name} (${profile.email || profile.whatsapp})`
+                `مرحباً، أود تجديد اشتراكي في سند المعلم للمعلم: ${profile.name} (${profile.email})`
               )}`}
               target="_blank"
-              rel="noopener noreferrer"
-              className="px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 hover:bg-amber-400 transition font-extrabold text-[11px]"
+              rel="noreferrer"
+              className="px-2.5 py-1 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[11px] transition flex items-center gap-1 shadow"
             >
-              تجديد الآن
+              <MessageCircle className="w-3.5 h-3.5" />
+              <span>تجديد واتساب</span>
             </a>
           </div>
         )}
 
-        <main className="flex-1 pb-24">
-          {showFinancialDashboard ? (
-            <React.Suspense fallback={<LoadingFallback message="جارٍ تحميل لوحة المالية..." />}>
+        {/* Main Body Content */}
+        <main className="flex-1 p-4 pb-20 overflow-y-auto">
+          <React.Suspense
+            fallback={
+              <div className="flex flex-col items-center justify-center min-h-[40vh] text-purple-400 gap-3">
+                <Loader2 className="w-7 h-7 animate-spin text-purple-400" />
+                <span className="text-xs font-bold text-slate-300">جارٍ تحميل القسم...</span>
+              </div>
+            }
+          >
+            {showFinancialDashboard ? (
               <FinancialDashboard
                 profile={profile}
                 students={students}
-                schedules={schedules}
-                onClose={() => setShowFinancialDashboard(false)}
+                onBackToApp={() => setShowFinancialDashboard(false)}
+                onOpenStudentDetails={() => {
+                  setShowFinancialDashboard(false);
+                  setActiveTab(1);
+                }}
               />
-            </React.Suspense>
-          ) : (
-            <>
-              {activeTab === 0 && (
-                <HomeTab
-                  profile={profile}
-                  students={students}
-                  schedules={schedules}
-                  libraryItems={libraryItems}
-                  onSelectTab={handleSelectTab}
-                  onOpenFinancials={() => setShowFinancialDashboard(true)}
-                  onOpenUpgradeModal={() => setShowUpgradeModal(true)}
-                />
-              )}
-              {activeTab === 1 && (
-                <React.Suspense fallback={<LoadingFallback message="جارٍ تحميل شاشة الطلاب..." />}>
+            ) : (
+              <>
+                {activeTab === 0 && (
+                  <HomeTab
+                    profile={profile}
+                    students={students}
+                    schedules={schedules}
+                    onNavigateToTab={(t) => setActiveTab(t)}
+                    onOpenUpgradeModal={() => setShowUpgradeModal(true)}
+                    onOpenFinancialDashboard={() => setShowFinancialDashboard(true)}
+                  />
+                )}
+                {activeTab === 1 && (
                   <StudentsTab
                     profile={profile}
                     students={students}
                     schedules={schedules}
                   />
-                </React.Suspense>
-              )}
-              {activeTab === 2 && (
-                <React.Suspense fallback={<LoadingFallback message="جارٍ تحميل المواعيد..." />}>
+                )}
+                {activeTab === 2 && (
                   <ScheduleTab
                     profile={profile}
                     students={students}
                     schedules={schedules}
                   />
-                </React.Suspense>
-              )}
-              {activeTab === 3 && (
-                <React.Suspense fallback={<LoadingFallback message="جارٍ تحميل المكتبة..." />}>
-                  <LibraryTab
-                    profile={profile}
-                    libraryItems={libraryItems}
-                  />
-                </React.Suspense>
-              )}
-              {activeTab === 4 && (
-                <React.Suspense fallback={<LoadingFallback message="جارٍ تحميل الإعدادات..." />}>
+                )}
+                {activeTab === 3 && (
+                  <LibraryTab profile={profile} libraryItems={libraryItems} />
+                )}
+                {activeTab === 4 && (
                   <SettingsTab
                     profile={profile}
-                    currentUser={currentUser}
-                    onOpenAdmin={() => setShowAdminView(true)}
+                    students={students}
+                    schedules={schedules}
+                    libraryItems={libraryItems}
                     isAdmin={isAdmin}
+                    onOpenUpgradeModal={() => setShowUpgradeModal(true)}
+                    onOpenAdminDashboard={() => setShowAdminView(true)}
+                    onOpenFinancialDashboard={() => setShowFinancialDashboard(true)}
                   />
-                </React.Suspense>
-              )}
-            </>
-          )}
+                )}
+              </>
+            )}
+          </React.Suspense>
         </main>
 
-        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[460px] bg-white/95 dark:bg-slate-950/95 backdrop-blur-lg border-t border-slate-200 dark:border-purple-900/40 px-2 py-2 flex items-center justify-around z-40 shadow-xl transition-colors duration-200">
+        {/* Bottom Tab Navigation Bar */}
+        <nav className="secondary-nav fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[460px] z-40 bg-white/95 dark:bg-slate-950/95 backdrop-blur-lg border-t border-slate-200 dark:border-purple-900/40 px-2 py-1.5 flex items-center justify-around shadow-2xl transition-colors duration-200">
           {tabs.map((tab, idx) => {
             const Icon = tab.icon;
-            const isActive = activeTab === idx && !showFinancialDashboard;
+            const isActive = activeTab === idx;
             return (
               <button
                 key={tab.label}
-                type="button"
-                onClick={() => {
-                  setShowFinancialDashboard(false);
-                  handleSelectTab(idx);
-                }}
-                className={`flex flex-col items-center justify-center relative py-1 px-3 rounded-2xl transition cursor-pointer ${
+                onClick={() => handleSelectTab(idx)}
+                className={`flex-1 flex flex-col items-center justify-center py-1.5 px-1 rounded-2xl transition cursor-pointer relative ${
                   isActive
-                    ? 'text-purple-700 dark:text-amber-300 font-bold bg-purple-100/70 dark:bg-purple-950/50 shadow-inner'
-                    : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                    ? 'text-purple-700 dark:text-purple-300 font-bold'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
                 }`}
               >
-                <div className="relative">
+                <div
+                  className={`p-1 rounded-xl transition ${
+                    isActive ? 'bg-purple-100 dark:bg-purple-600/30 text-purple-700 dark:text-amber-300 scale-110 shadow-sm' : ''
+                  }`}
+                >
                   <Icon className="w-5 h-5" />
                 </div>
                 <span className="text-[10px] mt-0.5">{tab.label}</span>
@@ -890,6 +923,7 @@ export default function App() {
           })}
         </nav>
 
+        {/* Floating AI Assistant Chat Window */}
         {currentUser && profile && (
           <div className="ai-assistant">
             <AIAssistantChat
@@ -903,6 +937,7 @@ export default function App() {
           </div>
         )}
 
+        {/* Voluntary Upgrade Modal */}
         {showUpgradeModal && (
           <LockScreen
             profile={profile}
@@ -911,6 +946,7 @@ export default function App() {
           />
         )}
 
+        {/* First-Time Onboarding Modal */}
         {showOnboarding && profile && (
           <OnboardingModal
             profile={profile}
@@ -918,6 +954,7 @@ export default function App() {
           />
         )}
 
+        {/* Exit Toast Notification */}
         {exitToastMessage && (
           <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 text-white px-4 py-2 rounded-2xl border border-purple-500/40 text-xs shadow-2xl animate-in fade-in slide-in-from-bottom-3">
             {exitToastMessage}

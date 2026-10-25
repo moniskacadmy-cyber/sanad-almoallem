@@ -357,7 +357,7 @@ export function sendEndOfDaySummaryNotification(params: {
   }
 
   // Calculate today's completed and scheduled classes
-  const todaySlots = schedules.filter((s) => s.dayOfWeek === currentDayOfWeek);
+  const todaySlots = (Array.isArray(schedules) ? schedules : []).filter((s) => s.dayOfWeek === currentDayOfWeek);
   const completedSlots = todaySlots.filter((s) => s.completedTodayDate === todayStr);
   const completedStudentNames = completedSlots.map((s) => s.studentName).filter(Boolean);
 
@@ -389,7 +389,7 @@ export function generateDailyDigestMessage(params: {
   schedules: ScheduleSlot[];
   students?: Student[];
 }): { title: string; body: string; count: number } {
-  const { schedules } = params;
+  const schedules = Array.isArray(params.schedules) ? params.schedules : [];
   const now = new Date();
   const currentDayOfWeek = now.getDay();
 
