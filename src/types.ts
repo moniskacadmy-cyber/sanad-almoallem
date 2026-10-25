@@ -126,6 +126,8 @@ export interface TeacherProfile {
   reminderMinutesBefore?: number;
   remindersEnabled?: boolean;
   teacherNotificationsEnabled?: boolean;
+  dailyDigestEnabled?: boolean; // phone push every morning with today's classes (default on)
+  dailyDigestTime?: string; // "HH:MM" in the teacher's time zone (default 08:00)
   timezone?: string;
   doNotDisturb?: DoNotDisturbSettings;
   absencePolicy?: AbsencePolicySettings;

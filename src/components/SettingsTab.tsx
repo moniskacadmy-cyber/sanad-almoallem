@@ -6,7 +6,6 @@ import { updateTeacherProfile, auth, fetchAllStudentLessons, importFullTeacherBa
 import { useBackHandler } from '../services/backHandler';
 import { signOut } from 'firebase/auth';
 import { PWAInstallButton } from '../PWAInstallButton';
-import { DailyReminderSetup } from './DailyReminderSetup';
 
 const triggerConfetti = (opts: Record<string, any>) => {
   import('canvas-confetti').then((m) => m.default(opts)).catch(() => {});
@@ -295,9 +294,17 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     const updated = { ...reminderSettings, [key]: val };
     setReminderSettings(updated);
     storeReminderSettings(updated);
-    if (key === 'minutesBefore' || key === 'enabled' || key === 'notifyTeacher') {
+    if (
+      key === 'minutesBefore' ||
+      key === 'enabled' ||
+      key === 'notifyTeacher' ||
+      key === 'dailyDigestEnabled' ||
+      key === 'dailyDigestTime'
+    ) {
       try {
         await updateTeacherProfile(profile.id, {
+          ...(key === 'dailyDigestEnabled' ? { dailyDigestEnabled: Boolean(val) } : {}),
+          ...(key === 'dailyDigestTime' && /^\d{1,2}:\d{2}$/.test(String(val)) ? { dailyDigestTime: String(val) } : {}),
           ...(key === 'minutesBefore' ? { reminderMinutesBefore: Math.min(120, Math.max(5, Number(val) || 15)) } : {}),
           ...(key === 'enabled' ? { remindersEnabled: Boolean(val) } : {}),
           ...(key === 'notifyTeacher' ? { teacherNotificationsEnabled: Boolean(val) } : {}),
@@ -973,11 +980,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               {notifPrefsNotice}
             </span>
           )}
-        </div>
-        
-        {/* Daily Digest Setup */}
-        <div className="pt-2">
-            <DailyReminderSetup profile={profile} onUpdate={(updated) => { /* Update local state */ }} />
         </div>
 
         {/* Preferences Toggles List */}

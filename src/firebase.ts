@@ -29,6 +29,7 @@ import {
   onSnapshot,
   writeBatch,
   query,
+  where,
   orderBy,
   limit,
   Firestore
@@ -55,6 +56,16 @@ import {
   StudentPaymentRecord,
   ReminderLogItem,
 } from './types';
+
+import {
+  getPaymentRecordId as buildPaymentRecordId,
+  getMonthKey,
+  getRecordPayments,
+  buildPaymentFields,
+  newPaymentItem,
+  validateInstallmentAmount,
+  roundMoney,
+} from './services/billing';
 
 import rawFirebaseConfig from '../firebase-applet-config.json';
 
@@ -94,7 +105,9 @@ try {
     app,
     {
       localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-      experimentalAutoDetectLongPolling: true,
+      // Force long-polling: avoids ERR_QUIC_PROTOCOL_ERROR on the Firestore Listen stream
+      // (seen on some mobile / ISP networks where HTTP/3 streams get cut mid-response).
+      experimentalForceLongPolling: true,
     },
     effectiveDatabaseId === '(default)' || !effectiveDatabaseId ? undefined : effectiveDatabaseId
   );
@@ -1546,6 +1559,16 @@ export async function requestAndSaveFCMToken(force = false): Promise<{
 }> {
   const currentUser = auth?.currentUser;
 
+  // Phone notifications belong to the main app link only. Vercel preview links (…-xxxx.vercel.app)
+  // must not register a device, otherwise the same phone gets duplicate notifications.
+  if (
+    typeof window !== 'undefined' &&
+    window.location.hostname.endsWith('.vercel.app') &&
+    window.location.hostname !== 'sanad-almoallem-three.vercel.app'
+  ) {
+    return { success: false, error: 'preview_url' };
+  }
+
   // Prevent redundant executions for the same user within the same session
   if (!force && currentUser && fcmRegisteredUid === currentUser.uid) {
     return { success: true };
@@ -1618,6 +1641,11 @@ export async function requestAndSaveFCMToken(force = false): Promise<{
       if (user) {
         // Mark session as registered for this user
         fcmRegisteredUid = user.uid;
+        try {
+          localStorage.setItem('sanad_fcm_uid', user.uid);
+        } catch {
+          /* storage unavailable: the client digest may then show too, which is harmless */
+        }
 
         // Unified storage: Save in teachers/{uid}/fcmTokens/{tokenId}
         const teacherTokenRef = doc(db, 'teachers', user.uid, 'fcmTokens', token);
@@ -2337,8 +2365,7 @@ export async function recordStudentAttendance(
 }
 
 export function getPaymentRecordId(studentId: string, groupId: string | null | undefined, month: string): string {
-  const gId = groupId && groupId.trim() ? groupId.trim() : 'individual';
-  return `${studentId}_${gId}_${month}`;
+  return buildPaymentRecordId(studentId, groupId, month);
 }
 
 export async function recordStudentPayment(
@@ -2395,24 +2422,119 @@ export async function recordStudentPayment(
   }
 }
 
+export interface PaymentTarget {
+  /** Live record for this student/group/month (undefined when nothing was recorded yet). */
+  record?: StudentPaymentRecord | null;
+  studentId: string;
+  studentName?: string;
+  groupId?: string | null;
+  groupName?: string;
+  month: string; // YYYY-MM
+  /** Amount owed when there is no record yet (full fee or pro-rata). */
+  amountDue: number;
+}
+
+/**
+ * Writes the derived fields of a payment record. `amountPaid` and `status` are always
+ * recomputed from the installments, so they can never disagree with each other.
+ * The write is queued by Firestore when offline (same behaviour as the rest of the app).
+ */
+async function writePaymentRecord(
+  teacherId: string,
+  target: PaymentTarget,
+  due: number,
+  payments: ReturnType<typeof getRecordPayments>,
+  notes?: string
+) {
+  const paymentId = getPaymentRecordId(target.studentId, target.groupId, target.month);
+  const path = `teachers/${teacherId}/payments/${paymentId}`;
+  const fields = buildPaymentFields(due, payments);
+  try {
+    const paymentRef = doc(db, 'teachers', teacherId, 'payments', paymentId);
+    await setDoc(
+      paymentRef,
+      {
+        id: paymentId,
+        teacherId,
+        studentId: target.studentId,
+        studentName: target.studentName || target.record?.studentName || '',
+        groupId: target.groupId && target.groupId.trim() ? target.groupId.trim() : 'individual',
+        groupName: target.groupName || target.record?.groupName || '',
+        month: target.month,
+        status: fields.status,
+        amountPaid: fields.amountPaid,
+        amountDue: fields.amountDue,
+        payments: fields.payments,
+        ...(notes !== undefined ? { notes } : {}),
+        paidAt: fields.status === 'paid' ? serverTimestamp() : null,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    // Cache for older screens that still read student.paymentStatus: only for the CURRENT month,
+    // so last month's "paid" never leaks into this month.
+    if (target.month === getMonthKey()) {
+      updateDoc(doc(db, 'teachers', teacherId, 'students', target.studentId), {
+        paymentStatus: fields.status,
+        lastPaymentMonth: target.month,
+        updatedAt: serverTimestamp(),
+      }).catch(() => {});
+    }
+    return paymentId;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, path);
+    throw err;
+  }
+}
+
+/** Adds one installment (e.g. "paid 300 of 500"). Throws an Arabic message on a bad amount. */
+export async function addPaymentInstallment(
+  teacherId: string,
+  target: PaymentTarget,
+  installment: { amount: number; method?: string; notes?: string; date?: string }
+) {
+  const existing = getRecordPayments(target.record);
+  const recordDue = target.record ? Number(target.record.amountDue) : NaN;
+  const due = Number.isFinite(recordDue) ? recordDue : target.amountDue;
+  const paidSoFar = existing.reduce((a, p) => a + (Number(p.amount) || 0), 0);
+  const message = validateInstallmentAmount(Number(installment.amount), roundMoney(due - paidSoFar));
+  if (message) throw new Error(message);
+  const item = newPaymentItem(Number(installment.amount), installment);
+  return writePaymentRecord(teacherId, target, due, [...existing, item]);
+}
+
+/** Removes one installment (typed by mistake). */
+export async function removePaymentInstallment(teacherId: string, target: PaymentTarget, paymentItemId: string) {
+  const existing = getRecordPayments(target.record);
+  const next = existing.filter((p) => p.id !== paymentItemId);
+  const recordDue = target.record ? Number(target.record.amountDue) : NaN;
+  const due = Number.isFinite(recordDue) ? recordDue : target.amountDue;
+  return writePaymentRecord(teacherId, target, due, next);
+}
+
+/** Changes what is owed for the month (discount, free month, manual pro-rata). */
+export async function setPaymentAmountDue(teacherId: string, target: PaymentTarget, newDue: number) {
+  if (!Number.isFinite(newDue) || newDue < 0) throw new Error('المستحق لازم يكون رقم صحيح (صفر أو أكتر)');
+  return writePaymentRecord(teacherId, target, newDue, getRecordPayments(target.record));
+}
+
 export function subscribeToMonthlyPayments(
   teacherId: string,
   month: string,
   callback: (records: StudentPaymentRecord[]) => void
 ) {
-  const collRef = collection(db, 'teachers', teacherId, 'payments');
+  // Single-field equality filter: no composite index needed, and we only download this month.
+  const collRef = query(collection(db, 'teachers', teacherId, 'payments'), where('month', '==', month));
   return onSnapshot(
     collRef,
     (snapshot) => {
       const list: StudentPaymentRecord[] = [];
       snapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        if (data.month === month) {
-          list.push({
-            id: docSnap.id,
-            ...data,
-          } as StudentPaymentRecord);
-        }
+        list.push({
+          id: docSnap.id,
+          ...docSnap.data(),
+        } as StudentPaymentRecord);
       });
       callback(list);
     },

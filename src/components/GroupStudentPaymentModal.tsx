@@ -1,8 +1,19 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Student, Group, PaymentStatus, StudentPaymentRecord } from '../types';
-import { recordStudentPayment, subscribeToMonthlyPayments, getPaymentRecordId } from '../firebase';
+import React, { useMemo, useState } from 'react';
+import { Student, Group } from '../types';
 import { useBackHandler } from '../services/backHandler';
-import { X, Check, Clock, AlertCircle } from 'lucide-react';
+import { useMonthlyPaymentRecords, useGroupsAndMemberships } from '../services/useBilling';
+import {
+  buildEntitlement,
+  describeEntitlement,
+  formatMoney,
+  getMonthKey,
+  getStudentGroupFee,
+  getStudentMonthEntitlements,
+  MonthlyEntitlement,
+  summarizeEntitlements,
+} from '../services/billing';
+import { PaymentChip, PaymentDialog } from './PaymentDialog';
+import { X } from 'lucide-react';
 
 interface GroupStudentPaymentModalProps {
   group: Group;
@@ -10,6 +21,7 @@ interface GroupStudentPaymentModalProps {
   teacherId: string;
   currency?: string;
   onClose: () => void;
+  onToast?: (message: string, isError?: boolean) => void;
 }
 
 export const GroupStudentPaymentModal: React.FC<GroupStudentPaymentModalProps> = ({
@@ -18,70 +30,39 @@ export const GroupStudentPaymentModal: React.FC<GroupStudentPaymentModalProps> =
   teacherId,
   currency = 'ج.م',
   onClose,
+  onToast,
 }) => {
   useBackHandler(true, onClose, 'group_student_payment_modal');
 
-  const currentMonth = useMemo(() => new Date().toISOString().substring(0, 7), []);
-  const [paymentsMap, setPaymentsMap] = useState<Record<string, StudentPaymentRecord>>({});
-  const [loadingStudentId, setLoadingStudentId] = useState<string | null>(null);
+  // Cairo-time month key
+  const currentMonth = useMemo(() => getMonthKey(), []);
+  const monthRecords = useMonthlyPaymentRecords(teacherId, currentMonth);
+  const { groups, memberships } = useGroupsAndMemberships(teacherId);
+  const [paymentStudentId, setPaymentStudentId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!teacherId || !group.id) return;
-    const unsub = subscribeToMonthlyPayments(teacherId, currentMonth, (records) => {
-      const map: Record<string, StudentPaymentRecord> = {};
-      records.forEach((r) => {
-        if (r.groupId === group.id) {
-          map[r.studentId] = r;
-        }
-      });
-      setPaymentsMap(map);
+  const getEntitlement = (student: Student): MonthlyEntitlement => {
+    const found = getStudentMonthEntitlements({
+      student,
+      groups: groups.length > 0 ? groups : [group],
+      memberships,
+      records: monthRecords,
+      monthKey: currentMonth,
+    }).find((e) => e.groupId === group.id);
+    if (found) return found;
+    return buildEntitlement({
+      studentId: student.id,
+      studentName: student.name,
+      groupId: group.id,
+      groupName: group.name,
+      standardFee: getStudentGroupFee(student, group),
+      monthKey: currentMonth,
+      record: monthRecords.find((r) => r.studentId === student.id && r.groupId === group.id) || null,
     });
-    return () => unsub();
-  }, [teacherId, group.id, currentMonth]);
-
-  const handleTogglePayment = async (student: Student) => {
-    const rec = paymentsMap[student.id];
-    const currentStatus: PaymentStatus = rec?.status || (student.paymentStatus as PaymentStatus) || 'unpaid';
-    const nextStatus: PaymentStatus =
-      currentStatus === 'unpaid' ? 'paid' : currentStatus === 'paid' ? 'partial' : 'unpaid';
-    const fee = group.monthlyFee || 0;
-    const amountPaid = nextStatus === 'paid' ? fee : nextStatus === 'partial' ? Math.round(fee / 2) : 0;
-
-    setLoadingStudentId(student.id);
-
-    // Optimistic UI update
-    setPaymentsMap((prev) => ({
-      ...prev,
-      [student.id]: {
-        id: getPaymentRecordId(student.id, group.id, currentMonth),
-        studentId: student.id,
-        studentName: student.name,
-        groupId: group.id,
-        groupName: group.name,
-        month: currentMonth,
-        status: nextStatus,
-        amountPaid,
-        amountDue: fee,
-      },
-    }));
-
-    try {
-      await recordStudentPayment(teacherId, {
-        studentId: student.id,
-        studentName: student.name,
-        groupId: group.id,
-        groupName: group.name,
-        month: currentMonth,
-        status: nextStatus,
-        amountPaid,
-        amountDue: fee,
-      });
-    } catch (error) {
-      console.error('Error updating payment status:', error);
-    } finally {
-      setLoadingStudentId(null);
-    }
   };
+
+  const entitlements = students.map(getEntitlement);
+  const totals = summarizeEntitlements(entitlements);
+  const paidCount = entitlements.filter((e) => e.status === 'paid').length;
 
   return (
     <div
@@ -93,16 +74,17 @@ export const GroupStudentPaymentModal: React.FC<GroupStudentPaymentModalProps> =
         <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
           <div>
             <h2 className="text-base font-extrabold text-white">
-              حالة اشتراك شهر {currentMonth}: {group.name}
+              اشتراك شهر {currentMonth}: {group.name}
             </h2>
             <p className="text-xs text-purple-300/70 mt-0.5">
-              سعر الاشتراك الشهري: {group.monthlyFee} {currency}
+              سعر الاشتراك الشهري: {formatMoney(group.monthlyFee || 0)} {currency}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
             className="p-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
+            aria-label="إغلاق"
           >
             <X className="w-5 h-5" />
           </button>
@@ -111,65 +93,57 @@ export const GroupStudentPaymentModal: React.FC<GroupStudentPaymentModalProps> =
         {/* Students Payment List */}
         <div className="space-y-2 max-h-[60vh] overflow-y-auto">
           {students.length === 0 ? (
-            <div className="text-center py-6 text-slate-400 text-xs">
-              لا يوجد طلاب مسجلين في هذه المجموعة حالياً.
-            </div>
+            <div className="text-center py-6 text-slate-400 text-xs">لا يوجد طلاب مسجلين في هذه المجموعة حالياً.</div>
           ) : (
-            students.map((student) => {
-              const rec = paymentsMap[student.id];
-              const status: PaymentStatus = rec?.status || (student.paymentStatus as PaymentStatus) || 'unpaid';
-              const isLoading = loadingStudentId === student.id;
-
+            students.map((student, i) => {
+              const e = entitlements[i];
               return (
                 <div
                   key={student.id}
-                  className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/80 border border-slate-800/80 hover:border-purple-500/30 transition"
+                  className="flex items-center justify-between gap-2 p-3 rounded-2xl bg-slate-950/80 border border-slate-800/80 hover:border-purple-500/30 transition"
                 >
                   <div className="min-w-0 pr-1">
                     <span className="text-xs font-bold text-white block truncate">{student.name}</span>
-                    <span className="text-[10px] text-slate-400">
-                      {status === 'paid'
-                        ? `تم تحصيل: ${group.monthlyFee} ${currency}`
-                        : status === 'partial'
-                        ? `تحصيل جزئي: ${Math.round(group.monthlyFee / 2)} ${currency}`
-                        : `المتبقي: ${group.monthlyFee} ${currency}`}
-                    </span>
+                    <span className="text-[10px] text-slate-400">{describeEntitlement(e, currency)}</span>
                   </div>
-
-                  <button
-                    type="button"
-                    disabled={isLoading}
-                    onClick={() => handleTogglePayment(student)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer shadow-sm active:scale-95 disabled:opacity-50 ${
-                      status === 'paid'
-                        ? 'bg-emerald-600/25 text-emerald-300 border-emerald-500/50 hover:bg-emerald-600/35'
-                        : status === 'partial'
-                        ? 'bg-amber-500/25 text-amber-300 border-amber-500/50 hover:bg-amber-500/35'
-                        : 'bg-rose-950/40 text-rose-300 border-rose-500/40 hover:bg-rose-950/60'
-                    }`}
-                    title="اضغط للتبديل السريع بين: دفع / جزئي / لم يدفع"
-                  >
-                    {status === 'paid' && <Check className="w-3.5 h-3.5 text-emerald-400" />}
-                    {status === 'partial' && <Clock className="w-3.5 h-3.5 text-amber-400" />}
-                    {status === 'unpaid' && <X className="w-3.5 h-3.5 text-rose-400" />}
-                    <span>
-                      {status === 'paid' ? 'دفع ✅' : status === 'partial' ? 'جزئي ⏳' : 'لم يدفع ❌'}
-                    </span>
-                  </button>
+                  <PaymentChip entitlement={e} currency={currency} onClick={() => setPaymentStudentId(student.id)} />
                 </div>
               );
             })
           )}
         </div>
 
-        {/* Footer info */}
-        <div className="pt-2 border-t border-purple-900/30 text-[11px] text-slate-400 flex items-center justify-between">
-          <span>اضغط على الزر بجانب الطالب لتبديل حالة الدفع</span>
-          <span className="text-purple-300 font-bold">
-            {students.filter((st) => (paymentsMap[st.id]?.status || st.paymentStatus) === 'paid').length} / {students.length} دفعوا
-          </span>
+        {/* Footer totals */}
+        <div className="pt-2 border-t border-purple-900/30 space-y-1 text-[11px] text-slate-400">
+          <div className="flex items-center justify-between">
+            <span>
+              المحصّل: <b className="text-emerald-300">{formatMoney(totals.paid)}</b> من {formatMoney(totals.due)} {currency}
+            </span>
+            <span className="text-purple-300 font-bold">
+              {paidCount} / {students.length} دفعوا كامل
+            </span>
+          </div>
+          <div>
+            المتبقي: <b className={totals.remaining > 0 ? 'text-rose-300' : 'text-emerald-300'}>{formatMoney(totals.remaining)} {currency}</b>
+            <span className="mr-2">· اضغط على زر الطالب لتسجيل دفعة</span>
+          </div>
         </div>
       </div>
+
+      {paymentStudentId &&
+        (() => {
+          const st = students.find((x) => x.id === paymentStudentId);
+          if (!st) return null;
+          return (
+            <PaymentDialog
+              teacherId={teacherId}
+              entitlement={getEntitlement(st)}
+              currency={currency}
+              onClose={() => setPaymentStudentId(null)}
+              onToast={onToast}
+            />
+          );
+        })()}
     </div>
   );
 };

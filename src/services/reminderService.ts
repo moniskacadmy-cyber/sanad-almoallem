@@ -75,7 +75,7 @@ export async function requestBrowserNotificationPermission(): Promise<Notificati
 }
 
 // Show OS/Browser Notification
-export function showBrowserNotification(title: string, body: string, icon = '/icons/icon-192x192.png') {
+export function showBrowserNotification(title: string, body: string, icon = '/pwa-192x192.png') {
   if (typeof window === 'undefined' || !('Notification' in window)) {
     return;
   }
@@ -229,14 +229,14 @@ export async function fetchCronStatusApi(): Promise<{
     const headers = await getAuthenticatedHeaders();
     const res = await fetch('/api/reminders/status', { headers });
     if (res.status === 401) {
-       return {
-         isRunning: true,
-         intervalMinutes: 15,
-         lastRun: null,
-         nextRun: null,
-         totalDispatched: 0,
-         recentLogs: []
-       };
+      return {
+        isRunning: true,
+        intervalMinutes: 15,
+        lastRun: null,
+        nextRun: null,
+        totalDispatched: 0,
+        recentLogs: [],
+      };
     }
     if (!res.ok) throw new Error('فشل جلب حالة Cron Job.');
     return await res.json();
@@ -249,6 +249,17 @@ export async function fetchCronStatusApi(): Promise<{
       totalDispatched: 0,
       recentLogs: [],
     };
+  }
+}
+
+// Asks the server to push "notifications are on + today's classes" to the teacher's phone right after sign-in.
+export async function sendLoginSummaryApi(): Promise<void> {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+  try {
+    const headers = await getAuthenticatedHeaders();
+    await fetch('/api/reminders/login-summary', { method: 'POST', headers });
+  } catch (e) {
+    console.warn('Login summary notification skipped:', e);
   }
 }
 
@@ -380,7 +391,7 @@ export function generateDailyDigestMessage(params: {
 }): { title: string; body: string; count: number } {
   const { schedules } = params;
   const now = new Date();
-  const currentDayOfWeek = now.getDay(); // 0 is Sunday, 1 is Monday ... 6 is Saturday
+  const currentDayOfWeek = now.getDay();
 
   // Filter today's slots and sort chronologically by time
   const todaySlots = schedules
@@ -440,6 +451,11 @@ export function sendDailyDigestNotification(params: {
   const digestKey = `sanad_daily_digest_sent_${teacher.id}_${todayStr}`;
 
   if (!force) {
+    // This phone/browser is registered for server push (works even when the app is closed): the server
+    // sends the digest, so do not show a second one here.
+    if (localStorage.getItem('sanad_fcm_uid') === teacher.id) {
+      return { sent: false, title: '', body: 'يصل ملخص اليوم من السيرفر على إشعارات الهاتف.', count: 0 };
+    }
     const alreadySent = localStorage.getItem(digestKey);
     if (alreadySent) {
       return { sent: false, title: '', body: 'تم إرسال تذكير الجدول اليومي مسبقاً اليوم.', count: 0 };

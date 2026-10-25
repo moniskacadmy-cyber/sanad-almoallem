@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Group, Student, GroupMembership, PaymentStatus, StudentPaymentRecord } from '../types';
+import { Group, Student, GroupMembership } from '../types';
 import {
   addStudentToGroup,
   removeStudentFromGroup,
@@ -9,12 +9,17 @@ import {
   archiveGroup,
   updateGroup,
   addStudent,
-  recordStudentPayment,
-  subscribeToMonthlyPayments,
-  getPaymentRecordId,
 } from '../firebase';
 import { useBackHandler } from '../services/backHandler';
-import { PaymentDialog } from './PaymentDialog';
+import { useMonthlyPaymentRecords } from '../services/useBilling';
+import {
+  buildEntitlement,
+  getMonthKey,
+  getStudentGroupFee,
+  getStudentMonthEntitlements,
+  MonthlyEntitlement,
+} from '../services/billing';
+import { PaymentChip, PaymentDialog } from './PaymentDialog';
 import {
   Users,
   X,
@@ -73,29 +78,30 @@ export const GroupDetailsModal: React.FC<GroupDetailsModalProps> = ({
 }) => {
   useBackHandler(isOpen, onClose, 'group_details_modal');
 
-  const currentMonth = useMemo(() => new Date().toISOString().substring(0, 7), []);
-  const [paymentsMap, setPaymentsMap] = useState<Record<string, StudentPaymentRecord>>({});
+  // Cairo-time month (the 1st of a month must not flip at 3 AM because of UTC)
+  const currentMonth = useMemo(() => getMonthKey(), []);
+  const monthRecords = useMonthlyPaymentRecords(teacherId, currentMonth, isOpen);
+  const [paymentStudentId, setPaymentStudentId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!isOpen || !teacherId) return;
-    const unsub = subscribeToMonthlyPayments(teacherId, currentMonth, (records) => {
-      const map: Record<string, StudentPaymentRecord> = {};
-      records.forEach((r) => {
-        if (r.groupId === group.id) {
-          map[r.studentId] = r;
-        }
-      });
-      setPaymentsMap(map);
+  /** What this student owes (and has paid) in THIS group this month, from the live payment records. */
+  const getEntitlement = (student: Student): MonthlyEntitlement => {
+    const found = getStudentMonthEntitlements({
+      student,
+      groups: allGroups,
+      memberships,
+      records: monthRecords,
+      monthKey: currentMonth,
+    }).find((e) => e.groupId === group.id);
+    if (found) return found;
+    return buildEntitlement({
+      studentId: student.id,
+      studentName: student.name,
+      groupId: group.id,
+      groupName: group.name,
+      standardFee: getStudentGroupFee(student, group),
+      monthKey: currentMonth,
+      record: monthRecords.find((r) => r.studentId === student.id && r.groupId === group.id) || null,
     });
-    return () => unsub();
-  }, [isOpen, teacherId, group.id, currentMonth]);
-
-  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
-  const [selectedStudentForPayment, setSelectedStudentForPayment] = useState<Student | null>(null);
-
-  const handleOpenPaymentDialog = (student: Student) => {
-    setSelectedStudentForPayment(student);
-    setPaymentDialogOpen(true);
   };
 
   const [activeSubTab, setActiveSubTab] = useState<'students' | 'add' | 'edit'>('students');
@@ -555,15 +561,11 @@ export const GroupDetailsModal: React.FC<GroupDetailsModalProps> = ({
 
                       {/* 1-Click Monthly Payment Status Button */}
                       <div className="flex items-center gap-2">
-                      {/* Manual Payment Entry Button */}
-                      <button
-                        type="button"
-                        onClick={() => handleOpenPaymentDialog(st)}
-                        className="px-2.5 py-1 rounded-xl text-[11px] font-bold border bg-purple-950/40 border-purple-500/30 text-purple-200 hover:bg-purple-900/60 transition cursor-pointer flex items-center gap-1"
-                      >
-                        <DollarSign className="w-3 h-3" />
-                        <span>دفع يدوي</span>
-                      </button>
+                        <PaymentChip
+                          entitlement={getEntitlement(st)}
+                          currency={currency}
+                          onClick={() => setPaymentStudentId(st.id)}
+                        />
                       </div>
 
                       {/* Quick Contact & Actions */}
@@ -893,49 +895,22 @@ export const GroupDetailsModal: React.FC<GroupDetailsModalProps> = ({
             </div>
           </div>
         )}
-        {paymentDialogOpen && selectedStudentForPayment && (
-          <PaymentDialog
-            isOpen={paymentDialogOpen}
-            onClose={() => setPaymentDialogOpen(false)}
-            student={selectedStudentForPayment}
-            group={group}
-            initialAmountDue={group.monthlyFee}
-            onSave={async (data) => {
-              // Implementation here using recordStudentPayment
-              await recordStudentPayment(teacherId, {
-                studentId: selectedStudentForPayment.id,
-                studentName: selectedStudentForPayment.name,
-                groupId: group.id,
-                groupName: group.name,
-                month: currentMonth,
-                ...data
-              });
-              onShowToast('تم تسجيل الدفعة بنجاح!');
-            }}
-          />
-        )}
-        {paymentDialogOpen && selectedStudentForPayment && (
-          <PaymentDialog
-            isOpen={paymentDialogOpen}
-            onClose={() => setPaymentDialogOpen(false)}
-            student={selectedStudentForPayment}
-            group={group}
-            initialAmountDue={group.monthlyFee}
-            onSave={async (data) => {
-              // Implementation here using recordStudentPayment
-              await recordStudentPayment(teacherId, {
-                studentId: selectedStudentForPayment.id,
-                studentName: selectedStudentForPayment.name,
-                groupId: group.id,
-                groupName: group.name,
-                month: currentMonth,
-                ...data
-              });
-              onShowToast('تم تسجيل الدفعة بنجاح!');
-            }}
-          />
-        )}
       </div>
+
+      {paymentStudentId &&
+        (() => {
+          const st = groupStudents.find((x) => x.id === paymentStudentId);
+          if (!st) return null;
+          return (
+            <PaymentDialog
+              teacherId={teacherId}
+              entitlement={getEntitlement(st)}
+              currency={currency}
+              onClose={() => setPaymentStudentId(null)}
+              onToast={onShowToast}
+            />
+          );
+        })()}
     </div>
   );
 };
