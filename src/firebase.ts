@@ -175,7 +175,7 @@ export async function checkIsAdmin(user: User | null): Promise<boolean> {
   }
 }
 
-// Teacher Registration with 7-Day Trial and Server Timestamps
+// Teacher Registration with 30-Day Free Trial and Server Timestamps
 export async function registerTeacher(params: {
   name: string;
   email: string;
@@ -193,7 +193,7 @@ export async function registerTeacher(params: {
 
   const teacherDocRef = doc(db, 'teachers', user.uid);
   const now = new Date();
-  const trialEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const trialEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
   let isUserAdmin = false;
   try {
@@ -725,7 +725,7 @@ export async function adminResetTrial(teacherId: string) {
 
   const path = `teachers/${teacherId}`;
   try {
-    const trialEnd = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const trialEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     await updateDoc(doc(db, 'teachers', teacherId), {
       isActive: true,
       subscriptionStatus: 'trial',

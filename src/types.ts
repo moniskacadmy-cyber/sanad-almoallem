@@ -390,8 +390,8 @@ export interface NotificationPreferences {
   studentAbsenceRecorded: boolean; // تسجيل غياب أو اعتذار طالب
   paymentRecorded: boolean; // تسجيل دفعة مالية أو تصفية
   dailySummaryReport: boolean; // تقرير ملخص نهاية اليوم
-  dailyDigestEnabled: boolean; // تذكير جدول حصص اليوم
-  dailyDigestTime: string; // وقت التذكير الصباحي
+  dailyDigestEnabled?: boolean; // تذكير جدول حصص اليوم
+  dailyDigestTime?: string; // وقت التذكير الصباحي
 
   // Delivery channels
   browserPush: boolean; // إشعارات المتصفح والنظام

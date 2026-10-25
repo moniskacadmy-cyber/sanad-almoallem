@@ -12,12 +12,12 @@ export const DailyReminderSetup: React.FC<DailyReminderSetupProps> = ({ profile,
   const prefs = profile.notificationPreferences;
   
   const handleUpdate = async (updates: any) => {
-    const updatedProfile = {
+    const newPrefs = { ...prefs, ...updates };
+    await updateTeacherProfile(profile.id, { notificationPreferences: newPrefs });
+    onUpdate({
       ...profile,
-      notificationPreferences: { ...prefs, ...updates }
-    };
-    await updateTeacherProfile(profile.id, updatedProfile);
-    onUpdate(updatedProfile);
+      notificationPreferences: newPrefs,
+    });
   };
 
   return (

@@ -70,8 +70,8 @@ service cloud.firestore {
             data.subscriptionStatus == 'trial' &&
             data.plan == 'none' &&
             data.isActive == true &&
-            data.trialEndDate >= request.time + duration.value(5, 'd') &&
-            data.trialEndDate <= request.time + duration.value(10, 'd') &&
+            data.trialEndDate >= request.time + duration.value(25, 'd') &&
+            data.trialEndDate <= request.time + duration.value(35, 'd') &&
             data.subscriptionExpiresAt == data.trialEndDate &&
             data.subscriptionEndDate == data.trialEndDate
           ) ||
@@ -87,8 +87,8 @@ service cloud.firestore {
                data.plan == get(/databases/$(database)/documents/subscriptions/$(request.auth.token.email.lower())).data.plan)
             ) &&
             data.subscriptionExpiresAt == data.subscriptionEndDate &&
-            data.trialEndDate >= request.time + duration.value(5, 'd') &&
-            data.trialEndDate <= request.time + duration.value(10, 'd')
+            data.trialEndDate >= request.time + duration.value(25, 'd') &&
+            data.trialEndDate <= request.time + duration.value(35, 'd')
           )
         );
     }

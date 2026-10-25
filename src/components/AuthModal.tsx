@@ -221,7 +221,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
               <Sparkles className="w-5 h-5 animate-pulse" />
             </div>
             <div>
-              <p className="text-xs font-bold text-amber-300">تجربة مجانية كاملة لمدة 7 أيام</p>
+              <p className="text-xs font-bold text-amber-300">تجربة مجانية كاملة لمدة 30 يوماً (شهر كامل)</p>
               <p className="text-[11px] text-purple-200 mt-0.5 leading-snug">
                 سجل حسابك واستمتع بجميع المميزات تلقائياً وبدون أي بطاقة بنكية.
               </p>
@@ -269,7 +269,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 onClick={onSuccess}
                 className="w-full rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 py-2.5 text-xs font-bold text-white transition active:scale-98 cursor-pointer shadow-md shadow-purple-900/40 flex items-center justify-center gap-2"
               >
-                <span>متابعة إلى المنصة (بدء التجربة المجانية 7 أيام) 🚀</span>
+                <span>متابعة إلى المنصة (بدء التجربة المجانية 30 يوماً) 🚀</span>
               </button>
 
               <button
@@ -419,7 +419,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 disabled={loading}
                 className="w-full rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 py-3 text-sm font-bold text-white transition active:scale-98 disabled:opacity-50 cursor-pointer shadow-lg shadow-purple-900/40"
               >
-                {loading ? 'جارٍ الإعداد...' : 'بدء التجربة المجانية (7 أيام) 🚀'}
+                {loading ? 'جارٍ الإعداد...' : 'بدء التجربة المجانية (30 يوماً) 🚀'}
               </button>
             </form>
           </div>
@@ -593,7 +593,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 {loading
                   ? 'جارٍ التحميل...'
                   : isRegister
-                  ? 'إنشاء الحساب وبدء التجربة المجانية (7 أيام) 🚀'
+                  ? 'إنشاء الحساب وبدء التجربة المجانية (30 يوماً) 🚀'
                   : 'تسجيل الدخول'}
               </button>
             </form>

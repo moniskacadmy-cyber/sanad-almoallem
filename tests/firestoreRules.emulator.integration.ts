@@ -38,9 +38,9 @@ after(async () => {
   await deleteApp(app);
 });
 
-test('teacher can create a legitimate 7-day trial', async () => {
+test('teacher can create a legitimate 30-day trial', async () => {
   const now = new Date();
-  const trialEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const trialEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
   const teacher = doc(db, 'teachers', uid);
   await setDoc(teacher, {
     id: uid,

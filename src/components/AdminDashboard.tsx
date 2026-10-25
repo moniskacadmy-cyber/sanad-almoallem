@@ -202,7 +202,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToApp }) =
     setActionLoadingId(teacher.id);
     try {
       await adminResetTrial(teacher.id);
-      showToast(`تمت إعادة ضبط الفترة التجريبية (7 أيام) للمعلم ${teacher.name}!`);
+      showToast(`تمت إعادة ضبط الفترة التجريبية (30 يوماً) للمعلم ${teacher.name}!`);
       await fetchTeachers();
     } catch (err) {
       console.error('Error resetting trial', err);
@@ -390,7 +390,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToApp }) =
               </label>
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  { id: 'trial', label: 'فترة تجريبية (7 أيام)', price: 'مجاناً 🎁' },
+                  { id: 'trial', label: 'فترة تجريبية (30 يوماً)', price: 'مجاناً 🎁' },
                   { id: 'monthly', label: 'شهر (30 يوم)', price: '50 ج' },
                   { id: 'yearly', label: 'سنة (365 يوم)', price: '450 ج' },
                   { id: 'custom', label: 'تحديد تاريخ باليوم 📅', price: 'مخصص' },
@@ -727,7 +727,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBackToApp }) =
                       disabled={actionLoadingId === t.id}
                       onClick={() => handleResetTrial(t)}
                       className="py-1 px-2.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white text-[11px] font-medium transition disabled:opacity-50 cursor-pointer"
-                      title="إعادة ضبط التجربة 7 أيام مجانية"
+                      title="إعادة ضبط التجربة 30 يوماً مجانية"
                     >
                       إعادة تجربة
                     </button>
