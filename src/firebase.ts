@@ -63,6 +63,8 @@ import {
   PaymentStatus,
   StudentPaymentRecord,
   ReminderLogItem,
+  StudentStatus,
+  PauseType,
 } from './types';
 
 import {
@@ -2411,8 +2413,91 @@ export async function archiveStudent(teacherId: string, studentId: string, archi
   try {
     await updateDoc(doc(db, 'teachers', teacherId, 'students', studentId), {
       archived,
+      status: archived ? 'archived' : 'active',
+      active: !archived,
       updatedAt: serverTimestamp(),
     });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+    throw err;
+  }
+}
+
+/**
+ * Updates a student's status (active, paused with temporary/permanent dates, or archived).
+ * Safely preserves 100% of previous financial records and lesson logs.
+ */
+export async function updateStudentStatus(
+  teacherId: string,
+  studentId: string,
+  statusUpdates: {
+    status: StudentStatus;
+    pauseType?: PauseType;
+    pauseStartDate?: string | null;
+    pauseEndDate?: string | null;
+    previousScheduleSlots?: any[];
+  }
+) {
+  const path = `teachers/${teacherId}/students/${studentId}`;
+  try {
+    const isPaused = statusUpdates.status === 'paused';
+    const isArchived = statusUpdates.status === 'archived';
+    const isActive = statusUpdates.status === 'active';
+
+    await updateDoc(
+      doc(db, 'teachers', teacherId, 'students', studentId),
+      cleanUndefined({
+        status: statusUpdates.status,
+        pauseType: isPaused ? statusUpdates.pauseType || 'permanent' : null,
+        pauseStartDate: isPaused && statusUpdates.pauseType === 'temporary' ? statusUpdates.pauseStartDate : null,
+        pauseEndDate: isPaused && statusUpdates.pauseType === 'temporary' ? statusUpdates.pauseEndDate : null,
+        previousScheduleSlots: statusUpdates.previousScheduleSlots !== undefined ? statusUpdates.previousScheduleSlots : undefined,
+        active: isActive,
+        archived: isArchived,
+        updatedAt: serverTimestamp(),
+      })
+    );
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+    throw err;
+  }
+}
+
+/**
+ * Updates a student's group membership status (active, paused with temporary/permanent dates, or archived).
+ * Applies specifically to their enrollment inside a group without altering individual status or finances.
+ */
+export async function updateGroupMembershipStatus(
+  teacherId: string,
+  studentId: string,
+  groupId: string,
+  statusUpdates: {
+    status: StudentStatus;
+    pauseType?: PauseType;
+    pauseStartDate?: string | null;
+    pauseEndDate?: string | null;
+  }
+) {
+  const membershipId = getMembershipId(studentId, groupId);
+  const path = `teachers/${teacherId}/memberships/${membershipId}`;
+  try {
+    const isPaused = statusUpdates.status === 'paused';
+    const isArchived = statusUpdates.status === 'archived';
+    const isActive = statusUpdates.status === 'active';
+
+    const memRef = doc(db, 'teachers', teacherId, 'memberships', membershipId);
+    await updateDoc(
+      memRef,
+      cleanUndefined({
+        status: statusUpdates.status,
+        pauseType: isPaused ? statusUpdates.pauseType || 'permanent' : null,
+        pauseStartDate: isPaused && statusUpdates.pauseType === 'temporary' ? statusUpdates.pauseStartDate : null,
+        pauseEndDate: isPaused && statusUpdates.pauseType === 'temporary' ? statusUpdates.pauseEndDate : null,
+        active: isActive,
+        archived: isArchived,
+        updatedAt: serverTimestamp(),
+      })
+    );
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, path);
     throw err;

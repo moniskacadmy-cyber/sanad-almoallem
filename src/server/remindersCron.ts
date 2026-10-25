@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { ReminderLogItem } from '../types';
+import { isStudentPaused, getPauseEndingSoonStudents } from '../services/studentStatus';
 
 // Helper to format clean Egyptian/international WhatsApp number
 export function formatWhatsAppPhone(phone: string): string {
@@ -213,14 +214,20 @@ export function checkUpcomingSlots(params: {
     const isIn15MinWindow = diffMinutes >= (minutesWindow - 1) && diffMinutes <= minutesWindow;
 
     if (isIn15MinWindow) {
-      const student = students.find((s) => s.id === slot.studentId) || {
+      const student = students.find((s) => s.id === slot.studentId);
+      // Skip paused or archived students from reminders completely
+      if (student && isStudentPaused(student)) {
+        continue;
+      }
+
+      const effectiveStudent = student || {
         id: slot.studentId,
         name: slot.studentName,
         whatsapp: '',
         subject: '',
       };
 
-      const cleanStudentPhone = formatWhatsAppPhone(student.whatsapp || '');
+      const cleanStudentPhone = formatWhatsAppPhone(effectiveStudent.whatsapp || '');
       const cleanTeacherPhone = formatWhatsAppPhone(teacherWhatsapp || '');
 
       // 1. Prepare Parent Reminder
@@ -297,12 +304,13 @@ export function checkUpcomingSlots(params: {
 
   // Group schedules logic
   for (const group of groups) {
+    if (group.status === 'paused' || group.archived) continue;
     if (!group.schedule || !Array.isArray(group.schedule)) continue;
     
-    // Find students in this group
+    // Find active students in this group (excluding paused or archived)
     const groupStudentIds = students
-      .filter(s => s.groupIds && s.groupIds.includes(group.id))
-      .map(s => s.id);
+      .filter((s) => !s.archived && !isStudentPaused(s) && s.groupIds && s.groupIds.includes(group.id))
+      .map((s) => s.id);
 
     for (const slot of group.schedule) {
       if (slot.day !== currentDayOfWeek || !slot.time || !slot.time.includes(':')) continue;
@@ -411,6 +419,8 @@ export function createRemindersRouter(): Router {
         minutesWindow: Number(minutesBefore) || 15,
       });
 
+      const pauseEndingSoon = getPauseEndingSoonStudents(students, 2);
+
       return res.status(200).json({
         success: true,
         evaluatedTime: evalTime.toISOString(),
@@ -418,6 +428,7 @@ export function createRemindersRouter(): Router {
         checkedCount: summary.checked,
         remindersSent: summary.sent,
         matchedReminders,
+        pauseEndingSoon,
       });
     } catch (err: any) {
       console.error('Error in /api/reminders/check:', err);

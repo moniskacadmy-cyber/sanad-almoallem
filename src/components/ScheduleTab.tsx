@@ -15,6 +15,7 @@ import { CalendarView } from './CalendarView';
 import { DailyAttendanceModal } from './DailyAttendanceModal';
 import { useBackHandler } from '../services/backHandler';
 import { hasConflict, getMinutesFromTime } from '../services/conflictService';
+import { isStudentPaused } from '../services/studentStatus';
 import {
   Calendar,
   Clock,
@@ -222,7 +223,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
     groups.forEach((g) => {
       if (g.status !== 'active' || g.archived || !Array.isArray(g.schedule)) return;
       const studentCount = students.filter(
-        (s) => !s.archived && s.groupIds && s.groupIds.includes(g.id)
+        (s) => !s.archived && !isStudentPaused(s) && s.groupIds && s.groupIds.includes(g.id)
       ).length;
 
       g.schedule.forEach((item) => {
@@ -249,7 +250,15 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
   }, [groups, students, profile.id]);
 
   // Combined schedules (individual students + active groups)
-  const schedules = useMemo(() => [...rawSchedules, ...groupSlots], [rawSchedules, groupSlots]);
+  // Automatically excludes paused and archived students from timetable slots
+  const schedules = useMemo(() => {
+    const activeIndividualSlots = (rawSchedules || []).filter((slot) => {
+      const st = students.find((s) => s.id === slot.studentId);
+      if (!st) return false;
+      return !isStudentPaused(st);
+    });
+    return [...activeIndividualSlots, ...groupSlots];
+  }, [rawSchedules, groupSlots, students]);
 
   const todayIndex = new Date().getDay();
 

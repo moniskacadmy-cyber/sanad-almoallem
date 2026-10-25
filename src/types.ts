@@ -182,6 +182,9 @@ export interface GroupScheduleItem {
   duration?: number; // بالدقائق
 }
 
+export type StudentStatus = 'active' | 'paused' | 'archived';
+export type PauseType = 'temporary' | 'permanent';
+
 export interface Group {
   id: string;
   ownerUid: string;
@@ -196,6 +199,9 @@ export interface Group {
   monthlyFee: number;
   color?: string;
   status: 'active' | 'paused';
+  pauseType?: PauseType;
+  pauseStartDate?: string | null;
+  pauseEndDate?: string | null;
   notes?: string;
   active?: boolean;
   archived?: boolean;
@@ -214,6 +220,10 @@ export interface GroupMembership {
   joinedAt: any;
   leftAt?: any;
   active: boolean;
+  status?: StudentStatus;
+  pauseType?: PauseType;
+  pauseStartDate?: string | null;
+  pauseEndDate?: string | null;
   createdAt: any;
   updatedAt: any;
 }
@@ -246,6 +256,11 @@ export interface Student {
   customFees?: Record<string, number>; // groupId -> amount
   active?: boolean;
   archived?: boolean;
+  status?: StudentStatus;
+  pauseType?: PauseType;
+  pauseStartDate?: string | null;
+  pauseEndDate?: string | null;
+  previousScheduleSlots?: any[];
   isIndividual?: boolean;
   billingType?: 'monthly' | 'hourly';
   createdAt: any;

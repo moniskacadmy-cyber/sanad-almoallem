@@ -145,10 +145,14 @@ service cloud.firestore {
         (!('remainingPaidLessons' in data) || data.remainingPaidLessons is number) &&
         (!('isDeleted' in data) || data.isDeleted is bool) &&
         (!('deletedAt' in data) || data.deletedAt != null) &&
-        data.paymentStatus in ['paid', 'unpaid'] &&
+        data.paymentStatus in ['paid', 'unpaid', 'partial'] &&
         (!('color' in data) || (data.color is string && data.color.size() <= 50)) &&
         (!('notes' in data) || (data.notes is string && data.notes.size() <= 2000)) &&
-        (!('learningStyle' in data) || (data.learningStyle is string && data.learningStyle.size() <= 200));
+        (!('learningStyle' in data) || (data.learningStyle is string && data.learningStyle.size() <= 200)) &&
+        (!('status' in data) || data.status in ['active', 'paused', 'archived']) &&
+        (!('pauseType' in data) || data.pauseType in ['temporary', 'permanent']) &&
+        (!('pauseStartDate' in data) || data.pauseStartDate == null || data.pauseStartDate is string) &&
+        (!('pauseEndDate' in data) || data.pauseEndDate == null || data.pauseEndDate is string);
     }
 
     // Workplace validation
@@ -180,7 +184,11 @@ service cloud.firestore {
       let data = incoming();
       return (data.ownerUid == teacherId || data.teacherId == teacherId) &&
         data.studentId is string && data.studentId.size() <= 128 &&
-        data.active is bool;
+        data.active is bool &&
+        (!('status' in data) || data.status in ['active', 'paused', 'archived']) &&
+        (!('pauseType' in data) || data.pauseType in ['temporary', 'permanent']) &&
+        (!('pauseStartDate' in data) || data.pauseStartDate == null || data.pauseStartDate is string) &&
+        (!('pauseEndDate' in data) || data.pauseEndDate == null || data.pauseEndDate is string);
     }
 
     // Session validation

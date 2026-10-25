@@ -19,6 +19,7 @@ import {
   getStudentMonthEntitlements,
   MonthlyEntitlement,
 } from '../services/billing';
+import { StudentStatusModal } from './StudentStatusModal';
 import { PaymentChip, PaymentDialog } from './PaymentDialog';
 import {
   Users,
@@ -37,10 +38,10 @@ import {
   MessageCircle,
   CheckCircle2,
   AlertCircle,
-  Search,
   Sparkles,
   ClipboardList,
   Check,
+  PauseCircle,
 } from 'lucide-react';
 
 interface GroupDetailsModalProps {
@@ -82,6 +83,7 @@ export const GroupDetailsModal: React.FC<GroupDetailsModalProps> = ({
   const currentMonth = useMemo(() => getMonthKey(), []);
   const monthRecords = useMonthlyPaymentRecords(teacherId, currentMonth, isOpen);
   const [paymentStudentId, setPaymentStudentId] = useState<string | null>(null);
+  const [statusModalStudent, setStatusModalStudent] = useState<Student | null>(null);
 
   /** What this student owes (and has paid) in THIS group this month, from the live payment records. */
   const getEntitlement = (student: Student): MonthlyEntitlement => {
@@ -600,6 +602,14 @@ export const GroupDetailsModal: React.FC<GroupDetailsModalProps> = ({
                         </button>
                         <button
                           type="button"
+                          onClick={() => setStatusModalStudent(st)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-amber-950/40 transition cursor-pointer"
+                          title="إدارة حالة الطالب (إيقاف/أرشفة)"
+                        >
+                          <PauseCircle className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handleRemoveStudent(st)}
                           className="p-1 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition cursor-pointer"
                           title="إزالة من المجموعة"
@@ -613,6 +623,19 @@ export const GroupDetailsModal: React.FC<GroupDetailsModalProps> = ({
               </div>
             )}
           </div>
+        )}
+
+        {/* Status Management Modal */}
+        {statusModalStudent && (
+          <StudentStatusModal
+            isOpen={!!statusModalStudent}
+            onClose={() => setStatusModalStudent(null)}
+            targetStudent={statusModalStudent}
+            targetMembership={memberships.find((m) => m.studentId === statusModalStudent.id && m.groupId === group.id)}
+            targetGroupName={group.name}
+            teacherId={teacherId}
+            onShowToast={onShowToast}
+          />
         )}
 
         {/* Tab 2: Add Students (Single, Existing, Bulk) */}

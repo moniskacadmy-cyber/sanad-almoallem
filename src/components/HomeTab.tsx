@@ -20,6 +20,8 @@ import { LiveCountdown } from './LiveCountdown';
 import { LessonFeedbackForm } from './LessonFeedbackForm';
 import { CollapsibleSection } from './CollapsibleSection';
 import { useSettings } from '../context/SettingsContext';
+import { isStudentPaused, getPauseEndingSoonStudents } from '../services/studentStatus';
+import { StudentStatusModal } from './StudentStatusModal';
 const StatsChart = React.lazy(() => import('./StatsChart'));
 import {
   Calendar,
@@ -38,6 +40,9 @@ import {
   ArrowLeft,
   Copy,
   UserCheck,
+  PauseCircle,
+  AlertTriangle,
+  RotateCcw,
 } from 'lucide-react';
 
 interface HomeTabProps {
@@ -57,8 +62,53 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   onOpenUpgradeModal,
   onOpenFinancialDashboard,
 }) => {
-  // Only valid schedules belonging to active students
-  const schedules = rawSchedules.filter((s) => students.some((st) => st.id === s.studentId));
+  // Only valid schedules belonging to active students (excludes paused and archived students)
+  const schedules = rawSchedules.filter((s) => {
+    const st = students.find((item) => item.id === s.studentId);
+    return st && !isStudentPaused(st);
+  });
+
+  // Modal State for Student Status & Pause Management
+  const [statusModalStudent, setStatusModalStudent] = useState<Student | null>(null);
+
+  // Detect students whose temporary pause is ending today or within 2 days
+  const pauseEndingSoon = React.useMemo(
+    () => getPauseEndingSoonStudents(students, 2),
+    [students]
+  );
+
+  const handleQuickReactivate = async (st: Student) => {
+    try {
+      const prevSlots = st.previousScheduleSlots || [];
+      await updateStudent(profile.id, st.id, {
+        status: 'active',
+        active: true,
+        pauseType: undefined,
+        pauseStartDate: null,
+        pauseEndDate: null,
+      });
+
+      // Restore previous schedule slots if preserved
+      if (prevSlots.length > 0) {
+        for (const slot of prevSlots) {
+          await addSchedule(profile.id, {
+            studentId: st.id,
+            studentName: st.name,
+            dayOfWeek: slot.dayOfWeek,
+            time: slot.time,
+            duration: slot.duration || 60,
+            recurrence: slot.recurrence || 'weekly',
+            classType: slot.classType || 'online',
+            color: slot.color || 'purple',
+            locationOrLink: slot.locationOrLink || '',
+            notes: slot.notes || '',
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Quick reactivate error:', e);
+    }
+  };
 
   // Modal State for "تسجيل حصة"
   const [showStartClassModal, setShowStartClassModal] = useState(false);
@@ -512,6 +562,86 @@ export const HomeTab: React.FC<HomeTabProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Smart Pause-Ending Alert Banner */}
+        {pauseEndingSoon.length > 0 && (
+          <div className="rounded-3xl bg-gradient-to-r from-amber-950/70 via-slate-950 to-amber-950/50 border border-amber-500/40 p-4 shadow-xl space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center justify-center font-bold">
+                  <PauseCircle className="w-4 h-4 text-amber-400" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-black text-white flex items-center gap-1.5">
+                    <span>تنبيه ذكي: اقتراب انتهاء فترة التوقف المؤقت</span>
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-amber-500/30 text-amber-200">
+                      {pauseEndingSoon.length} {pauseEndingSoon.length === 1 ? 'طالب' : 'طلاب'}
+                    </span>
+                  </h4>
+                  <p className="text-[10px] text-amber-200/80 mt-0.5">
+                    الطلاب التاليين أوشكت فترة توقفهم على الانتهاء، يمكنك استئناف مواعيدهم الآن:
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {pauseEndingSoon.map((item) => (
+                <div
+                  key={item.student.id}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-2xl bg-slate-900/90 border border-amber-500/30"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-300 flex items-center justify-center text-xs font-bold">
+                      {item.student.name.charAt(0)}
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-white block">{item.student.name}</span>
+                      <span className="text-[10px] text-amber-300 font-medium">
+                        {item.daysRemaining === 0
+                          ? 'تنتهي فترة التوقف اليوم 🔔'
+                          : item.daysRemaining === 1
+                          ? `تنتهي فترة التوقف غداً (${item.student.pauseEndDate}) ⏳`
+                          : `متبقي يومان (${item.student.pauseEndDate}) ⏳`}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleQuickReactivate(item.student)}
+                      className="flex-1 sm:flex-initial py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition cursor-pointer flex items-center justify-center gap-1 shadow-md shadow-emerald-950/40"
+                      title="إعادة تفعيل الطالب واستعادة مواعيد حصصه السابقة فوراً"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>تفعيل المواعيد السابقة</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => onNavigateToTab(2)}
+                      className="flex-1 sm:flex-initial py-1.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-purple-300 text-[11px] font-bold transition cursor-pointer flex items-center justify-center gap-1"
+                      title="فتح جدول المواعيد لاختيار مواعيد جديدة"
+                    >
+                      <Calendar className="w-3.5 h-3.5" />
+                      <span>مواعيد جديدة</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setStatusModalStudent(item.student)}
+                      className="py-1.5 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-bold transition cursor-pointer"
+                      title="تعديل تاريخ التوقف أو تمديده"
+                    >
+                      تعديل
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Live next-class countdown */}
       <div className="rounded-3xl bg-slate-950/80 border border-amber-500/30 p-4 shadow-xl">
@@ -1013,6 +1143,18 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           profile={profile}
           students={students}
           schedules={schedules}
+        />
+      )}
+
+      {/* Student Status & Pause Management Modal */}
+      {statusModalStudent && (
+        <StudentStatusModal
+          isOpen={!!statusModalStudent}
+          onClose={() => setStatusModalStudent(null)}
+          targetStudent={statusModalStudent}
+          teacherId={profile.id}
+          studentSchedules={rawSchedules.filter((s) => s.studentId === statusModalStudent.id)}
+          onShowToast={(msg) => alert(msg)}
         />
       )}
     </div>
