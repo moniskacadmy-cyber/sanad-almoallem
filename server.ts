@@ -497,6 +497,13 @@ const requireActiveSubscription = createSubscriptionGuard({
   },
 });
 
+// Request body helper: always returns a plain object (never undefined/array/primitive), so
+// destructuring user input cannot throw or be abused with unexpected shapes.
+function getBodyObject(req: express.Request): Record<string, unknown> {
+  const body: unknown = (req as any).body;
+  return body !== null && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
+}
+
 // Simple LRU/TTL Cache for AI questions to reduce latency & API costs
 const aiAskCache = new Map<string, { answer: string; timestamp: number }>();
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
@@ -504,7 +511,7 @@ const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 // AI Assistant Endpoint for "مكتبتي" (Ask Library Sources with Streaming SSE support)
 app.post('/api/ai/ask', verifyFirebaseToken, (req, res, next) => aiRateLimiter('ask', req, res, next), requireActiveSubscription, async (req, res) => {
   try {
-    const { question, teacherName, subject, sources, stream = false } = req.body;
+    const { question, teacherName, subject, sources, stream = false } = getBodyObject(req) as any;
     const wantStream = stream === true || req.headers.accept?.includes('text/event-stream');
 
     if (!question || typeof question !== 'string') {
@@ -665,13 +672,18 @@ ${question}
 // AI Audio Transcription Endpoint
 app.post('/api/ai/transcribe', verifyFirebaseToken, (req, res, next) => aiRateLimiter('transcribe', req, res, next), requireActiveSubscription, async (req, res) => {
   try {
-    const { audioBase64, mimeType } = req.body;
+    const { audioBase64, mimeType } = getBodyObject(req) as any;
     const allowedAudioMimeTypes = new Set(['audio/webm', 'audio/wav', 'audio/mpeg', 'audio/mp4', 'audio/ogg']);
     if (mimeType && (typeof mimeType !== 'string' || !allowedAudioMimeTypes.has(mimeType))) {
       return res.status(400).json({ error: 'نوع الملف الصوتي غير مدعوم.' });
     }
     if (!audioBase64 || typeof audioBase64 !== 'string') {
       return res.status(400).json({ error: 'البيانات الصوتية مطلوبة.' });
+    }
+
+    // Only a clean base64 string is accepted (no data: prefixes, spaces or other characters).
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(audioBase64)) {
+      return res.status(400).json({ error: 'تنسيق البيانات الصوتية غير صالح.' });
     }
 
     // Limit maximum audio payload size strictly to 1.5MB after base64 decoding (1.5 * 1024 * 1024 bytes)
@@ -718,14 +730,14 @@ app.post('/api/ai/transcribe', verifyFirebaseToken, (req, res, next) => aiRateLi
 app.post('/api/ai/assistant', verifyFirebaseToken, (req, res, next) => aiRateLimiter('assistant', req, res, next), requireActiveSubscription, async (req, res) => {
   let streamStarted = false;
   try {
-    const { message, messagesHistory, summary, model, role, customInstruction } = req.body;
+    const { message, messagesHistory, summary, model, role, customInstruction } = getBodyObject(req) as any;
     if (!message || typeof message !== 'string') return res.status(400).json({ error: 'الرسالة مطلوبة.' });
     if (message.length > 2000) return res.status(400).json({ error: 'الرسالة طويلة جداً. الحد الأقصى 2000 حرف.' });
     if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: 'خدمة الذكاء الاصطناعي غير مهيأة حالياً.' });
     
     // Model selection: gemini-4-argon for complex tasks, gemini-3.8-flash for general tasks (default), gemini-3.1-flash-lite for fast tasks
     const allowedModels = ['gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.1-flash-lite'];
-    const selectedModel = allowedModels.includes(model) ? model : (process.env.GEMINI_MODEL || 'gemini-3.8-flash');
+    const selectedModel = typeof model === 'string' && allowedModels.includes(model) ? model : (process.env.GEMINI_MODEL || 'gemini-3.8-flash');
 
     // Role-specific System Instructions
     const ROLE_INSTRUCTIONS: Record<string, string> = {
@@ -755,6 +767,7 @@ app.post('/api/ai/assistant', verifyFirebaseToken, (req, res, next) => aiRateLim
     let historyText = '';
     if (messagesHistory !== undefined && !Array.isArray(messagesHistory)) return res.status(400).json({ error: 'سجل المحادثة غير صالح.' });
     if (Array.isArray(messagesHistory) && messagesHistory.length > 20) return res.status(400).json({ error: 'سجل المحادثة كبير جداً.' });
+    if (Array.isArray(messagesHistory) && messagesHistory.some((m: any) => !m || typeof m !== 'object' || Array.isArray(m) || (m.text !== undefined && typeof m.text !== 'string'))) return res.status(400).json({ error: 'سجل المحادثة غير صالح.' });
     if (Array.isArray(messagesHistory) && messagesHistory.length) { const recent = messagesHistory.slice(-10); historyText = 'سجل المحادثة السابقة:\n' + recent.map((m: any) => `${m.role === 'user' ? 'المعلم' : 'المساعد'}: ${typeof m.text === 'string' ? m.text.slice(0, 1000) : ''}`).join('\n') + '\n===============================\n'; }
     const fullPrompt = `${formattedContext}\n${historyText}سؤال المعلم الحالي:\n${message.slice(0, 2000).trim()}`;
     if (fullPrompt.length > 12000) return res.status(400).json({ error: 'حجم الطلب النهائي كبير جداً.' });
