@@ -466,8 +466,9 @@ export default function App() {
             });
           }
 
-          // Automatically open WhatsApp API link with populated class details if enabled
-          if ((settings.autoOpenWhatsApp || notifPrefs.whatsappAlerts) && first.whatsappUrl) {
+          // Only the explicit "open WhatsApp automatically" switch may open WhatsApp on its own
+          // (the general WhatsApp-alerts preference must never pop WhatsApp open while using the phone).
+          if (settings.autoOpenWhatsApp === true && first.whatsappUrl) {
             try {
               window.open(first.whatsappUrl, '_blank');
             } catch (e) {
