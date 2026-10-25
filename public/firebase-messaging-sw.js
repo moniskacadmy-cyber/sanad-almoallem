@@ -35,11 +35,13 @@ function getFirebaseConfigFromLocation() {
 }
 
 const firebaseConfig = getFirebaseConfigFromLocation();
+let fcmSdkReady = false; // when true, onBackgroundMessage below shows the notification (the raw push listener must not)
 
 if (firebaseConfig.apiKey && firebaseConfig.projectId) {
   try {
     firebase.initializeApp(firebaseConfig);
     const messaging = firebase.messaging();
+    fcmSdkReady = true;
 
     messaging.onBackgroundMessage((payload) => {
       console.log('[firebase-messaging-sw.js] Received background message:', payload);
@@ -48,10 +50,15 @@ if (firebaseConfig.apiKey && firebaseConfig.projectId) {
         body: payload.notification?.body || payload.data?.body || 'لديك حصة دراسية قريبة.',
         icon: '/pwa-192x192.png',
         badge: '/favicon.ico',
-        tag: payload.data?.tag || 'lesson-reminder',
+        // One notification per class/task (two students at the same time must not replace each other)
+        tag: [payload.data?.tag || 'lesson-reminder', payload.data?.scheduleId || payload.data?.groupSlotId || payload.data?.taskId || '']
+          .filter(Boolean)
+          .join('-'),
         renotify: true,
         requireInteraction: true,
-        vibrate: [200, 100, 200],
+        silent: false,
+        timestamp: Date.now(),
+        vibrate: [300, 150, 300, 150, 300],
         data: payload.data || {},
         actions: [
           { action: 'open', title: 'فتح التطبيق 📱' }
@@ -76,7 +83,7 @@ self.addEventListener('activate', (event) => {
 
 // Fallback native push event listener when browser wakes service worker
 self.addEventListener('push', (event) => {
-  if (!event.data) return;
+  if (fcmSdkReady || !event.data) return;
   try {
     const payload = event.data.json();
     const title = payload.notification?.title || payload.data?.title || 'سند المعلم 🔔';

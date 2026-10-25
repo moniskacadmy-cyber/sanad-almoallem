@@ -943,18 +943,14 @@ async function sendPush(
   data: Record<string, string> = {},
   ttlSeconds = 3600
 ) {
+  // DATA-ONLY message (no "notification" block): the service worker builds the notification itself
+  // (vibration + requireInteraction so Android shows it as a heads-up banner over other apps).
+  // With a "notification" block the browser would ALSO draw its own plain copy -> two notifications.
   return messagingAdmin.sendEachForMulticast({
     tokens,
-    notification: { title: msg.title, body: msg.body },
-    data: { tag: msg.tag, ...data },
+    data: { ...data, title: msg.title, body: msg.body, tag: msg.tag },
     webpush: {
       headers: { Urgency: 'high', TTL: String(ttlSeconds) },
-      notification: {
-        title: msg.title,
-        body: msg.body,
-        icon: '/pwa-192x192.png',
-        badge: '/favicon.ico',
-      },
       fcmOptions: { link: '/' },
     },
   });
@@ -1163,31 +1159,17 @@ app.get('/api/reminders/cron', async (req, res) => {
         }
 
         try {
-          const sendResponse = await messagingAdmin.sendEachForMulticast({
-            tokens: fcmTokens,
-            notification: {
-              title,
-              body,
-            },
-            data: {
+          const sendResponse = await sendPush(
+            messagingAdmin,
+            fcmTokens,
+            { title, body, tag: 'class-reminder' },
+            {
               scheduleId: schedDoc.id,
               studentName: slot.studentName || '',
               time: slot.time || '',
-              tag: 'class-reminder',
             },
-            webpush: {
-              notification: {
-                title,
-                body,
-                icon: '/pwa-192x192.png',
-                badge: '/favicon.ico',
-              },
-              headers: { Urgency: 'high', TTL: '3600' },
-              fcmOptions: {
-                link: '/',
-              },
-            },
-          });
+            3600
+          );
 
           await sentRef.set({
             status: 'sent',
@@ -1361,29 +1343,17 @@ app.get('/api/reminders/cron', async (req, res) => {
             const taskSentDoc = await taskSentRef.get();
             if (!taskSentDoc.exists) {
               await taskSentRef.set({ status: 'sent', taskId: taskDoc.id, teacherId, day: todayStr, sentAt: new Date().toISOString() });
-              const sendResponse = await messagingAdmin.sendEachForMulticast({
-                tokens: fcmTokens,
-                notification: {
+              const sendResponse = await sendPush(
+                messagingAdmin,
+                fcmTokens,
+                {
                   title: '📝 تذكير بمهمة مطلوبة اليوم',
                   body: `أستاذ/ـة ${teacherData.name || 'المعلم'}، لديك مهمة مستحقة اليوم: "${task.title}".`,
-                },
-                data: {
-                  taskId: taskDoc.id,
                   tag: 'task-reminder',
                 },
-                webpush: {
-                  notification: {
-                    title: '📝 تذكير بمهمة مطلوبة اليوم',
-                    body: `أستاذ/ـة ${teacherData.name || 'المعلم'}، لديك مهمة مستحقة اليوم: "${task.title}".`,
-                    icon: '/pwa-192x192.png',
-                    badge: '/favicon.ico',
-                  },
-                  headers: { Urgency: 'high', TTL: '10800' },
-                  fcmOptions: {
-                    link: '/',
-                  },
-                },
-              });
+                { taskId: taskDoc.id },
+                10800
+              );
               notificationsSent += sendResponse.successCount;
             }
           }
