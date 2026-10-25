@@ -25,6 +25,7 @@ import {
   triggerTestReminderApi,
   sendEndOfDaySummaryNotification,
   sendDailyDigestNotification,
+  sendTestPushApi,
   generateDailyDigestMessage,
 } from '../services/reminderService';
 import {
@@ -235,6 +236,44 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   };
 
   const [dailyDigestNotice, setDailyDigestNotice] = useState<string | null>(null);
+
+  const [pushTestBusy, setPushTestBusy] = useState(false);
+  const [pushTestNotice, setPushTestNotice] = useState<string | null>(null);
+
+  // Registers THIS device (asks permission if needed), then sends a real push to all devices.
+  const handleTestPhonePush = async () => {
+    setPushTestBusy(true);
+    setPushTestNotice(null);
+    try {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+        setPushTestNotice('❌ الإشعارات ممنوعة لهذا الموقع في المتصفح. افتح إعدادات الموقع (🔒 جنب اللينك) واختار "السماح" للإشعارات، وبعدها جرّب تاني.');
+        return;
+      }
+      const reg = await requestAndSaveFCMToken(true);
+      if (!reg.success) {
+        setPushTestNotice(
+          reg.error === 'preview_url'
+            ? '❌ ده لينك تجريبي. افتح اللينك الأساسي sanad-almoallem-three.vercel.app وجرّب من هناك.'
+            : `❌ الجهاز ده لسه مش مسجّل للإشعارات: ${reg.error || 'سبب غير معروف'}`
+        );
+        return;
+      }
+      const r = await sendTestPushApi();
+      if (r.tokens === 0) {
+        setPushTestNotice('❌ مفيش أي جهاز مسجّل على حسابك.');
+      } else if (r.sent === 0) {
+        setPushTestNotice(`❌ اتبعت لـ ${r.tokens} جهاز بس مفيش واحد استلم (${r.errors.join('، ') || 'خطأ'}). سجّل خروج وادخل تاني وجرّب.`);
+      } else {
+        const names: Record<string, string> = { android: 'أندرويد', ios: 'آيفون', computer: 'كمبيوتر', other: 'جهاز' };
+        const list = r.devices.map((d) => names[d] || 'جهاز').join('، ');
+        setPushTestNotice(`✅ اتبعت إشعار لـ ${r.sent} من ${r.tokens} جهاز (${list}). شوف الفون الأول!`);
+      }
+    } catch (e: any) {
+      setPushTestNotice(`❌ ${e?.message || 'حصل خطأ'}`);
+    } finally {
+      setPushTestBusy(false);
+    }
+  };
 
   const handleTestDailyDigest = () => {
     const res = sendDailyDigestNotification({
@@ -1145,6 +1184,21 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                   className="bg-slate-900 border border-purple-500/40 rounded-xl px-3 py-1.5 text-xs text-amber-300 font-mono font-bold focus:outline-none focus:border-purple-500 cursor-pointer"
                 />
               </div>
+
+              <button
+                type="button"
+                onClick={handleTestPhonePush}
+                disabled={pushTestBusy}
+                className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-lg shadow-emerald-600/30 cursor-pointer"
+              >
+                <Bell className="w-3.5 h-3.5" />
+                <span>{pushTestBusy ? 'جارٍ الاختبار...' : 'اختبار إشعار الفون 📱'}</span>
+              </button>
+              {pushTestNotice && (
+                <p className="w-full text-[11px] font-bold leading-relaxed text-amber-200 bg-slate-950/60 border border-amber-500/30 rounded-xl p-2.5">
+                  {pushTestNotice}
+                </p>
+              )}
 
               <button
                 type="button"

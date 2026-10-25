@@ -263,6 +263,22 @@ export async function sendLoginSummaryApi(): Promise<void> {
   }
 }
 
+export interface TestPushResult {
+  tokens: number;
+  sent: number;
+  failed: number;
+  devices: string[];
+  errors: string[];
+}
+
+/** Sends a real push to all devices registered for this teacher (Settings -> test button). */
+export async function sendTestPushApi(): Promise<TestPushResult> {
+  const headers = await getAuthenticatedHeaders();
+  const res = await fetch('/api/reminders/test-push', { method: 'POST', headers });
+  if (!res.ok) throw new Error('تعذر الاتصال بالسيرفر.');
+  return (await res.json()) as TestPushResult;
+}
+
 // Trigger manual test reminder
 export async function triggerTestReminderApi(params: {
   studentName: string;
