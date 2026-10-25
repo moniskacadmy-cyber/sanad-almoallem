@@ -18,6 +18,7 @@ import {
   getIndividualAgenda,
   isInMorningWindow,
   isMutedByDnd,
+  pickLatestPerDevice,
   timeToMinutes,
   type PushMessage,
 } from './src/server/agenda.js';
@@ -879,6 +880,49 @@ async function claimReminder(dbAdmin: any, sentRef: any, meta: Record<string, un
 }
 
 /** Web Push with high urgency, so a locked / dozing phone is woken up; the message is dropped after ttlSeconds. */
+interface TokenDocEntry {
+  token: string;
+  deviceId?: string;
+  updatedMs: number;
+  path: string;
+}
+
+function toTokenEntry(docSnap: any): TokenDocEntry | null {
+  const data = docSnap.data() || {};
+  const token = data.token || docSnap.id;
+  if (!token) return null;
+  const upd = data.updatedAt;
+  const updatedMs =
+    typeof upd?.toMillis === 'function' ? upd.toMillis() : typeof upd === 'number' ? upd : Date.parse(upd) || 0;
+  return {
+    token: String(token),
+    deviceId: typeof data.deviceId === 'string' && data.deviceId ? data.deviceId : undefined,
+    updatedMs,
+    path: docSnap.ref.path,
+  };
+}
+
+/** Reads a teacher's tokens, one per physical device. */
+async function loadDeviceTokens(dbAdmin: any, uid: string) {
+  const snap = await dbAdmin.collection('teachers').doc(uid).collection('fcmTokens').get();
+  const entries: TokenDocEntry[] = [];
+  snap.forEach((d: any) => {
+    const e = toTokenEntry(d);
+    if (e) entries.push(e);
+  });
+  const { keep, drop } = pickLatestPerDevice(entries);
+  for (const d of drop) dbAdmin.doc(d.path).delete().catch(() => {});
+  const tokenDocPaths = new Map<string, string>();
+  const tokens: string[] = [];
+  for (const k of keep) {
+    if (!tokens.includes(k.token)) {
+      tokens.push(k.token);
+      tokenDocPaths.set(k.token, k.path);
+    }
+  }
+  return { tokens, tokenDocPaths, entries: keep };
+}
+
 async function sendPush(
   messagingAdmin: any,
   tokens: string[],
@@ -946,23 +990,29 @@ app.get('/api/reminders/cron', async (req, res) => {
     // Map: teacherId -> { tokens: string[], tokenDocPaths: Map<string, string> }
     const teacherTokensMap = new Map<string, { tokens: string[]; tokenDocPaths: Map<string, string> }>();
 
+    // Collect every token per teacher first, then keep only the newest token of each physical device
+    // (the browser tab and the installed app on one phone must not both notify).
+    const rawByTeacher = new Map<string, TokenDocEntry[]>();
     fcmGroupSnap.forEach((docSnap) => {
       const parentTeacherDoc = docSnap.ref.parent.parent;
       if (!parentTeacherDoc) return;
       const teacherId = parentTeacherDoc.id;
-      const tokenData = docSnap.data();
-      const tokenVal = tokenData?.token || docSnap.id;
-      if (!tokenVal) return;
-
-      if (!teacherTokensMap.has(teacherId)) {
-        teacherTokensMap.set(teacherId, { tokens: [], tokenDocPaths: new Map() });
-      }
-      const entry = teacherTokensMap.get(teacherId)!;
-      if (!entry.tokens.includes(tokenVal)) {
-        entry.tokens.push(tokenVal);
-      }
-      entry.tokenDocPaths.set(tokenVal, docSnap.ref.path);
+      const entry = toTokenEntry(docSnap);
+      if (!entry) return;
+      if (!rawByTeacher.has(teacherId)) rawByTeacher.set(teacherId, []);
+      rawByTeacher.get(teacherId)!.push(entry);
     });
+    for (const [teacherId, list] of rawByTeacher.entries()) {
+      const { keep, drop } = pickLatestPerDevice(list);
+      const entry = { tokens: [] as string[], tokenDocPaths: new Map<string, string>() };
+      for (const k of keep) {
+        if (!entry.tokens.includes(k.token)) entry.tokens.push(k.token);
+        entry.tokenDocPaths.set(k.token, k.path);
+      }
+      teacherTokensMap.set(teacherId, entry);
+      // Best-effort cleanup of the superseded registrations.
+      for (const d of drop) dbAdmin.doc(d.path).delete().catch(() => {});
+    }
 
     let teachersChecked = 0;
     let notificationsSent = 0;
@@ -1367,16 +1417,7 @@ app.post('/api/reminders/login-summary', verifyFirebaseToken, userRateLimiter, a
     }
 
     const teacherRef = dbAdmin.collection('teachers').doc(uid);
-    const tokensSnap = await teacherRef.collection('fcmTokens').get();
-    const tokenDocPaths = new Map<string, string>();
-    const tokens: string[] = [];
-    tokensSnap.forEach((d) => {
-      const t = d.data()?.token || d.id;
-      if (t && !tokens.includes(t)) {
-        tokens.push(t);
-        tokenDocPaths.set(t, d.ref.path);
-      }
-    });
+    const { tokens, tokenDocPaths } = await loadDeviceTokens(dbAdmin, uid);
     if (tokens.length === 0) return res.json({ success: true, sent: 0, reason: 'no-tokens' });
 
     const bucket = Math.floor(currentTotalMinutes / 360);
@@ -1432,20 +1473,13 @@ app.post('/api/reminders/test-push', verifyFirebaseToken, userRateLimiter, async
     const uid = (req as any).user?.uid as string | undefined;
     if (!uid) return res.status(401).json({ error: 'رمز الدخول غير صالح.' });
     const dbAdmin = getAdminDb();
-    const teacherRef = dbAdmin.collection('teachers').doc(uid);
-    const tokensSnap = await teacherRef.collection('fcmTokens').get();
-    const tokenDocPaths = new Map<string, string>();
-    const tokens: string[] = [];
-    const devices: string[] = [];
-    tokensSnap.forEach((d) => {
-      const data = d.data() || {};
-      const t = data.token || d.id;
-      if (t && !tokens.includes(t)) {
-        tokens.push(t);
-        tokenDocPaths.set(t, d.ref.path);
-        const ua = String(data.userAgent || '');
-        devices.push(/Android/i.test(ua) ? 'android' : /iPhone|iPad/i.test(ua) ? 'ios' : /Windows|Macintosh|Linux/i.test(ua) ? 'computer' : 'other');
-      }
+    const { tokens, tokenDocPaths, entries } = await loadDeviceTokens(dbAdmin, uid);
+    const uaByToken = new Map<string, string>();
+    const ds = await dbAdmin.collection('teachers').doc(uid).collection('fcmTokens').get();
+    ds.forEach((d: any) => uaByToken.set(d.data()?.token || d.id, String(d.data()?.userAgent || '')));
+    const devices = entries.map((e) => {
+      const ua = uaByToken.get(e.token) || '';
+      return /Android/i.test(ua) ? 'android' : /iPhone|iPad/i.test(ua) ? 'ios' : /Windows|Macintosh|Linux/i.test(ua) ? 'computer' : 'other';
     });
     if (tokens.length === 0) return res.json({ success: true, tokens: 0, sent: 0, failed: 0, devices: [], errors: [] });
 

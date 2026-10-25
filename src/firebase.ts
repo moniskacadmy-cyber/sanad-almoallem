@@ -1552,6 +1552,23 @@ let fcmRegistrationPromise: Promise<{
 }> | null = null;
 
 // Function to request permission and save FCM token for web push notifications
+/**
+ * Random id kept in localStorage. On Android the browser tab and the installed app share it, so the
+ * server can send one notification per phone instead of one per registration.
+ */
+function getOrCreateDeviceId(): string | undefined {
+  try {
+    let id = localStorage.getItem('sanad_device_id');
+    if (!id) {
+      id = `d_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+      localStorage.setItem('sanad_device_id', id);
+    }
+    return id;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function requestAndSaveFCMToken(force = false): Promise<{
   success: boolean;
   token?: string;
@@ -1657,6 +1674,7 @@ export async function requestAndSaveFCMToken(force = false): Promise<{
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
             userAgent: navigator.userAgent,
+            deviceId: getOrCreateDeviceId(),
           },
           { merge: true }
         );

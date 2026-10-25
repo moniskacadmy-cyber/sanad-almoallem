@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  pickLatestPerDevice,
   timeToMinutes,
   normalizeTime,
   getGroupAgenda,
@@ -143,4 +144,16 @@ test('login summary: always produces a message, with or without classes', () => 
   })!;
   assert.match(one.body, /حصة واحدة النهاردة: 5:00 م مجموعة ثالث \(النور\)\./);
   assert.equal(one.tag, 'login-summary');
+});
+
+test('pickLatestPerDevice: one token per device, newest wins, unknown devices kept', () => {
+  const r = pickLatestPerDevice([
+    { token: 'a1', deviceId: 'phone', updatedMs: 100 },
+    { token: 'a2', deviceId: 'phone', updatedMs: 300 },
+    { token: 'b1', deviceId: 'laptop', updatedMs: 50 },
+    { token: 'old1', updatedMs: 10 },
+    { token: 'old2', updatedMs: 20 },
+  ]);
+  assert.deepEqual(r.keep.map((x) => x.token), ['a2', 'b1', 'old1', 'old2']);
+  assert.deepEqual(r.drop.map((x) => x.token), ['a1']);
 });
