@@ -62,7 +62,7 @@ export const StudentStatusModal: React.FC<StudentStatusModalProps> = ({
   useEffect(() => {
     if (!isOpen || !currentEntity) return;
 
-    const initialStatus = currentEntity.status || (currentEntity.archived ? 'archived' : currentEntity.active === false ? 'paused' : 'active');
+    const initialStatus = currentEntity.status || ((currentEntity as any).archived ? 'archived' : currentEntity.active === false ? 'paused' : 'active');
     setSelectedStatus(initialStatus);
 
     const initialPauseType = currentEntity.pauseType || 'temporary';
