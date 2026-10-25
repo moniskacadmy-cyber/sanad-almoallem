@@ -42,6 +42,7 @@ import {
   ClipboardList,
   Check,
   PauseCircle,
+  Search,
 } from 'lucide-react';
 
 interface GroupDetailsModalProps {
