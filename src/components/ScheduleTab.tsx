@@ -8,7 +8,10 @@ import {
   saveScheduleEvaluation,
   addStudent,
   subscribeToGroups,
+  subscribeToStudents,
+  subscribeToSchedules,
 } from '../firebase';
+import { useFirebaseSubscription } from '../hooks/useFirebaseSubscription';
 import { exportScheduleToPdf } from '../services/pdfReportService';
 import { VoiceInputButton } from './VoiceInputButton';
 import { CalendarView } from './CalendarView';
@@ -209,7 +212,18 @@ export interface FormSlotItem {
   notes?: string;
 }
 
-export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, schedules: rawSchedules }) => {
+export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, students: propsStudents, schedules: propsSchedules }) => {
+  const { data: studentsData = [] } = useFirebaseSubscription(
+    profile ? `students/${profile.id}` : null,
+    (cb) => subscribeToStudents(profile.id, cb)
+  );
+  const { data: rawSchedulesData = [] } = useFirebaseSubscription(
+    profile ? `schedules/${profile.id}` : null,
+    (cb) => subscribeToSchedules(profile.id, cb)
+  );
+
+  const students = propsStudents || studentsData;
+  const rawSchedules = propsSchedules || rawSchedulesData;
   const [groups, setGroups] = useState<Group[]>([]);
 
   useEffect(() => {
@@ -2408,4 +2422,4 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ profile, students, sch
       )}
     </div>
   );
-};
+});

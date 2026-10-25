@@ -14,6 +14,8 @@ import {
   getStoredReminderSettings,
 } from '../services/reminderService';
 import { useBackHandler } from '../services/backHandler';
+import { useFirebaseSubscription } from '../hooks/useFirebaseSubscription';
+import { subscribeToStudents, subscribeToSchedules } from '../firebase';
 import {
   addStudent,
   addStudentWithSchedules,
@@ -135,7 +137,18 @@ const AttendanceIndicator: React.FC<{ student: Student }> = ({ student }) => {
   );
 };
 
-export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, schedules: rawSchedules = [] }) => {
+export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, students: propsStudents, schedules: propsSchedules = [] }) => {
+  const { data: studentsData = [] } = useFirebaseSubscription(
+    profile ? `students/${profile.id}` : null,
+    (cb) => subscribeToStudents(profile.id, cb)
+  );
+  const { data: rawSchedulesData = [] } = useFirebaseSubscription(
+    profile ? `schedules/${profile.id}` : null,
+    (cb) => subscribeToSchedules(profile.id, cb)
+  );
+
+  const students = propsStudents || studentsData;
+  const rawSchedules = propsSchedules || rawSchedulesData;
   const schedules = rawSchedules.filter((s) => students.some((st) => st.id === s.studentId));
   const currency = profile?.currency || 'ج.م';
   const [activeMainView, setActiveMainView] = useState<'groups_and_individuals' | 'records'>('groups_and_individuals');
@@ -4268,4 +4281,4 @@ export const StudentsTab: React.FC<StudentsTabProps> = ({ profile, students, sch
       />
     </div>
   );
-};
+});

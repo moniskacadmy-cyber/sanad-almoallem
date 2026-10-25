@@ -28,6 +28,7 @@ import { OfflineIndicator } from './OfflineIndicator';
 import { AIAssistantChat } from './components/AIAssistantChat';
 import { LoadingFallback } from './components/LoadingFallback';
 import { Sidebar } from './components/Sidebar';
+import { useFirebaseSubscription } from './hooks/useFirebaseSubscription';
 import { ThemeToggleCompact } from './components/ThemeToggle';
 import { OnboardingModal } from './components/OnboardingModal';
 import { ActiveReminderAlert, ActiveReminderAlertData } from './components/ActiveReminderAlert';
@@ -175,10 +176,24 @@ export default function App() {
     }
   };
 
-  // Collections state for current teacher
-  const [students, setStudents] = useState<Student[]>([]);
-  const [schedules, setSchedules] = useState<ScheduleSlot[]>([]);
-  const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
+  // Collections state for current teacher (handled by SWR via useFirebaseSubscription)
+  const { data: studentsData } = useFirebaseSubscription(
+    currentUser ? `students/${currentUser.uid}` : null,
+    (cb) => subscribeToStudents(currentUser!.uid, cb)
+  );
+  const students = studentsData || [];
+
+  const { data: schedulesData } = useFirebaseSubscription(
+    currentUser ? `schedules/${currentUser.uid}` : null,
+    (cb) => subscribeToSchedules(currentUser!.uid, cb)
+  );
+  const schedules = schedulesData || [];
+
+  const { data: libraryData } = useFirebaseSubscription(
+    currentUser ? `library/${currentUser.uid}` : null,
+    (cb) => subscribeToLibrary(currentUser!.uid, cb)
+  );
+  const libraryItems = libraryData || [];
 
   // Automated Class Reminders Alert Banner State
   const [activeReminderAlert, setActiveReminderAlert] = useState<ActiveReminderAlertData | null>(null);
@@ -395,24 +410,7 @@ export default function App() {
   }, [currentUser]);
 
   // Listen to Students, Schedules, and Library
-  useEffect(() => {
-    if (!currentUser) {
-      setStudents([]);
-      setSchedules([]);
-      setLibraryItems([]);
-      return;
-    }
 
-    const unsubStudents = subscribeToStudents(currentUser.uid, (data) => setStudents(data));
-    const unsubSchedules = subscribeToSchedules(currentUser.uid, (data) => setSchedules(data));
-    const unsubLibrary = subscribeToLibrary(currentUser.uid, (data) => setLibraryItems(data));
-
-    return () => {
-      unsubStudents();
-      unsubSchedules();
-      unsubLibrary();
-    };
-  }, [currentUser?.uid]);
 
   // Run database automatic cleanup script for orphaned schedules and lessons (IIFE triggered)
   useEffect(() => {
