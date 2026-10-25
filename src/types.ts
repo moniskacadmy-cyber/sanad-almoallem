@@ -390,6 +390,8 @@ export interface NotificationPreferences {
   studentAbsenceRecorded: boolean; // تسجيل غياب أو اعتذار طالب
   paymentRecorded: boolean; // تسجيل دفعة مالية أو تصفية
   dailySummaryReport: boolean; // تقرير ملخص نهاية اليوم
+  dailyDigestEnabled: boolean; // تذكير جدول حصص اليوم
+  dailyDigestTime: string; // وقت التذكير الصباحي
 
   // Delivery channels
   browserPush: boolean; // إشعارات المتصفح والنظام
@@ -405,6 +407,8 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   studentAbsenceRecorded: true,
   paymentRecorded: true,
   dailySummaryReport: true,
+  dailyDigestEnabled: true,
+  dailyDigestTime: '08:00',
   browserPush: true,
   inAppBanner: true,
   soundChime: true,
@@ -461,6 +465,25 @@ export interface QuickNote {
   isCompleted?: boolean;
   createdAt: any;
   updatedAt?: any;
+}
+
+export interface ReminderLogItem {
+  id: string;
+  teacherId: string;
+  studentId: string;
+  studentName: string;
+  target: 'parent' | 'teacher';
+  recipientName: string;
+  recipientPhone: string;
+  classTime: string;
+  classType: ClassType;
+  subject: string;
+  locationOrLink?: string;
+  messageText: string;
+  whatsappUrl: string;
+  status: 'sent' | 'scheduled' | 'delivered';
+  minutesBefore: number;
+  sentAt: string;
 }
 
 export function renderTemplate(templateText: string, vars: Record<string, any>): string {

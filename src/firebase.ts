@@ -54,6 +54,7 @@ import {
   AttendanceRecord,
   PaymentStatus,
   StudentPaymentRecord,
+  ReminderLogItem,
 } from './types';
 
 import {
@@ -1558,6 +1559,16 @@ export async function requestAndSaveFCMToken(force = false): Promise<{
 }> {
   const currentUser = auth?.currentUser;
 
+  // Phone notifications belong to the main app link only. Vercel preview links (…-xxxx.vercel.app)
+  // must not register a device, otherwise the same phone gets duplicate notifications.
+  if (
+    typeof window !== 'undefined' &&
+    window.location.hostname.endsWith('.vercel.app') &&
+    window.location.hostname !== 'sanad-almoallem-three.vercel.app'
+  ) {
+    return { success: false, error: 'preview_url' };
+  }
+
   // Prevent redundant executions for the same user within the same session
   if (!force && currentUser && fcmRegisteredUid === currentUser.uid) {
     return { success: true };
@@ -2606,14 +2617,14 @@ export function subscribeToAdminNotifications(callback: (notifications: AdminNot
   });
 }
 
-export async function fetchReminderLogs(teacherId: string): Promise<ReminderLog[]> {
+export async function fetchReminderLogs(teacherId: string): Promise<ReminderLogItem[]> {
   const collRef = collection(db, 'teachers', teacherId, 'reminderLogs');
   const q = query(collRef, orderBy('sentAt', 'desc'), limit(100));
   try {
     const snapshot = await getDocs(q);
-    const logs: ReminderLog[] = [];
+    const logs: ReminderLogItem[] = [];
     snapshot.forEach((docSnap) => {
-      logs.push({ id: docSnap.id, ...docSnap.data() } as ReminderLog);
+      logs.push({ id: docSnap.id, ...docSnap.data() } as ReminderLogItem);
     });
     return logs;
   } catch (err) {

@@ -335,6 +335,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       const res = await checkRemindersApi({
         teacher: profile,
         schedules,
+        groups: [],
         students,
         minutesBefore: reminderSettings.minutesBefore || 15,
       });

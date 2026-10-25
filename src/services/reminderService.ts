@@ -125,6 +125,7 @@ export async function checkRemindersApi(
   params: {
     teacher: TeacherProfile;
     schedules: ScheduleSlot[];
+    groups: any[];
     students: Student[];
     minutesBefore?: number;
   },
@@ -137,6 +138,11 @@ export async function checkRemindersApi(
 }> {
   // Respect Do Not Disturb settings (quiet hours, weekends, or vacation mode)
   if (isInDoNotDisturbPeriod(params.teacher?.doNotDisturb)) {
+    return { success: true, checkedCount: 0, remindersSent: 0, matchedReminders: [] };
+  }
+
+  // Prevent reminders on preview URLs
+  if (typeof window !== 'undefined' && window.location.hostname !== 'sanad-almoallem-three.vercel.app') {
     return { success: true, checkedCount: 0, remindersSent: 0, matchedReminders: [] };
   }
 
@@ -161,6 +167,7 @@ export async function checkRemindersApi(
         teacherName: params.teacher.name,
         teacherWhatsapp: params.teacher.whatsapp,
         schedules: params.schedules,
+        groups: params.groups,
         students: params.students,
         clientTime: new Date().toISOString(),
         minutesBefore: params.minutesBefore || 15,
@@ -324,6 +331,12 @@ export function sendEndOfDaySummaryNotification(params: {
   force?: boolean;
 }): EndOfDaySummaryResult {
   const { teacher, schedules, force = false } = params;
+  
+  // Prevent reminders on preview URLs
+  if (typeof window !== 'undefined' && window.location.hostname !== 'sanad-almoallem-three.vercel.app') {
+    return { sent: false, reason: 'preview_url', completedCount: 0, totalScheduledCount: 0, completedStudentNames: [], message: '' };
+  }
+  
   const now = new Date();
   const todayStr = new Intl.DateTimeFormat('en-CA').format(now);
   const currentDayOfWeek = now.getDay();
@@ -427,6 +440,12 @@ export function sendDailyDigestNotification(params: {
   force?: boolean;
 }): { sent: boolean; title: string; body: string; count: number } {
   const { teacher, schedules, students, force = false } = params;
+  
+  // Prevent reminders on preview URLs
+  if (typeof window !== 'undefined' && window.location.hostname !== 'sanad-almoallem-three.vercel.app') {
+    return { sent: false, title: '', body: 'التذكيرات معطلة في روابط المعاينة.', count: 0 };
+  }
+  
   const now = new Date();
   const todayStr = new Intl.DateTimeFormat('en-CA').format(now);
   const digestKey = `sanad_daily_digest_sent_${teacher.id}_${todayStr}`;
