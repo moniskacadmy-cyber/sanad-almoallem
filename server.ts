@@ -1425,6 +1425,46 @@ app.post('/api/reminders/login-summary', verifyFirebaseToken, userRateLimiter, a
   }
 });
 
+// Manual test from Settings: sends a push to every registered device of this teacher right now
+// and reports how many devices are registered and what FCM answered (for troubleshooting).
+app.post('/api/reminders/test-push', verifyFirebaseToken, userRateLimiter, async (req, res) => {
+  try {
+    const uid = (req as any).user?.uid as string | undefined;
+    if (!uid) return res.status(401).json({ error: 'رمز الدخول غير صالح.' });
+    const dbAdmin = getAdminDb();
+    const teacherRef = dbAdmin.collection('teachers').doc(uid);
+    const tokensSnap = await teacherRef.collection('fcmTokens').get();
+    const tokenDocPaths = new Map<string, string>();
+    const tokens: string[] = [];
+    const devices: string[] = [];
+    tokensSnap.forEach((d) => {
+      const data = d.data() || {};
+      const t = data.token || d.id;
+      if (t && !tokens.includes(t)) {
+        tokens.push(t);
+        tokenDocPaths.set(t, d.ref.path);
+        const ua = String(data.userAgent || '');
+        devices.push(/Android/i.test(ua) ? 'android' : /iPhone|iPad/i.test(ua) ? 'ios' : /Windows|Macintosh|Linux/i.test(ua) ? 'computer' : 'other');
+      }
+    });
+    if (tokens.length === 0) return res.json({ success: true, tokens: 0, sent: 0, failed: 0, devices: [], errors: [] });
+
+    const resp = await sendPush(
+      getAdminMessaging(getApps()[0]),
+      tokens,
+      { title: '🔔 اختبار الإشعارات', body: 'لو وصلك الإشعار ده يبقى جهازك جاهز لاستقبال التذكيرات حتى والتطبيق مقفول.', tag: 'test-push' },
+      { kind: 'test' },
+      300
+    );
+    removeBadTokens(dbAdmin, uid, tokens, tokenDocPaths, resp);
+    const errors = resp.responses.filter((r: any) => !r.success).map((r: any) => r.error?.code || 'unknown');
+    return res.json({ success: true, tokens: tokens.length, sent: resp.successCount, failed: resp.failureCount, devices, errors });
+  } catch (err) {
+    console.error('Error in POST /api/reminders/test-push:', err);
+    return res.status(500).json({ error: 'تعذر إرسال الإشعار التجريبي.' });
+  }
+});
+
 // Health check endpoint with real checks (Firebase Admin, Upstash Redis ping, Gemini key presence)
 app.get('/api/health', async (_req, res) => {
   let firebaseOk = false;
