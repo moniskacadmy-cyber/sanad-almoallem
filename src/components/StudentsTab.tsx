@@ -4,6 +4,8 @@ import autoTable from 'jspdf-autotable';
 import { TeacherProfile, Student, LessonLog, ClassType, PaymentStatus, ScheduleSlot, DEFAULT_WHATSAPP_TEMPLATES, renderTemplate, isLessonFinanciallyCounted, ALL_SUBJECTS, Group } from '../types';
 import { AbsenceDetailsModal, AbsenceDetailsResult } from './AbsenceDetailsModal';
 import { DailyAttendanceModal } from './DailyAttendanceModal';
+import { StudentStatusModal } from './StudentStatusModal';
+import { HourlyPaymentDialog } from './HourlyPaymentDialog';
 import { StudentPdfExportModal } from './StudentPdfExportModal';
 import { PerformanceInsights } from './PerformanceInsights';
 import { GroupManagementTab } from './GroupManagementTab';
@@ -186,6 +188,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, st
   // Lessons map for calculating dynamic dues and hours for all students
   const [allLessonsMap, setAllLessonsMap] = useState<Record<string, LessonLog[]>>({});
   const [showConfirmSettleStudent, setShowConfirmSettleStudent] = useState<Student | null>(null);
+  const [statusModalStudent, setStatusModalStudent] = useState<Student | null>(null);
+  const [hourlyPayStudent, setHourlyPayStudent] = useState<{ student: Student; due: number } | null>(null);
   const [isSettling, setIsSettling] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
 
@@ -1842,11 +1846,16 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, st
             const isPartial = s.paymentStatus === 'partial';
             const pendingAmount = isMonthly
               ? (isPaid ? 0 : isPartial ? Math.round(monthlyDue / 2) : monthlyDue)
-              : unsettledLessons.reduce((acc, l) => {
+              : Math.max(0, unsettledLessons.reduce((acc, l) => {
                   const dur = l.duration || 60;
                   const rate = l.hourlyRate || hourlyRate;
                   return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
-                }, 0);
+                }, 0) - (Number(s.hourlyPaidAmount) || 0));
+            const hourlyGross = unsettledLessons.reduce((acc, l) => {
+              const dur = l.duration || 60;
+              const rate = l.hourlyRate || hourlyRate;
+              return acc + (l.cost !== undefined ? l.cost : Math.round((dur / 60) * rate));
+            }, 0);
             const totalMinutes = sLessons.reduce((acc, l) => acc + (l.duration || 60), 0);
             const totalHours = (totalMinutes / 60).toFixed(1);
 
@@ -1977,6 +1986,25 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, st
                     >
                       <MessageCircle className="w-3.5 h-3.5" />
                       <span>تذكير واتساب 📲</span>
+                    </button>
+
+                    {!isMonthly && (
+                      <button
+                        type="button"
+                        onClick={() => setHourlyPayStudent({ student: s, due: hourlyGross })}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-600/30 border border-amber-500/40 text-amber-200 font-bold text-xs active:scale-95 transition cursor-pointer"
+                        title="تسجيل دفعة جزئية أو كاملة (مدفوع / متبقي)"
+                      >
+                        <span>💵 دفعة ({Number(s.hourlyPaidAmount) || 0}/{hourlyGross})</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setStatusModalStudent(s)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-700/60 border border-slate-500/40 text-slate-100 font-bold text-xs active:scale-95 transition cursor-pointer"
+                      title="إيقاف مؤقت / نهائي / أرشفة الطالب"
+                    >
+                      <span>{s.status === 'paused' ? '⏸️ موقوف' : s.status === 'archived' ? '📦 مؤرشف' : '⏸️ إيقاف'}</span>
                     </button>
 
                     {/* Record Attendance Button */}
@@ -2953,6 +2981,11 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, st
                       type="button"
                       onClick={async () => {
                         if (!selectedProfileStudent) return;
+                        if (!isMonthly) {
+                          const gross = unsettledLessons.reduce((acc, l) => acc + (l.cost !== undefined ? l.cost : Math.round(((l.duration || 60) / 60) * (l.hourlyRate || hourlyRate))), 0);
+                          setHourlyPayStudent({ student: selectedProfileStudent, due: gross });
+                          return;
+                        }
                         const next: PaymentStatus = selectedProfileStudent.paymentStatus === 'partial' ? 'unpaid' : 'partial';
                         await toggleStudentPaymentStatus(profile.id, selectedProfileStudent.id, selectedProfileStudent.paymentStatus || 'unpaid', next);
                         setSelectedProfileStudent((prev) => prev ? { ...prev, paymentStatus: next } : null);
@@ -2961,7 +2994,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, st
                       title="تسجيل دفع جزئي للطالب"
                     >
                       <Clock className="w-3.5 h-3.5 text-amber-300 flex-shrink-0" />
-                      <span>{selectedProfileStudent.paymentStatus === 'partial' ? 'إلغاء الجزئي ↩️' : 'دفع جزئي ⏳'}</span>
+                      <span>{isMonthly ? (selectedProfileStudent.paymentStatus === 'partial' ? 'إلغاء الجزئي ↩️' : 'دفع جزئي ⏳') : 'تسجيل دفعة 💵'}</span>
                     </button>
 
                     <button
@@ -3942,6 +3975,26 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, st
             </div>
           </div>
         </div>
+      )}
+
+      {hourlyPayStudent && (
+        <HourlyPaymentDialog
+          teacherId={profile.id}
+          student={students.find((x) => x.id === hourlyPayStudent.student.id) || hourlyPayStudent.student}
+          dueAmount={hourlyPayStudent.due}
+          currency={currency}
+          onClose={() => setHourlyPayStudent(null)}
+        />
+      )}
+      {statusModalStudent && (
+        <StudentStatusModal
+          isOpen={!!statusModalStudent}
+          onClose={() => setStatusModalStudent(null)}
+          targetStudent={students.find((x) => x.id === statusModalStudent.id) || statusModalStudent}
+          teacherId={profile.id}
+          studentSchedules={rawSchedules.filter((x) => x.studentId === statusModalStudent.id)}
+          onShowToast={(msg) => alert(msg)}
+        />
       )}
 
       {/* Settle Account Confirmation Modal (تصفية الحساب وبدء دورة جديدة) */}
