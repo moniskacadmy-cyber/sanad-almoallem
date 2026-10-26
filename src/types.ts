@@ -249,6 +249,8 @@ export interface Student {
   collectedDues?: number; // المبالغ المحصلة
   lastSettledAt?: any; // تاريخ آخر تصفية
   paymentStatus?: PaymentStatus;
+  hourlyPaidAmount?: number; // المدفوع في الدورة الحالية (طلاب الساعة)
+  hourlyPayments?: { id: string; amount: number; date: string; note?: string }[]; // سجل الدفعات (لا يُمسح أبدًا)
   lastPaymentMonth?: string;
   totalPrepaidLessons?: number; // إجمالي الحصص في باقة الحصص المدفوعة مسبقاً
   remainingPaidLessons?: number; // رصيد الحصص المدفوعة المتبقية

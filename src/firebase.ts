@@ -1108,7 +1108,39 @@ export async function settleStudentAccount(teacherId: string, studentId: string)
 
     await updateDoc(doc(db, 'teachers', teacherId, 'students', studentId), {
       paymentStatus: 'paid',
+      hourlyPaidAmount: 0,
       lastSettledAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+/**
+ * تسجيل دفعة (جزئية أو كاملة) لطالب بالساعة.
+ * كل دفعة تُضاف لسجل hourlyPayments دون مسح أي دفعة سابقة.
+ */
+export async function recordHourlyPayment(
+  teacherId: string,
+  studentId: string,
+  amount: number,
+  dueAmount: number,
+  note?: string
+) {
+  const path = `teachers/${teacherId}/students/${studentId}`;
+  try {
+    const ref = doc(db, 'teachers', teacherId, 'students', studentId);
+    const snap = await getDoc(ref);
+    const data = (snap.exists() ? snap.data() : {}) as Record<string, any>;
+    const prevPaid = Number(data.hourlyPaidAmount) || 0;
+    const history = Array.isArray(data.hourlyPayments) ? data.hourlyPayments : [];
+    const newPaid = prevPaid + amount;
+    const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `p_${Date.now()}`;
+    await updateDoc(ref, {
+      hourlyPaidAmount: newPaid,
+      hourlyPayments: [...history, { id, amount, date: new Date().toISOString(), note: note || '' }],
+      paymentStatus: newPaid >= dueAmount && dueAmount > 0 ? 'paid' : newPaid > 0 ? 'partial' : 'unpaid',
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
