@@ -65,6 +65,7 @@ import {
   ReminderLogItem,
   StudentStatus,
   PauseType,
+  RestoreOption,
 } from './types';
 
 import {
@@ -2435,6 +2436,7 @@ export async function updateStudentStatus(
     pauseType?: PauseType;
     pauseStartDate?: string | null;
     pauseEndDate?: string | null;
+    restoreOption?: RestoreOption | null;
     previousScheduleSlots?: any[];
   }
 ) {
@@ -2451,6 +2453,8 @@ export async function updateStudentStatus(
         pauseType: isPaused ? statusUpdates.pauseType || 'permanent' : null,
         pauseStartDate: isPaused && statusUpdates.pauseType === 'temporary' ? statusUpdates.pauseStartDate : null,
         pauseEndDate: isPaused && statusUpdates.pauseType === 'temporary' ? statusUpdates.pauseEndDate : null,
+        // A new pause clears the previous restore choice; reactivating records what the teacher chose.
+        restoreOption: isPaused ? null : statusUpdates.restoreOption,
         previousScheduleSlots: statusUpdates.previousScheduleSlots !== undefined ? statusUpdates.previousScheduleSlots : undefined,
         active: isActive,
         archived: isArchived,
@@ -2476,6 +2480,7 @@ export async function updateGroupMembershipStatus(
     pauseType?: PauseType;
     pauseStartDate?: string | null;
     pauseEndDate?: string | null;
+    restoreOption?: RestoreOption | null;
   }
 ) {
   const membershipId = getMembershipId(studentId, groupId);
@@ -2493,6 +2498,7 @@ export async function updateGroupMembershipStatus(
         pauseType: isPaused ? statusUpdates.pauseType || 'permanent' : null,
         pauseStartDate: isPaused && statusUpdates.pauseType === 'temporary' ? statusUpdates.pauseStartDate : null,
         pauseEndDate: isPaused && statusUpdates.pauseType === 'temporary' ? statusUpdates.pauseEndDate : null,
+        restoreOption: isPaused ? null : statusUpdates.restoreOption,
         active: isActive,
         archived: isArchived,
         updatedAt: serverTimestamp(),

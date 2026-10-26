@@ -81,10 +81,17 @@ export function getGroupAgenda(groups: any[], dayOfWeek: number): AgendaItem[] {
  * Individual-student slots for `dayOfWeek` (the caller already queried by day, this re-checks it).
  * A slot already marked as done today is left out.
  */
-export function getIndividualAgenda(slots: any[], dayOfWeek: number, todayStr?: string): AgendaItem[] {
+export function getIndividualAgenda(
+  slots: any[],
+  dayOfWeek: number,
+  todayStr?: string,
+  /** Students that are paused / archived right now: their slots are not due and must not be announced. */
+  excludeStudentIds?: ReadonlySet<string>
+): AgendaItem[] {
   const out: AgendaItem[] = [];
   for (const s of slots || []) {
     if (!s || !s.id) continue;
+    if (excludeStudentIds && s.studentId && excludeStudentIds.has(String(s.studentId))) continue;
     if (Number(s.dayOfWeek) !== dayOfWeek) continue;
     if (todayStr && s.completedTodayDate === todayStr) continue;
     const time = normalizeTime(s.time);
@@ -255,4 +262,24 @@ export function pickLatestPerDevice<T extends TokenEntry>(items: T[]): { keep: T
     else drop.push(it);
   }
   return { keep, drop };
+}
+
+/** Push shown when temporary pauses end today / in the next days (the app then offers the two restore options). */
+export function buildPauseEndingMessage(
+  teacherName: string | undefined,
+  items: { name: string; daysRemaining: number }[]
+): PushMessage | null {
+  if (!items.length) return null;
+  const name = teacherName || 'المعلم';
+  const when = (d: number) => (d <= 0 ? 'اليوم' : d === 1 ? 'غدًا' : 'بعد يومين');
+  const listed = items
+    .slice(0, 3)
+    .map((i) => `${i.name} (${when(i.daysRemaining)})`)
+    .join('، ');
+  const more = items.length > 3 ? ` و${items.length - 3} آخرين` : '';
+  return {
+    title: '⏳ فترة توقف طالب على وشك الانتهاء',
+    body: `أستاذ/ـة ${name}، ينتهي توقف: ${listed}${more}. افتح التطبيق واختار: استعادة المواعيد القديمة أو مواعيد جديدة.`,
+    tag: 'pause-ending',
+  };
 }

@@ -7,6 +7,8 @@ import {
   addLessonLog,
   toggleScheduleCompletedToday,
   updateStudent,
+  updateStudentStatus,
+  deleteSchedule,
   fetchAllStudentLessons,
   addSchedule,
 } from '../firebase';
@@ -77,36 +79,71 @@ export const HomeTab: React.FC<HomeTabProps> = ({
     [students]
   );
 
+  // Option 1 of the pause-ending alert: bring the old schedule back.
+  // Pausing never deletes schedule slots, so only slots that are missing are re-added (no duplicates).
+  // Payments, lesson logs and dues are never touched.
   const handleQuickReactivate = async (st: Student) => {
     try {
-      const prevSlots = st.previousScheduleSlots || [];
-      await updateStudent(profile.id, st.id, {
-        status: 'active',
-        active: true,
-        pauseType: undefined,
-        pauseStartDate: null,
-        pauseEndDate: null,
-      });
+      const existing = rawSchedules.filter((s) => s.studentId === st.id);
+      const hasSlot = (day: number, time: string) => existing.some((e) => e.dayOfWeek === day && e.time === time);
+      const prevSlots: any[] = st.previousScheduleSlots || [];
 
-      // Restore previous schedule slots if preserved
-      if (prevSlots.length > 0) {
-        for (const slot of prevSlots) {
-          await addSchedule(profile.id, {
-            studentId: st.id,
-            studentName: st.name,
-            dayOfWeek: slot.dayOfWeek,
-            time: slot.time,
-            duration: slot.duration || 60,
-            recurrence: slot.recurrence || 'weekly',
-            classType: slot.classType || 'online',
-            color: slot.color || 'purple',
-            locationOrLink: slot.locationOrLink || '',
-            notes: slot.notes || '',
-          });
-        }
+      await updateStudentStatus(profile.id, st.id, { status: 'active', restoreOption: 'restore_old' });
+
+      for (const slot of prevSlots) {
+        if (hasSlot(slot.dayOfWeek, slot.time)) continue;
+        await addSchedule(profile.id, {
+          studentId: st.id,
+          studentName: st.name,
+          dayOfWeek: slot.dayOfWeek,
+          time: slot.time,
+          duration: slot.duration || 60,
+          recurrence: slot.recurrence || 'weekly',
+          classType: slot.classType || 'online',
+          color: slot.color || 'purple',
+          locationOrLink: slot.locationOrLink || '',
+          notes: slot.notes || '',
+        });
       }
     } catch (e) {
       console.error('Quick reactivate error:', e);
+      alert('تعذر استعادة المواعيد القديمة، حاول مرة أخرى.');
+    }
+  };
+
+  // Option 2 of the pause-ending alert: choose new times. The old slots are saved as a backup on the
+  // student and removed from the weekly table, the student becomes active and the schedule tab opens.
+  const handleChooseNewSchedule = async (st: Student) => {
+    const ok = window.confirm(
+      `سيتم فتح الجدول لاختيار مواعيد جديدة للطالب ${st.name}، ومواعيده القديمة ستُحفظ كنسخة احتياطية. حساباته ومدفوعاته وسجلات حصصه لن تتأثر. متابعة؟`
+    );
+    if (!ok) return;
+    try {
+      const existing = rawSchedules.filter((s) => s.studentId === st.id);
+      const backup =
+        existing.length > 0
+          ? existing.map((s) => ({
+              dayOfWeek: s.dayOfWeek,
+              time: s.time,
+              duration: s.duration,
+              classType: s.classType,
+              locationOrLink: s.locationOrLink || '',
+              notes: s.notes || '',
+            }))
+          : st.previousScheduleSlots || [];
+
+      await updateStudentStatus(profile.id, st.id, {
+        status: 'active',
+        restoreOption: 'choose_new',
+        previousScheduleSlots: backup,
+      });
+      for (const slot of existing) {
+        await deleteSchedule(profile.id, slot.id);
+      }
+      onNavigateToTab(2);
+    } catch (e) {
+      console.error('Choose new schedule error:', e);
+      alert('تعذر تجهيز الجدول الجديد، حاول مرة أخرى.');
     }
   };
 
@@ -620,7 +657,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
 
                     <button
                       type="button"
-                      onClick={() => onNavigateToTab(2)}
+                      onClick={() => handleChooseNewSchedule(item.student)}
                       className="flex-1 sm:flex-initial py-1.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-purple-300 text-[11px] font-bold transition cursor-pointer flex items-center justify-center gap-1"
                       title="فتح جدول المواعيد لاختيار مواعيد جديدة"
                     >

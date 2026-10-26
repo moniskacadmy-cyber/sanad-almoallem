@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildPauseEndingMessage,
   pickLatestPerDevice,
   timeToMinutes,
   normalizeTime,
@@ -156,4 +157,25 @@ test('pickLatestPerDevice: one token per device, newest wins, unknown devices ke
   ]);
   assert.deepEqual(r.keep.map((x) => x.token), ['a2', 'b1', 'old1', 'old2']);
   assert.deepEqual(r.drop.map((x) => x.token), ['a1']);
+});
+
+test('getIndividualAgenda: paused students are excluded', () => {
+  const slots = [
+    { id: 's1', studentId: 'a', studentName: 'أحمد', dayOfWeek: 2, time: '10:00' },
+    { id: 's2', studentId: 'b', studentName: 'بسمة', dayOfWeek: 2, time: '11:00' },
+  ];
+  const items = getIndividualAgenda(slots, 2, undefined, new Set(['a']));
+  assert.deepEqual(items.map((i) => i.title), ['بسمة']);
+  assert.equal(getIndividualAgenda(slots, 2).length, 2);
+});
+
+test('buildPauseEndingMessage: empty -> null, lists names and days', () => {
+  assert.equal(buildPauseEndingMessage('منى', []), null);
+  const m = buildPauseEndingMessage('منى', [
+    { name: 'أحمد', daysRemaining: 0 },
+    { name: 'بسمة', daysRemaining: 1 },
+  ])!;
+  assert.match(m.body, /أحمد \(اليوم\)/);
+  assert.match(m.body, /بسمة \(غدًا\)/);
+  assert.equal(m.tag, 'pause-ending');
 });
