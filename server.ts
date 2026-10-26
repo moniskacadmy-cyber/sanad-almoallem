@@ -8,11 +8,13 @@ import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
 import { getMessaging as getAdminMessaging } from 'firebase-admin/messaging';
 import { GoogleGenAI } from '@google/genai';
 import fs from 'fs';
+import { getPauseEndingSoonStudents, isStudentPaused } from './src/services/studentStatus.js';
 import { createRemindersRouter, sendWhatsAppReminderTemplate } from './src/server/remindersCron.js';
 import { createSubscriptionGuard, evaluateSubscription, type TeacherSubscriptionData } from './src/server/subscriptionAccess.js';
 import {
   buildAgendaMessage,
   buildClassReminderMessage,
+  buildPauseEndingMessage,
   dueForReminder,
   getGroupAgenda,
   getIndividualAgenda,
@@ -936,6 +938,28 @@ async function loadDeviceTokens(dbAdmin: any, uid: string) {
   return { tokens, tokenDocPaths, entries: keep };
 }
 
+/**
+ * Students that are paused / archived today (their schedule slots must not trigger reminders) and the
+ * temporary pauses that end soon. One small query on the `status` field (no composite index needed).
+ */
+async function loadPauseState(dbAdmin: any, teacherId: string) {
+  const snap = await dbAdmin
+    .collection('teachers')
+    .doc(teacherId)
+    .collection('students')
+    .where('status', 'in', ['paused', 'archived'])
+    .get();
+  const students = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+  const pausedIds = new Set<string>();
+  for (const st of students) if (isStudentPaused(st)) pausedIds.add(st.id);
+  const endingSoon = getPauseEndingSoonStudents(students, 2).map((e) => ({
+    id: e.student.id,
+    name: e.student.name || 'طالب',
+    daysRemaining: e.daysRemaining,
+  }));
+  return { pausedIds, endingSoon };
+}
+
 async function sendPush(
   messagingAdmin: any,
   tokens: string[],
@@ -1061,11 +1085,20 @@ app.get('/api/reminders/cron', async (req, res) => {
         .where('dayOfWeek', '==', currentDayOfWeek)
         .get();
 
+      // Paused / archived students keep their data but are excluded from every reminder.
+      let pauseState: Awaited<ReturnType<typeof loadPauseState>> = { pausedIds: new Set<string>(), endingSoon: [] };
+      try {
+        pauseState = await loadPauseState(dbAdmin, teacherId);
+      } catch (pauseErr) {
+        console.warn(`Could not load paused students for teacher ${teacherId}:`, pauseErr);
+      }
+
       for (const schedDoc of schedulesSnap.docs) {
         const slot = schedDoc.data();
         if (!slot || !slot.time || !slot.time.includes(':')) {
           continue;
         }
+        if (slot.studentId && pauseState.pausedIds.has(String(slot.studentId))) continue;
 
         const [slotHour, slotMin] = slot.time.split(':').map(Number);
         const slotTotalMinutes = slotHour * 60 + slotMin;
@@ -1278,7 +1311,8 @@ app.get('/api/reminders/cron', async (req, res) => {
             ...getIndividualAgenda(
               schedulesSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
               currentDayOfWeek,
-              todayStr
+              todayStr,
+              pauseState.pausedIds
             ),
           ];
           const morningMsg = buildAgendaMessage({ teacherName: teacherData.name, items: todayItems, mode: 'morning' });
@@ -1305,6 +1339,42 @@ app.get('/api/reminders/cron', async (req, res) => {
                     error: morningErr instanceof Error ? morningErr.message : String(morningErr),
                     teacherId,
                     kind: 'morning',
+                    day: todayStr,
+                    failedAt: new Date().toISOString(),
+                  })
+                  .catch(() => {});
+              }
+            }
+          }
+        }
+
+        // Temporary pauses ending today / within 2 days: one push per day (the app then shows the two options:
+        // restore the old schedule, or choose new times).
+        if (pauseState.endingSoon.length > 0 && isInMorningWindow(currentTotalMinutes, morningAt)) {
+          const pauseMsg = buildPauseEndingMessage(teacherData.name, pauseState.endingSoon);
+          if (pauseMsg) {
+            const pauseRef = sentCol.doc(`sent_pauseend_${teacherId}_${todayStr}`);
+            if (await claimReminder(dbAdmin, pauseRef, { teacherId, kind: 'pause-ending', day: todayStr })) {
+              try {
+                const resp = await sendPush(messagingAdmin, fcmTokens, pauseMsg, { kind: 'pause-ending' }, 21600);
+                await pauseRef.set({
+                  status: 'sent',
+                  teacherId,
+                  kind: 'pause-ending',
+                  day: todayStr,
+                  sentAt: new Date().toISOString(),
+                  fcmSuccessCount: resp.successCount,
+                });
+                notificationsSent += resp.successCount;
+                removeBadTokens(dbAdmin, teacherId, fcmTokens, entry.tokenDocPaths, resp);
+              } catch (pauseErr: any) {
+                console.error(`FCM pause-ending error for teacher ${teacherId}:`, pauseErr);
+                await pauseRef
+                  .set({
+                    status: 'failed',
+                    error: pauseErr instanceof Error ? pauseErr.message : String(pauseErr),
+                    teacherId,
+                    kind: 'pause-ending',
                     day: todayStr,
                     failedAt: new Date().toISOString(),
                   })
@@ -1410,13 +1480,14 @@ app.post('/api/reminders/login-summary', verifyFirebaseToken, userRateLimiter, a
     }
 
     try {
-      const [schedSnap, groupsSnap] = await Promise.all([
+      const [schedSnap, groupsSnap, loginPause] = await Promise.all([
         teacherRef.collection('schedules').where('dayOfWeek', '==', currentDayOfWeek).get(),
         teacherRef.collection('groups').get(),
+        loadPauseState(dbAdmin, uid).catch(() => ({ pausedIds: new Set<string>(), endingSoon: [] as { id: string; name: string; daysRemaining: number }[] })),
       ]);
       const items = [
         ...getGroupAgenda(groupsSnap.docs.map((d) => ({ id: d.id, ...d.data() })), currentDayOfWeek),
-        ...getIndividualAgenda(schedSnap.docs.map((d) => ({ id: d.id, ...d.data() })), currentDayOfWeek, todayStr),
+        ...getIndividualAgenda(schedSnap.docs.map((d) => ({ id: d.id, ...d.data() })), currentDayOfWeek, todayStr, loginPause.pausedIds),
       ];
       const msg = buildAgendaMessage({ teacherName: teacherData.name, items, mode: 'login' })!;
       const resp = await sendPush(getAdminMessaging(getApps()[0]), tokens, msg, { kind: 'login' }, 600);

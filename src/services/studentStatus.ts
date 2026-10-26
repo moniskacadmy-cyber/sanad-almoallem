@@ -22,7 +22,7 @@ export type StatusTarget = {
   status?: StudentStatus;
   active?: boolean;
   archived?: boolean;
-  pauseType?: PauseType;
+  pauseType?: PauseType | null;
   pauseStartDate?: string | null;
   pauseEndDate?: string | null;
 };

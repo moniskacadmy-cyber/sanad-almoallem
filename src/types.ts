@@ -184,6 +184,8 @@ export interface GroupScheduleItem {
 
 export type StudentStatus = 'active' | 'paused' | 'archived';
 export type PauseType = 'temporary' | 'permanent';
+/** What the teacher chose when a temporary pause ended: bring the old schedule back, or pick new times. */
+export type RestoreOption = 'restore_old' | 'choose_new';
 
 export interface Group {
   id: string;
@@ -199,9 +201,10 @@ export interface Group {
   monthlyFee: number;
   color?: string;
   status: 'active' | 'paused';
-  pauseType?: PauseType;
+  pauseType?: PauseType | null;
   pauseStartDate?: string | null;
   pauseEndDate?: string | null;
+  restoreOption?: RestoreOption | null;
   notes?: string;
   active?: boolean;
   archived?: boolean;
@@ -221,9 +224,10 @@ export interface GroupMembership {
   leftAt?: any;
   active: boolean;
   status?: StudentStatus;
-  pauseType?: PauseType;
+  pauseType?: PauseType | null;
   pauseStartDate?: string | null;
   pauseEndDate?: string | null;
+  restoreOption?: RestoreOption | null;
   createdAt: any;
   updatedAt: any;
 }
@@ -257,9 +261,10 @@ export interface Student {
   active?: boolean;
   archived?: boolean;
   status?: StudentStatus;
-  pauseType?: PauseType;
+  pauseType?: PauseType | null;
   pauseStartDate?: string | null;
   pauseEndDate?: string | null;
+  restoreOption?: RestoreOption | null;
   previousScheduleSlots?: any[];
   isIndividual?: boolean;
   billingType?: 'monthly' | 'hourly';
