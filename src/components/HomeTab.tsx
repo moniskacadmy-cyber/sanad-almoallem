@@ -147,6 +147,46 @@ export const HomeTab: React.FC<HomeTabProps> = ({
     }
   };
 
+  // Buttons on the pause-ending push: "restore old schedule" / "choose new schedule".
+  // The action arrives via ?pauseAction=... (app was closed) or a service-worker message (app was open).
+  const [pendingPauseAction, setPendingPauseAction] = useState<string | null>(() => {
+    try {
+      const a = new URLSearchParams(window.location.search).get('pauseAction');
+      return a === 'restore_old' || a === 'choose_new' || a === 'review' ? a : null;
+    } catch {
+      return null;
+    }
+  });
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.data?.type === 'pause-action' && typeof e.data.action === 'string') setPendingPauseAction(e.data.action);
+    };
+    navigator.serviceWorker?.addEventListener('message', onMsg);
+    return () => navigator.serviceWorker?.removeEventListener('message', onMsg);
+  }, []);
+  useEffect(() => {
+    if (!pendingPauseAction || pauseEndingSoon.length === 0) return;
+    const action = pendingPauseAction;
+    setPendingPauseAction(null);
+    try {
+      window.history.replaceState({}, '', window.location.pathname);
+    } catch {
+      /* ignore */
+    }
+    const list = pauseEndingSoon.map((x) => x.student);
+    if (action === 'restore_old') {
+      const names = list.map((x) => x.name).join('، ');
+      if (window.confirm(`استعادة الجدول القديم للطلاب: ${names}؟ (المدفوعات والسجلات لن تتأثر)`)) {
+        void (async () => {
+          for (const st of list) await handleQuickReactivate(st);
+        })();
+      }
+    } else if (action === 'choose_new') {
+      void handleChooseNewSchedule(list[0]);
+    }
+    // 'review': the banner above already lists the students with both buttons.
+  }, [pendingPauseAction, pauseEndingSoon]);
+
   // Modal State for "تسجيل حصة"
   const [showStartClassModal, setShowStartClassModal] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');

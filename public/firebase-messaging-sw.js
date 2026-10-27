@@ -60,9 +60,13 @@ if (firebaseConfig.apiKey && firebaseConfig.projectId) {
         timestamp: Date.now(),
         vibrate: [300, 150, 300, 150, 300],
         data: payload.data || {},
-        actions: [
-          { action: 'open', title: 'فتح التطبيق 📱' }
-        ],
+        actions:
+          payload.data?.kind === 'pause-ending'
+            ? [
+                { action: 'restore_old', title: 'استعادة الجدول القديم' },
+                { action: 'choose_new', title: 'اختيار جدول جديد' },
+              ]
+            : [{ action: 'open', title: 'فتح التطبيق 📱' }],
       };
 
       self.registration.showNotification(notificationTitle, notificationOptions);
@@ -106,15 +110,24 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  // Pause-ending reminder: the two buttons (or a tap) tell the app what to do.
+  const isPause = event.notification.data && event.notification.data.kind === 'pause-ending';
+  const pauseAction = isPause
+    ? event.action === 'restore_old' || event.action === 'choose_new'
+      ? event.action
+      : 'review'
+    : null;
+  const targetUrl = pauseAction ? '/?pauseAction=' + pauseAction : '/';
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
         if (client.url && 'focus' in client) {
+          if (pauseAction) client.postMessage({ type: 'pause-action', action: pauseAction });
           return client.focus();
         }
       }
       if (clients.openWindow) {
-        return clients.openWindow('/');
+        return clients.openWindow(targetUrl);
       }
     })
   );
