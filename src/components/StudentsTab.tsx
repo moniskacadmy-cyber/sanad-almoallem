@@ -2001,10 +2001,10 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, st
                     <button
                       type="button"
                       onClick={() => setStatusModalStudent(s)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-700/60 border border-slate-500/40 text-slate-100 font-bold text-xs active:scale-95 transition cursor-pointer"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600/25 border border-rose-500/50 text-rose-100 font-bold text-xs active:scale-95 transition cursor-pointer"
                       title="إيقاف مؤقت / نهائي / أرشفة الطالب"
                     >
-                      <span>{s.status === 'paused' ? '⏸️ موقوف' : s.status === 'archived' ? '📦 مؤرشف' : '⏸️ إيقاف'}</span>
+                      <span>{s.status === 'paused' ? '⏸️ موقوف' : s.status === 'archived' ? '📦 مؤرشف' : '⏸️ إدارة الحالة'}</span>
                     </button>
 
                     {/* Record Attendance Button */}
@@ -3014,6 +3014,21 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, st
                     >
                       <MessageCircle className="w-3.5 h-3.5 text-amber-300 flex-shrink-0" />
                       <span>مطالبة (واتساب)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setStatusModalStudent(selectedProfileStudent)}
+                      className="col-span-2 sm:col-span-4 flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-rose-600/25 hover:bg-rose-600/40 border border-rose-500/40 text-rose-200 text-xs font-bold transition cursor-pointer active:scale-98"
+                      title="إيقاف مؤقت / نهائي / أرشفة الطالب"
+                    >
+                      <span>
+                        {selectedProfileStudent.status === 'paused'
+                          ? '⏸️ الطالب موقوف — إدارة الحالة'
+                          : selectedProfileStudent.status === 'archived'
+                          ? '📦 الطالب مؤرشف — إدارة الحالة'
+                          : '⏸️ إدارة حالة الطالب (إيقاف / أرشفة)'}
+                      </span>
                     </button>
                   </div>
                 </div>
