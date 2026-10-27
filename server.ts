@@ -900,6 +900,9 @@ interface TokenDocEntry {
   deviceId?: string;
   updatedMs: number;
   path: string;
+  /** 'android-app' = the native Android wrapper; undefined = a browser / installed PWA. */
+  platform?: string;
+  isAndroidBrowser?: boolean;
 }
 
 function toTokenEntry(docSnap: any): TokenDocEntry | null {
@@ -914,6 +917,8 @@ function toTokenEntry(docSnap: any): TokenDocEntry | null {
     deviceId: typeof data.deviceId === 'string' && data.deviceId ? data.deviceId : undefined,
     updatedMs,
     path: docSnap.ref.path,
+    platform: typeof data.platform === 'string' ? data.platform : undefined,
+    isAndroidBrowser: typeof data.userAgent === 'string' && /android/i.test(data.userAgent),
   };
 }
 
@@ -925,7 +930,13 @@ async function loadDeviceTokens(dbAdmin: any, uid: string) {
     const e = toTokenEntry(d);
     if (e) entries.push(e);
   });
-  const { keep, drop } = pickLatestPerDevice(entries);
+  const { keep: keepAll, drop } = pickLatestPerDevice(entries);
+  // When the native Android app is registered, Android browser/PWA tokens are skipped (same phone => no duplicates).
+  // They are not deleted: if the app is uninstalled its token dies and the browser token works again.
+  const hasNativeApp = keepAll.some((k) => k.platform === 'android-app');
+  const keep = hasNativeApp
+    ? keepAll.filter((k) => k.platform === 'android-app' || !k.isAndroidBrowser)
+    : keepAll;
   for (const d of drop) dbAdmin.doc(d.path).delete().catch(() => {});
   const tokenDocPaths = new Map<string, string>();
   const tokens: string[] = [];
@@ -973,6 +984,8 @@ async function sendPush(
   return messagingAdmin.sendEachForMulticast({
     tokens,
     data: { ...data, title: msg.title, body: msg.body, tag: msg.tag },
+    // Native Android app: high priority data message => delivered immediately, even in Doze.
+    android: { priority: 'high', ttl: ttlSeconds * 1000 },
     webpush: {
       headers: { Urgency: 'high', TTL: String(ttlSeconds) },
       fcmOptions: { link: '/' },
