@@ -1727,6 +1727,46 @@ export async function requestAndSaveFCMToken(force = false): Promise<{
     return { success: false, error: 'preview_url' };
   }
 
+  // Native Android wrapper app: it owns the FCM token (heads-up channel is created natively).
+  const nativeBridge = typeof window !== 'undefined' ? (window as any).SanadAndroid : undefined;
+  if (nativeBridge && typeof nativeBridge.getFcmToken === 'function') {
+    try {
+      if (!nativeBridge.hasNotificationPermission()) {
+        nativeBridge.requestNotificationPermission();
+      }
+      let nativeToken = '';
+      for (let i = 0; i < 15 && !nativeToken; i++) {
+        nativeToken = String(nativeBridge.getFcmToken() || '');
+        if (!nativeToken) await new Promise((r) => setTimeout(r, 1000));
+      }
+      if (!nativeToken) return { success: false, error: 'لم يصل رمز الإشعارات من التطبيق بعد. أعد فتح التطبيق.' };
+      if (currentUser) {
+        fcmRegisteredUid = currentUser.uid;
+        try {
+          localStorage.setItem('sanad_fcm_uid', currentUser.uid);
+        } catch {
+          /* ignore */
+        }
+        await setDoc(
+          doc(db, 'teachers', currentUser.uid, 'fcmTokens', nativeToken),
+          {
+            token: nativeToken,
+            platform: 'android-app',
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo',
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            userAgent: navigator.userAgent,
+            deviceId: getOrCreateDeviceId(),
+          },
+          { merge: true }
+        );
+      }
+      return { success: true, token: nativeToken };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'تعذر تفعيل إشعارات التطبيق.' };
+    }
+  }
+
   // Prevent redundant executions for the same user within the same session
   if (!force && currentUser && fcmRegisteredUid === currentUser.uid) {
     return { success: true };

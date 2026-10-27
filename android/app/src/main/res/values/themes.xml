@@ -1,0 +1,8 @@
+<resources>
+    <color name="sanad_purple">#6D28D9</color>
+    <style name="Theme.Sanad" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/sanad_purple</item>
+        <item name="android:navigationBarColor">#0F172A</item>
+        <item name="android:windowBackground">#0F172A</item>
+    </style>
+</resources>
