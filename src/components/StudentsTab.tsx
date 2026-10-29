@@ -6,6 +6,8 @@ import { AbsenceDetailsModal, AbsenceDetailsResult } from './AbsenceDetailsModal
 import { DailyAttendanceModal } from './DailyAttendanceModal';
 import { StudentStatusModal } from './StudentStatusModal';
 import { HourlyPaymentDialog } from './HourlyPaymentDialog';
+import { ParentAccessPanel } from './ParentAccessPanel';
+import { appendParentLink } from '../services/parentLink';
 import { StudentPdfExportModal } from './StudentPdfExportModal';
 import { PerformanceInsights } from './PerformanceInsights';
 import { GroupManagementTab } from './GroupManagementTab';
@@ -1216,6 +1218,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, st
       });
     }
 
+    msg = appendParentLink(msg, selectedProfileStudent);
     const cleanPhone = selectedProfileStudent.whatsapp ? selectedProfileStudent.whatsapp.replace(/[^0-9]/g, '') : '';
     const phoneParam = cleanPhone ? (cleanPhone.startsWith('0') ? '2' + cleanPhone : cleanPhone) : '';
     const url = phoneParam
@@ -3034,6 +3037,10 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, st
                 </div>
               );
             })()}
+
+            {selectedProfileStudent && (
+              <ParentAccessPanel teacherId={profile.id} teacherName={profile.name} student={selectedProfileStudent} />
+            )}
 
             {/* SECTION 2: SECTION "إزاي الطالب ده بيتعلم أحسن؟" (Collapsible - مغلق افتراضياً) */}
             <div className="rounded-2xl bg-gradient-to-r from-purple-950/40 to-indigo-950/40 border border-purple-500/25 overflow-hidden transition-all shadow-md">

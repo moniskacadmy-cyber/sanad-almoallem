@@ -1,3 +1,4 @@
+import { appendParentLink } from './parentLink';
 import {
   ScheduleSlot,
   Student,
@@ -546,7 +547,7 @@ export function createAbsenceReminderMessage(params: {
     params.teacher.whatsappTemplates?.absenceReminder ||
     DEFAULT_WHATSAPP_TEMPLATES.absenceReminder;
 
-  return renderTemplate(template, {
+  return appendParentLink(renderTemplate(template, {
     studentName: params.student.name,
     subject: params.teacher.subject,
     teacherName: params.teacher.name,
@@ -556,7 +557,7 @@ export function createAbsenceReminderMessage(params: {
     makeupNote,
     extraNotes,
     topic: params.topic || '',
-  });
+  }), params.student);
 }
 
 export function triggerAbsenceNotificationAndChime(params: {
