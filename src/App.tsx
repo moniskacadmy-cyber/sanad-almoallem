@@ -689,7 +689,7 @@ export default function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex justify-center transition-colors duration-200">
+    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex justify-center transition-colors duration-300">
       <OfflineIndicator />
 
       {/* Near Expiry Overlay Alert (3 days or less) */}
@@ -702,7 +702,7 @@ export default function App() {
       )}
 
       {/* Mobile-first centered frame (up to 460px) */}
-      <div className="w-full max-w-[460px] min-h-screen bg-white/95 dark:bg-slate-950/95 border-x border-slate-200 dark:border-purple-950/40 flex flex-col relative shadow-2xl transition-colors duration-200">
+      <div className="w-full max-w-[460px] min-h-screen bg-white/95 dark:bg-slate-950/95 border-x border-slate-200 dark:border-purple-950/40 flex flex-col relative shadow-2xl transition-colors duration-300">
         {/* Sidebar Navigation Drawer */}
         <Sidebar
           isOpen={isSidebarOpen}

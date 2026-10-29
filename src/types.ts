@@ -274,6 +274,20 @@ export interface Student {
   updatedAt: any;
 }
 
+export interface ParentAccount {
+  id: string;
+  studentId: string;
+  teacherId: string;
+  accessCode: string;
+  expiresAt: any;
+  studentName?: string;
+  parentPhone?: string;
+  active?: boolean;
+  allowFinancialView?: boolean;
+  createdAt?: any;
+  updatedAt?: any;
+}
+
 export interface LessonLog {
   id: string;
   studentId: string;
