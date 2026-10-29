@@ -333,6 +333,24 @@ service cloud.firestore {
       allow read, write: if isSignedIn() && request.auth.uid == userId;
     }
 
+    // Parent Accounts collection (read-only for parent with valid unexpired access code)
+    match /parentAccounts/{accountId} {
+      allow get: if isValidId(accountId) && (
+        (resource.data.active != false && resource.data.expiresAt > request.time) ||
+        (isSignedIn() && (resource.data.teacherId == request.auth.uid || isAdmin()))
+      );
+      allow list: if isSignedIn() && (
+        (resource.data.teacherId == request.auth.uid) || isAdmin()
+      );
+      allow create, update: if isSignedIn() &&
+        isValidId(incoming().teacherId) &&
+        incoming().teacherId == request.auth.uid &&
+        isTeacherSubscriptionActive(request.auth.uid);
+      allow delete: if isSignedIn() && (
+        (resource.data.teacherId == request.auth.uid) || isAdmin()
+      );
+    }
+
     // Teachers collection
     match /teachers/{teacherId} {
       allow get: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
@@ -522,6 +540,21 @@ service cloud.firestore {
                                  isTeacherSubscriptionActive(teacherId) &&
                                  isValidQuickNote(teacherId);
         allow delete: if isValidId(teacherId) && isValidId(noteId) &&
+                         (isTeacherOwner(teacherId) || isAdmin()) &&
+                         isTeacherSubscriptionActive(teacherId);
+      }
+
+      // Subcollection: Parent Accounts
+      match /parentAccounts/{accountId} {
+        allow get: if isValidId(teacherId) && isValidId(accountId) && (
+          (resource.data.active != false && resource.data.expiresAt > request.time) ||
+          isTeacherOwner(teacherId) || isAdmin()
+        );
+        allow list: if isValidId(teacherId) && (isTeacherOwner(teacherId) || isAdmin());
+        allow create, update: if isValidId(teacherId) && isValidId(accountId) &&
+                                 (isTeacherOwner(teacherId) || isAdmin()) &&
+                                 isTeacherSubscriptionActive(teacherId);
+        allow delete: if isValidId(teacherId) && isValidId(accountId) &&
                          (isTeacherOwner(teacherId) || isAdmin()) &&
                          isTeacherSubscriptionActive(teacherId);
       }
