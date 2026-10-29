@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
+import React from 'react';
 import App from './App.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import { ThemeProvider } from './context/ThemeContext';
@@ -41,15 +42,25 @@ registerSW({
 });
 
 const rootElement = document.getElementById('root');
+// Parent portal (read only): opened by /?parent=CODE. It never loads the teacher app / Firebase.
+const isParentPortal =
+  typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('parent');
+const ParentPortal = React.lazy(() => import('./components/ParentPortal'));
+
 if (rootElement) {
   createRoot(rootElement).render(
     <ErrorBoundary>
-      <ThemeProvider>
-        <SettingsProvider>
-          <App />
-        </SettingsProvider>
-      </ThemeProvider>
+      {isParentPortal ? (
+        <React.Suspense fallback={null}>
+          <ParentPortal />
+        </React.Suspense>
+      ) : (
+        <ThemeProvider>
+          <SettingsProvider>
+            <App />
+          </SettingsProvider>
+        </ThemeProvider>
+      )}
     </ErrorBoundary>
   );
 }
-

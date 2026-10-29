@@ -10,6 +10,14 @@ import { GoogleGenAI } from '@google/genai';
 import fs from 'fs';
 import { getPauseEndingSoonStudents, isStudentPaused } from './src/services/studentStatus.js';
 import { createRemindersRouter, sendWhatsAppReminderTemplate } from './src/server/remindersCron.js';
+import {
+  buildParentView,
+  clampExpiryDays,
+  generateParentCode,
+  hashParentCode,
+  isPlausibleParentCode,
+  linkStatus,
+} from './src/server/parent.js';
 import { createSubscriptionGuard, evaluateSubscription, type TeacherSubscriptionData } from './src/server/subscriptionAccess.js';
 import {
   buildAgendaMessage,
@@ -1011,6 +1019,193 @@ function removeBadTokens(
     dbAdmin.doc(docPath).delete().catch(() => {});
   });
 }
+
+// ---------------------------------------------------------------------------------------------
+// Parent portal (READ ONLY). Parents have no Firebase account and never touch Firestore: they send a long
+// random code, the server checks it on EVERY request (exists, not revoked, not expired) and returns a
+// whitelisted view of that ONE student. Collection `parentLinks` is server-only (Firestore rules deny clients).
+// ---------------------------------------------------------------------------------------------
+const PARENT_NOT_AVAILABLE = 'الكود غير صالح أو تم إلغاؤه أو انتهت صلاحيته.';
+
+function parentLinkUrl(req: express.Request, code: string) {
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'sanad-almoallem-three.vercel.app';
+  const proto = req.headers['x-forwarded-proto'] || 'https';
+  return `${String(proto).split(',')[0]}://${String(host).split(',')[0]}/?parent=${code}`;
+}
+
+// Teacher: create a new code for one of HIS students (any previous active code of that student is revoked).
+app.post('/api/parent/links', verifyFirebaseToken, userRateLimiter, async (req, res) => {
+  try {
+    const uid = (req as any).user?.uid as string;
+    const body = getBodyObject(req);
+    const studentId = typeof body.studentId === 'string' ? body.studentId : '';
+    if (!studentId || studentId.length > 128 || studentId.includes('/')) {
+      return res.status(400).json({ error: 'معرف الطالب غير صالح.' });
+    }
+    const dbAdmin = getAdminDb();
+    const studentSnap = await dbAdmin.doc(`teachers/${uid}/students/${studentId}`).get();
+    if (!studentSnap.exists) return res.status(404).json({ error: 'الطالب غير موجود.' });
+
+    const old = await dbAdmin.collection('parentLinks').where('teacherId', '==', uid).where('studentId', '==', studentId).get();
+    const batch = dbAdmin.batch();
+    old.forEach((d: any) => batch.update(d.ref, { revoked: true, revokedAtMs: Date.now() }));
+
+    const code = generateParentCode();
+    const codeHash = hashParentCode(code);
+    const now = Date.now();
+    const expiresAtMs = now + clampExpiryDays(body.expiresInDays) * 86400000;
+    // Remember the link on the student so the existing WhatsApp messages can include it (server-only write).
+    batch.update(studentSnap.ref, {
+      parentPortalUrl: parentLinkUrl(req, code),
+      parentPortalExpiresAtMs: expiresAtMs,
+    });
+    batch.set(dbAdmin.collection('parentLinks').doc(codeHash), {
+      teacherId: uid,
+      studentId,
+      codeHash,
+      code,
+      createdAtMs: now,
+      expiresAtMs,
+      revoked: false,
+    });
+    await batch.commit();
+    return res.json({ success: true, code, url: parentLinkUrl(req, code), expiresAtMs });
+  } catch (err) {
+    console.error('parent link create error:', err);
+    return res.status(500).json({ error: 'تعذر إنشاء الكود.' });
+  }
+});
+
+// Teacher: the active code of a student (to copy the link again), or null.
+app.get('/api/parent/links', verifyFirebaseToken, userRateLimiter, async (req, res) => {
+  try {
+    const uid = (req as any).user?.uid as string;
+    const studentId = typeof req.query.studentId === 'string' ? req.query.studentId : '';
+    if (!studentId) return res.status(400).json({ error: 'معرف الطالب مطلوب.' });
+    const snap = await getAdminDb().collection('parentLinks').where('teacherId', '==', uid).where('studentId', '==', studentId).get();
+    let active: any = null;
+    snap.forEach((d: any) => {
+      const l = d.data();
+      if (linkStatus(l) === 'ok' && (!active || l.createdAtMs > active.createdAtMs)) active = l;
+    });
+    if (!active) return res.json({ success: true, link: null });
+    return res.json({
+      success: true,
+      link: { code: active.code, url: parentLinkUrl(req, active.code), expiresAtMs: active.expiresAtMs },
+    });
+  } catch (err) {
+    console.error('parent link read error:', err);
+    return res.status(500).json({ error: 'تعذر قراءة الكود.' });
+  }
+});
+
+// Teacher: revoke -> the parent is locked out on the very next request.
+app.post('/api/parent/links/revoke', verifyFirebaseToken, userRateLimiter, async (req, res) => {
+  try {
+    const uid = (req as any).user?.uid as string;
+    const studentId = typeof getBodyObject(req).studentId === 'string' ? (getBodyObject(req).studentId as string) : '';
+    if (!studentId) return res.status(400).json({ error: 'معرف الطالب مطلوب.' });
+    const dbAdmin = getAdminDb();
+    const snap = await dbAdmin.collection('parentLinks').where('teacherId', '==', uid).where('studentId', '==', studentId).get();
+    const batch = dbAdmin.batch();
+    snap.forEach((d: any) => batch.update(d.ref, { revoked: true, revokedAtMs: Date.now() }));
+    const stRef = dbAdmin.doc(`teachers/${uid}/students/${studentId}`);
+    if ((await stRef.get()).exists) batch.update(stRef, { parentPortalUrl: null, parentPortalExpiresAtMs: null });
+    await batch.commit();
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('parent link revoke error:', err);
+    return res.status(500).json({ error: 'تعذر إلغاء الكود.' });
+  }
+});
+
+// Teacher: global switch "show subscription / balance to parents".
+app.get('/api/parent/settings', verifyFirebaseToken, userRateLimiter, async (req, res) => {
+  try {
+    const uid = (req as any).user?.uid as string;
+    const snap = await getAdminDb().doc(`parentSettings/${uid}`).get();
+    return res.json({ success: true, showFinance: snap.exists && snap.data()?.showFinance === true });
+  } catch {
+    return res.status(500).json({ error: 'تعذر قراءة الإعداد.' });
+  }
+});
+
+app.post('/api/parent/settings', verifyFirebaseToken, userRateLimiter, async (req, res) => {
+  try {
+    const uid = (req as any).user?.uid as string;
+    const showFinance = getBodyObject(req).showFinance === true;
+    await getAdminDb().doc(`parentSettings/${uid}`).set({ showFinance, updatedAtMs: Date.now() }, { merge: true });
+    return res.json({ success: true, showFinance });
+  } catch {
+    return res.status(500).json({ error: 'تعذر حفظ الإعداد.' });
+  }
+});
+
+// Parent (public, no login): returns the read-only view. The code is sent in the body, never in a URL.
+app.post('/api/parent/data', userRateLimiter, async (req, res) => {
+  try {
+    const code = getBodyObject(req).code;
+    if (!isPlausibleParentCode(code)) return res.status(404).json({ error: PARENT_NOT_AVAILABLE });
+
+    const dbAdmin = getAdminDb();
+    const linkSnap = await dbAdmin.collection('parentLinks').doc(hashParentCode(code)).get();
+    if (!linkSnap.exists) return res.status(404).json({ error: PARENT_NOT_AVAILABLE });
+    const link = linkSnap.data() as any;
+    if (linkStatus(link) !== 'ok') return res.status(404).json({ error: PARENT_NOT_AVAILABLE });
+
+    const { teacherId, studentId } = link as { teacherId: string; studentId: string };
+    const tRef = dbAdmin.collection('teachers').doc(teacherId);
+    const [teacherSnap, studentSnap, settingsSnap] = await Promise.all([
+      tRef.get(),
+      tRef.collection('students').doc(studentId).get(),
+      dbAdmin.doc(`parentSettings/${teacherId}`).get(),
+    ]);
+    if (!studentSnap.exists) return res.status(404).json({ error: PARENT_NOT_AVAILABLE });
+    const showFinance = settingsSnap.exists && settingsSnap.data()?.showFinance === true;
+
+    const [attSnap, lessonSnap, schedSnap, memberSnap, libSnap, paySnap] = await Promise.all([
+      tRef.collection('attendance').where('studentId', '==', studentId).limit(400).get(),
+      tRef.collection('students').doc(studentId).collection('lessons').limit(400).get(),
+      tRef.collection('schedules').where('studentId', '==', studentId).limit(50).get(),
+      tRef.collection('memberships').where('studentId', '==', studentId).limit(20).get(),
+      tRef.collection('library').where('sharedWithStudentIds', 'array-contains', studentId).limit(50).get(),
+      showFinance
+        ? tRef.collection('payments').where('studentId', '==', studentId).limit(24).get()
+        : Promise.resolve(null),
+    ]);
+    const rows = (snap: any) => (snap ? snap.docs.map((d: any) => ({ id: d.id, ...d.data() })) : []);
+
+    // Group slots: only for ACTIVE memberships of this student.
+    const groupSlots: { groupName?: string; day: number; time: string; duration?: number }[] = [];
+    const activeMemberships = rows(memberSnap).filter(
+      (m: any) => m.active !== false && m.groupId && (m.status || 'active') === 'active'
+    );
+    for (const m of activeMemberships) {
+      const g = await tRef.collection('groups').doc(String(m.groupId)).get();
+      const gd = g.exists ? (g.data() as any) : null;
+      if (!gd || gd.status === 'paused' || gd.archived || !Array.isArray(gd.schedule)) continue;
+      for (const slot of gd.schedule) {
+        groupSlots.push({ groupName: gd.name, day: slot.day, time: slot.time, duration: slot.duration });
+      }
+    }
+
+    const view = buildParentView({
+      teacherName: (teacherSnap.data() as any)?.name,
+      student: studentSnap.data() as any,
+      attendance: rows(attSnap),
+      lessons: rows(lessonSnap),
+      schedules: rows(schedSnap),
+      groupSlots,
+      library: rows(libSnap),
+      payments: rows(paySnap),
+      showFinance,
+    });
+    return res.json({ success: true, view });
+  } catch (err) {
+    console.error('parent data error:', err);
+    return res.status(500).json({ error: 'تعذر تحميل البيانات، حاول مرة أخرى.' });
+  }
+});
 
 // Cron Job Web Push Notification Endpoint (Protected by CRON_SECRET)
 app.get('/api/reminders/cron', async (req, res) => {

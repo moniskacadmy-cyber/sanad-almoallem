@@ -264,7 +264,8 @@ service cloud.firestore {
         data.content is string && data.content.size() <= 60000 &&
         (!('fileName' in data) || (data.fileName is string && data.fileName.size() <= 300)) &&
         (!('fileSize' in data) || (data.fileSize is string && data.fileSize.size() <= 50)) &&
-        (!('fileData' in data) || (data.fileData is string && data.fileData.size() <= 950000));
+        (!('fileData' in data) || (data.fileData is string && data.fileData.size() <= 950000)) &&
+        (!('sharedWithStudentIds' in data) || (data.sharedWithStudentIds is list && data.sharedWithStudentIds.size() <= 300));
     }
 
     // Reminder log validation

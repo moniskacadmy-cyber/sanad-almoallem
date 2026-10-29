@@ -248,6 +248,8 @@ export interface Student {
   totalHours?: number; // إجمالي الساعات المنفذة
   collectedDues?: number; // المبالغ المحصلة
   lastSettledAt?: any; // تاريخ آخر تصفية
+  parentPortalUrl?: string | null; // رابط بوابة ولي الأمر (يكتبه السيرفر فقط)
+  parentPortalExpiresAtMs?: number | null;
   paymentStatus?: PaymentStatus;
   hourlyPaidAmount?: number; // المدفوع في الدورة الحالية (طلاب الساعة)
   hourlyPayments?: { id: string; amount: number; date: string; note?: string }[]; // سجل الدفعات (لا يُمسح أبدًا)
@@ -360,6 +362,7 @@ export interface LibraryItem {
   fileName?: string;
   fileSize?: string;
   fileData?: string;
+  sharedWithStudentIds?: string[]; // أولياء أمور هؤلاء الطلاب يشوفون المادة في بوابة ولي الأمر
   createdAt: any;
   updatedAt: any;
 }
