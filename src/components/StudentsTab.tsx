@@ -38,6 +38,8 @@ import {
   toggleStudentPaymentStatus,
   normalizeArabicText,
   recordStudentAttendance,
+  bulkArchiveStudents,
+  bulkDeleteStudents,
 } from '../firebase';
 import {
   WEEK_DAYS,
@@ -77,6 +79,9 @@ import {
   DollarSign,
   Download,
   RotateCcw,
+  Archive,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 
 interface FormScheduleRow {
@@ -207,6 +212,11 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, st
   const [reportEditableText, setReportEditableText] = useState('');
   const [copiedReport, setCopiedReport] = useState(false);
 
+  // Bulk Selection & Action State
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+  const [showBulkConfirmModal, setShowBulkConfirmModal] = useState<'archive' | 'delete' | null>(null);
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
+
   // Optional Feature: Performance Insights toggle (defaults to false to keep UI clean)
   const [showPerformanceInsights, setShowPerformanceInsights] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -248,6 +258,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, st
   const [showPdfExportModal, setShowPdfExportModal] = useState(false);
   const [pdfExportReportType, setPdfExportReportType] = useState<ReportType>('financial');
   useBackHandler(showPdfExportModal, () => setShowPdfExportModal(false), 'student_pdf_export_modal');
+  useBackHandler(!!showBulkConfirmModal, () => setShowBulkConfirmModal(null), 'student_bulk_confirm_modal');
 
   // WhatsApp Reminder Modal State
   const [reminderModalStudent, setReminderModalStudent] = useState<Student | null>(null);
@@ -845,6 +856,60 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, st
       await loadAllLessons();
     } catch (err) {
       console.error('Error deleting student', err);
+    }
+  };
+
+  const toggleSelectStudent = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedStudentIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const isAllSelected =
+    filteredStudents.length > 0 &&
+    filteredStudents.every((s) => selectedStudentIds.includes(s.id));
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedStudentIds((prev) =>
+        prev.filter((id) => !filteredStudents.some((s) => s.id === id))
+      );
+    } else {
+      setSelectedStudentIds((prev) => {
+        const set = new Set(prev);
+        filteredStudents.forEach((s) => set.add(s.id));
+        return Array.from(set);
+      });
+    }
+  };
+
+  const handleExecuteBulkAction = async () => {
+    if (!showBulkConfirmModal || selectedStudentIds.length === 0) return;
+    setIsBulkProcessing(true);
+    try {
+      if (showBulkConfirmModal === 'archive') {
+        await bulkArchiveStudents(profile.id, selectedStudentIds, true);
+        setToastMessage({
+          type: 'success',
+          text: `تمت أرشفة ${selectedStudentIds.length} طالب بنجاح.`,
+        });
+      } else if (showBulkConfirmModal === 'delete') {
+        await bulkDeleteStudents(profile.id, selectedStudentIds);
+        setToastMessage({
+          type: 'success',
+          text: `تم حذف ${selectedStudentIds.length} طالب بنجاح مع الحفاظ التام على السجلات المالية السابقة.`,
+        });
+      }
+      setSelectedStudentIds([]);
+      setShowBulkConfirmModal(null);
+      await loadAllLessons();
+    } catch (err: any) {
+      console.error('Error executing bulk student action:', err);
+      const errMsg = err?.message || 'حدث خطأ أثناء تنفيذ الإجراء الجماعي.';
+      setToastMessage({ type: 'error', text: errMsg });
+    } finally {
+      setIsBulkProcessing(false);
     }
   };
 
@@ -1838,7 +1903,67 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, st
         </div>
       ) : (
         <div className="space-y-2.5">
+          {/* Bulk Selection Header Toolbar */}
+          <div className="flex items-center justify-between gap-2 p-2.5 rounded-2xl bg-slate-900/90 border border-purple-950/40 shadow-sm text-xs flex-wrap">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleSelectAll}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold transition cursor-pointer border border-slate-700/80 active:scale-95"
+                title={isAllSelected ? 'إلغاء تحديد الكل' : 'تحديد جميع الطلاب المعروضين'}
+              >
+                {isAllSelected ? (
+                  <CheckSquare className="w-4 h-4 text-purple-400" />
+                ) : (
+                  <Square className="w-4 h-4 text-slate-400" />
+                )}
+                <span>{isAllSelected ? 'إلغاء تحديد الكل' : 'تحديد الكل'}</span>
+              </button>
+
+              {selectedStudentIds.length > 0 && (
+                <span className="px-2.5 py-1 rounded-full bg-purple-950/90 border border-purple-500/40 text-purple-300 font-mono text-[11px] font-bold">
+                  تم تحديد {selectedStudentIds.length} من {filteredStudents.length}
+                </span>
+              )}
+            </div>
+
+            {/* Bulk Action Buttons (Visible only when at least 1 student is selected) */}
+            {selectedStudentIds.length > 0 && (
+              <div className="flex items-center gap-2 mr-auto flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setShowBulkConfirmModal('archive')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-600/25 hover:bg-amber-600/40 border border-amber-500/50 text-amber-200 text-xs font-bold transition cursor-pointer shadow-sm active:scale-95"
+                  title="أرشفة الطلاب المحددين"
+                >
+                  <Archive className="w-3.5 h-3.5 text-amber-400" />
+                  <span>أرشفة المحدد ({selectedStudentIds.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowBulkConfirmModal('delete')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600/25 hover:bg-rose-600/40 border border-rose-500/50 text-rose-200 text-xs font-bold transition cursor-pointer shadow-sm active:scale-95"
+                  title="حذف الطلاب المحددين (مع الحفاظ على السجلات والمدفوعات المالية)"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                  <span>حذف المحدد ({selectedStudentIds.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedStudentIds([])}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                  title="إلغاء التحديد"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+
           {filteredStudents.map((s) => {
+            const isSelected = selectedStudentIds.includes(s.id);
             const sLessons = allLessonsMap[s.id] || [];
             const hourlyRate = s.hourlyRate || (s.monthlyFee ? Math.round(s.monthlyFee / 4) : 100);
             const isMonthly = s.billingType === 'monthly' || (!s.billingType && ((s.groupIds && s.groupIds.length > 0) || s.classType === 'center'));
@@ -1869,13 +1994,31 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, st
             return (
               <div
                 key={s.id}
-                className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-3.5 hover:border-purple-400/40 transition"
+                className={`rounded-2xl bg-slate-900/80 border p-3.5 transition ${
+                  isSelected
+                    ? 'border-purple-500/80 bg-purple-950/20 shadow-lg shadow-purple-950/30 ring-1 ring-purple-500/50'
+                    : 'border-purple-500/20 hover:border-purple-400/40'
+                }`}
               >
-                <div className="flex items-start justify-between gap-2">
+                <div className="flex items-start justify-between gap-2.5">
+                  {/* Selection Checkbox */}
+                  <button
+                    type="button"
+                    onClick={(e) => toggleSelectStudent(s.id, e)}
+                    className="p-1 -mr-1 mt-0.5 rounded-lg text-slate-400 hover:text-purple-300 transition cursor-pointer flex-shrink-0"
+                    title={isSelected ? 'إلغاء تحديد الطالب' : 'تحديد الطالب'}
+                  >
+                    {isSelected ? (
+                      <CheckSquare className="w-5 h-5 text-purple-400" />
+                    ) : (
+                      <Square className="w-5 h-5 text-slate-500 hover:text-slate-300" />
+                    )}
+                  </button>
+
                   {/* Student Info Clickable */}
                   <div
                     onClick={() => handleOpenStudentProfile(s)}
-                    className="cursor-pointer flex-1"
+                    className="cursor-pointer flex-1 min-w-0"
                   >
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="text-sm font-bold text-slate-900 dark:text-white hover:text-purple-600 dark:hover:text-purple-300 transition">
@@ -2677,6 +2820,80 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, st
                 type="button"
                 onClick={() => setShowDeleteConfirm(null)}
                 className="flex-1 rounded-xl bg-slate-800 hover:bg-slate-700 py-2 text-xs font-bold text-slate-300 transition cursor-pointer"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete / Archive Confirmation Modal */}
+      {showBulkConfirmModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-700/80 rounded-3xl p-5 shadow-2xl text-right">
+            <div className="flex items-center gap-2.5 mb-3">
+              {showBulkConfirmModal === 'archive' ? (
+                <div className="p-2.5 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex-shrink-0">
+                  <Archive className="w-5 h-5" />
+                </div>
+              ) : (
+                <div className="p-2.5 rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/30 flex-shrink-0">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+              )}
+              <div>
+                <h3 className="text-base font-bold text-white">
+                  {showBulkConfirmModal === 'archive'
+                    ? `تأكيد أرشفة ${selectedStudentIds.length} طالب`
+                    : `تأكيد حذف ${selectedStudentIds.length} طالب`}
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  {showBulkConfirmModal === 'archive'
+                    ? 'سيتم نقل الطلاب إلى الأرشيف وإيقاف تفعيلهم مع إمكانية استعادتهم لاحقاً.'
+                    : 'سيتم حذف الملفات الأساسية والمواعيد للطلاب المحددين.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Strict Financial Integrity Guarantee Notice */}
+            <div className="p-3 rounded-2xl bg-slate-950/70 border border-emerald-500/40 text-emerald-300 text-xs mb-4 leading-relaxed flex items-start gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block text-emerald-200">النزاهة المالية محفوظة 100%:</span>
+                <span className="text-[11px] text-emerald-300/90">
+                  لن يتم مسح أو تعديل أي سجلات مالية سابقة أو مدفوعات أو سجلات حصص لهؤلاء الطلاب. تظل جميع الحسابات والمستحقات والتقارير المالية محفوظة كما هي دون أي نقص.
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 mb-4">
+              هل أنت متأكد من تنفيذ هذا الإجراء على{' '}
+              <span className="font-bold text-purple-300">{selectedStudentIds.length}</span> طلاب محددين؟
+            </p>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={isBulkProcessing}
+                onClick={handleExecuteBulkAction}
+                className={`flex-1 rounded-xl py-2.5 text-xs font-bold text-white transition cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 ${
+                  showBulkConfirmModal === 'archive'
+                    ? 'bg-amber-600 hover:bg-amber-500 disabled:opacity-50'
+                    : 'bg-rose-600 hover:bg-rose-500 disabled:opacity-50'
+                }`}
+              >
+                {isBulkProcessing ? (
+                  <span>جارٍ المعالجة...</span>
+                ) : (
+                  <span>{showBulkConfirmModal === 'archive' ? 'نعم، أرشفة الطلاب' : 'نعم، حذف الطلاب'}</span>
+                )}
+              </button>
+              <button
+                type="button"
+                disabled={isBulkProcessing}
+                onClick={() => setShowBulkConfirmModal(null)}
+                className="flex-1 rounded-xl bg-slate-800 hover:bg-slate-700 py-2.5 text-xs font-bold text-slate-300 transition cursor-pointer disabled:opacity-50"
               >
                 إلغاء
               </button>

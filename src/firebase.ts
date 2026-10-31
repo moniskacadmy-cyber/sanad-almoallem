@@ -262,6 +262,124 @@ export async function bulkShiftSchedules(
 }
 
 /**
+ * Bulk archive or unarchive multiple students in Firestore via writeBatch.
+ * Financial records (payments, dues, lesson logs) remain completely untouched and preserved.
+ */
+export async function bulkArchiveStudents(
+  teacherId: string,
+  studentIds: string[],
+  archived: boolean = true
+): Promise<void> {
+  if (!studentIds || studentIds.length === 0) return;
+  const path = `teachers/${teacherId}/students`;
+  try {
+    const CHUNK_SIZE = 400;
+    for (let i = 0; i < studentIds.length; i += CHUNK_SIZE) {
+      const chunk = studentIds.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+      for (const studentId of chunk) {
+        const studentRef = doc(db, 'teachers', teacherId, 'students', studentId);
+        batch.update(
+          studentRef,
+          cleanUndefined({
+            archived,
+            status: archived ? 'archived' : 'active',
+            active: !archived,
+            updatedAt: serverTimestamp(),
+          })
+        );
+      }
+      await batch.commit();
+    }
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+    throw err;
+  }
+}
+
+/**
+ * Bulk delete multiple students in Firestore via writeBatch.
+ * STRICT FINANCIAL INTEGRITY RULE:
+ * This only deletes basic student profiles, group memberships, and appointments.
+ * All previous financial records, payments, and lesson logs are permanently preserved and kept intact.
+ */
+export async function bulkDeleteStudents(
+  teacherId: string,
+  studentIds: string[]
+): Promise<void> {
+  if (!studentIds || studentIds.length === 0) return;
+  const path = `teachers/${teacherId}/students`;
+  try {
+    const studentIdSet = new Set(studentIds);
+
+    // 1. Cascade cleanup: Schedule slots for deleted students
+    const scheduleIdsToDelete: string[] = [];
+    try {
+      const schedulesSnap = await getDocs(collection(db, 'teachers', teacherId, 'schedules'));
+      schedulesSnap.docs.forEach((d) => {
+        const data = d.data();
+        if (studentIdSet.has(data.studentId)) {
+          scheduleIdsToDelete.push(d.id);
+        }
+      });
+    } catch (e) {
+      console.warn('Could not query student schedules during bulk delete:', e);
+    }
+
+    // 2. Cascade cleanup: Group memberships for deleted students
+    const membershipIdsToDelete: string[] = [];
+    try {
+      const memsSnap = await getDocs(collection(db, 'teachers', teacherId, 'memberships'));
+      memsSnap.docs.forEach((d) => {
+        const data = d.data();
+        if (studentIdSet.has(data.studentId)) {
+          membershipIdsToDelete.push(d.id);
+        }
+      });
+    } catch (e) {
+      console.warn('Could not query memberships during bulk delete:', e);
+    }
+
+    // 3. Batch delete operations: schedules, memberships, and student profile docs
+    const allOperations: Array<{ type: 'delete'; ref: any }> = [];
+
+    scheduleIdsToDelete.forEach((schedId) => {
+      allOperations.push({
+        type: 'delete',
+        ref: doc(db, 'teachers', teacherId, 'schedules', schedId),
+      });
+    });
+
+    membershipIdsToDelete.forEach((memId) => {
+      allOperations.push({
+        type: 'delete',
+        ref: doc(db, 'teachers', teacherId, 'memberships', memId),
+      });
+    });
+
+    studentIds.forEach((studentId) => {
+      allOperations.push({
+        type: 'delete',
+        ref: doc(db, 'teachers', teacherId, 'students', studentId),
+      });
+    });
+
+    const CHUNK_SIZE = 400;
+    for (let i = 0; i < allOperations.length; i += CHUNK_SIZE) {
+      const chunk = allOperations.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+      for (const op of chunk) {
+        batch.delete(op.ref);
+      }
+      await batch.commit();
+    }
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, path);
+    throw err;
+  }
+}
+
+/**
  * Safe wrapper for Firestore addDoc that automatically strips `undefined` fields from payloads.
  */
 export async function addDoc<T extends DocumentData>(
