@@ -1,4 +1,5 @@
 import { Student, TeacherProfile, LessonLog, isLessonFinanciallyCounted, ScheduleSlot } from '../types';
+import { escapeHtml } from '../utils/security';
 
 export type ReportType = 'financial' | 'attendance' | 'comprehensive';
 
@@ -120,10 +121,10 @@ export function buildReportHtml(
         <td class="text-center font-mono">${filteredLessons.length - index}</td>
         <td class="font-bold">${formatArabicDate(l.date)}</td>
         <td>
-          <div class="topic-title">${l.topic || 'حصة تدريسية'}</div>
-          ${options.includeHomework && l.homework ? `<div class="homework-note">📝 الواجب: ${l.homework}</div>` : ''}
+          <div class="topic-title">${escapeHtml(l.topic || 'حصة تدريسية')}</div>
+          ${options.includeHomework && l.homework ? `<div class="homework-note">📝 الواجب: ${escapeHtml(l.homework)}</div>` : ''}
           ${l.makeupClassDate ? `<div class="makeup-note">🔄 موعد التعويض: ${formatArabicDate(l.makeupClassDate)}</div>` : ''}
-          ${l.notes ? `<div class="lesson-note">💬 ${l.notes}</div>` : ''}
+          ${l.notes ? `<div class="lesson-note">💬 ${escapeHtml(l.notes)}</div>` : ''}
         </td>
         <td class="text-center">${attBadge}</td>
         <td class="text-center font-mono">${dur} دقيقة</td>

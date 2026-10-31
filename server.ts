@@ -7,6 +7,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
 import { getMessaging as getAdminMessaging } from 'firebase-admin/messaging';
 import { GoogleGenAI } from '@google/genai';
+import crypto from 'crypto';
 import fs from 'fs';
 import { getPauseEndingSoonStudents, isStudentPaused } from './src/services/studentStatus.js';
 import { createRemindersRouter, sendWhatsAppReminderTemplate } from './src/server/remindersCron.js';
@@ -555,7 +556,9 @@ app.post('/api/ai/ask', verifyFirebaseToken, (req, res, next) => aiRateLimiter('
     }
 
     // Check Cache for identical queries
-    const cacheKey = `${teacherName || ''}:${subject || ''}:${question.trim().toLowerCase()}:${sources?.length || 0}`;
+    const uid = (req as any).user.uid;
+    const sourcesHash = crypto.createHash('sha256').update(JSON.stringify(sources || [])).digest('hex');
+    const cacheKey = `${uid}:${teacherName || ''}:${subject || ''}:${question.trim().toLowerCase()}:${sourcesHash}`;
     const cached = aiAskCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
       if (wantStream) {
