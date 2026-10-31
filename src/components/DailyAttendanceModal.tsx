@@ -285,7 +285,7 @@ export const DailyAttendanceModal: React.FC<DailyAttendanceModalProps> = ({
   const formatTime12h = (time24: string) => {
     try {
       const [h, m] = time24.split(':').map(Number);
-      const period = h >= 12 ? 'م' : 'ص';
+      const period = h >= 12 ? 'مساءً' : 'صباحاً';
       const h12 = h % 12 || 12;
       return `${h12}:${m < 10 ? '0' + m : m} ${period}`;
     } catch {

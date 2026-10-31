@@ -38,6 +38,7 @@ import {
 } from './ScheduleTab';
 import { VoiceInputButton } from './VoiceInputButton';
 import { hasConflict } from '../services/conflictService';
+import { formatTime12h } from '../utils/timeZone';
 
 export const DURATION_OPTIONS = [
   { value: 30, label: '30 دقيقة' },
@@ -927,7 +928,7 @@ export const StudentEditModal: React.FC<StudentEditModalProps> = ({
                             <span className="text-xs font-bold text-amber-300 flex items-center gap-1 font-mono">
                               <Clock className="w-3 h-3 text-amber-400" />
                               <span>
-                                {row.time} إلى {endTimeLabel} ({row.duration || 60} دقيقة)
+                                {formatTime12h(row.time)} إلى {endTimeLabel} ({row.duration || 60} دقيقة)
                               </span>
                             </span>
                             <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-medium">

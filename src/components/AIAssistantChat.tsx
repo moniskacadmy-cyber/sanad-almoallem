@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { formatTime12h } from '../utils/timeZone';
 import {
   Bot,
   X,
@@ -342,7 +343,7 @@ export const AIAssistantChat: React.FC<AIAssistantChatProps> = ({
 
     const formatSlot = (slot: ScheduleSlot) => {
       const student = students.find((s) => s.id === slot.studentId);
-      return `${slot.time} - ${student?.name || 'طالب'}`;
+      return `${formatTime12h(slot.time)} - ${student?.name || 'طالب'}`;
     };
 
     return {

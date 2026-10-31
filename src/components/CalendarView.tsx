@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { getSlotColorStyle, getClassTypeMeta } from './ScheduleTab';
 import { useBackHandler } from '../services/backHandler';
+import { formatTime12h, formatTime12hShort } from '../utils/timeZone';
 
 interface CalendarViewProps {
   schedules: ScheduleSlot[];
@@ -365,11 +366,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           color: col.text,
                         }}
                         className="text-[9px] font-bold py-0.5 px-1.5 rounded-lg border truncate flex items-center justify-between hover:scale-[1.02] transition shadow-xs"
-                        title={`${slot.studentName} (${slot.time})`}
+                        title={`${slot.studentName} (${formatTime12h(slot.time)})`}
                       >
                         <span className="truncate">{slot.isMakeup ? `🔄 ${slot.studentName}` : slot.studentName}</span>
                         <span className="opacity-80 font-mono text-[8px] mr-1">
-                          {slot.time}
+                          {formatTime12hShort(slot.time)}
                         </span>
                       </div>
                     );
@@ -521,7 +522,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                       <div className="flex items-center gap-2 text-xs text-slate-400 mt-1 flex-wrap font-mono">
                         <span className="flex items-center gap-1 text-purple-300 font-bold">
                           <Clock className="w-3.5 h-3.5" />
-                          <span>{slot.time}</span>
+                          <span>{formatTime12h(slot.time)}</span>
                           <span className="text-[10px] text-slate-400">({slot.duration || 60} دقيقة)</span>
                         </span>
                         {slot.locationOrLink && (
@@ -554,7 +555,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     {studentPhone && (
                       <a
                         href={`https://wa.me/${studentPhone.replace(/\D/g, '')}?text=${encodeURIComponent(
-                          `السلام عليكم 🌷\nتذكير بموعد حصة الطالب/ـة (${slot.studentName}) اليوم الساعة ${slot.time} بمشيئة الله.`
+                          `السلام عليكم 🌷\nتذكير بموعد حصة الطالب/ـة (${slot.studentName}) اليوم الساعة ${formatTime12h(slot.time)} بمشيئة الله.`
                         )}`}
                         target="_blank"
                         rel="noreferrer"
@@ -736,7 +737,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                               <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5 font-mono">
                                 <span className="flex items-center gap-1 text-purple-300 font-bold">
                                   <Clock className="w-3.5 h-3.5" />
-                                  <span>{slot.time}</span>
+                                  <span>{formatTime12h(slot.time)}</span>
                                   <span className="text-[10px] text-slate-400">({slot.duration || 60} دقيقة)</span>
                                 </span>
                                 {slot.locationOrLink && (
@@ -787,7 +788,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                             {studentPhone && (
                               <a
                                 href={`https://wa.me/${studentPhone.replace(/\D/g, '')}?text=${encodeURIComponent(
-                                  `السلام عليكم 🌷\nتذكير بموعد حصة الطالب/ـة (${slot.studentName}) يوم ${dayArabicName} الساعة ${slot.time} بمشيئة الله.`
+                                  `السلام عليكم 🌷\nتذكير بموعد حصة الطالب/ـة (${slot.studentName}) يوم ${dayArabicName} الساعة ${formatTime12h(slot.time)} بمشيئة الله.`
                                 )}`}
                                 target="_blank"
                                 rel="noreferrer"

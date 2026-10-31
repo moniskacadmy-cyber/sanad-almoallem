@@ -363,9 +363,9 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   const formatTime12h = (timeStr: string) => {
     if (!timeStr || !timeStr.includes(':')) return timeStr;
     const [h, m] = timeStr.split(':').map(Number);
-    const period = h >= 12 ? 'م' : 'ص';
+    const period = h >= 12 ? 'مساءً' : 'صباحاً';
     const displayH = h % 12 || 12;
-    return `${displayH.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${period}`;
+    return `${displayH}:${m.toString().padStart(2, '0')} ${period}`;
   };
 
   // Subscription Status badge helper

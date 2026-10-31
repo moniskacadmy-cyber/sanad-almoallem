@@ -22,6 +22,7 @@ import { DailyAttendanceModal } from './DailyAttendanceModal';
 import { useBackHandler } from '../services/backHandler';
 import { hasConflict, getMinutesFromTime } from '../services/conflictService';
 import { isStudentPaused } from '../services/studentStatus';
+import { formatTime12h, formatTime12hShort } from '../utils/timeZone';
 import {
   Calendar,
   Clock,
@@ -828,7 +829,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
     const total = getMinutesFromTime(start) + durationMin;
     const endH = Math.floor(total / 60) % 24;
     const endM = total % 60;
-    const period = endH < 12 ? 'ص' : 'م';
+    const period = endH < 12 ? 'صباحاً' : 'مساءً';
     const displayH = endH === 0 ? 12 : endH > 12 ? endH - 12 : endH;
     return `${displayH}:${endM.toString().padStart(2, '0')} ${period}`;
   };
@@ -1505,7 +1506,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
                           className="font-mono text-xs"
                           style={{ color: isCompleted ? '#34d399' : colorInfo.text }}
                         >
-                          {isCompleted ? '✓' : slot.time}
+                          {isCompleted ? '✓' : formatTime12hShort(slot.time)}
                         </span>
                         <span className="text-[9px] text-slate-400">{slot.duration}د</span>
                       </div>
@@ -1675,7 +1676,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">التوقيت والمدة:</span>
                   <span className="font-mono text-amber-300 font-bold">
-                    {viewingScheduleDetails.time} إلى{' '}
+                    {formatTime12h(viewingScheduleDetails.time)} إلى{' '}
                     {getEndTimeFormatted(viewingScheduleDetails.time, viewingScheduleDetails.duration)} (
                     {viewingScheduleDetails.duration} دقيقة)
                   </span>
@@ -1707,7 +1708,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
                 const student = students.find((s) => s.id === viewingScheduleDetails.studentId);
                 const phone = student?.whatsapp || '';
                 const dayName = WEEK_DAYS.find((d) => d.dayIndex === viewingScheduleDetails.dayOfWeek)?.name || '';
-                const msg = `مرحباً بك يا ${viewingScheduleDetails.studentName}،\nنذكرك بموعد حصتنا القادمة:\n📚 المادة: ${profile.subject || 'دراسات'}\n📅 اليوم: ${dayName}\n⏰ التوقيت: ${viewingScheduleDetails.time}\n\nنتطلع لحضورك المتميز!`;
+                const msg = `مرحباً بك يا ${viewingScheduleDetails.studentName}،\nنذكرك بموعد حصتنا القادمة:\n📚 المادة: ${profile.subject || 'دراسات'}\n📅 اليوم: ${dayName}\n⏰ التوقيت: ${formatTime12h(viewingScheduleDetails.time)}\n\nنتطلع لحضورك المتميز!`;
                 const cleanPhone = phone.replace(/[^0-9]/g, '');
                 const waUrl = cleanPhone ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
 

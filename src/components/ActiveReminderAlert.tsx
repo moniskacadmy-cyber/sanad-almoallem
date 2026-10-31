@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { Bell, Clock, MessageCircle, X } from 'lucide-react';
+import { formatTime12h } from '../utils/timeZone';
 
 export interface ActiveReminderAlertData {
   studentName: string;
@@ -128,7 +129,7 @@ export const ActiveReminderAlert: React.FC<ActiveReminderAlertProps> = ({ alert,
           </div>
 
           <p className="text-[10px] text-slate-300 flex items-center gap-1.5 mt-0.5">
-            <span>الساعة {alert.classTime}</span>
+            <span>الساعة {formatTime12h(alert.classTime)}</span>
             {alert.subject && (
               <>
                 <span>•</span>

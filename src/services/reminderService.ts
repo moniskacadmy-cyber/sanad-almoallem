@@ -429,11 +429,11 @@ export function generateDailyDigestMessage(params: {
     };
   }
 
-  // Format times e.g. 18:00 -> 6:00 م
+  // Format times e.g. 18:00 -> 6:00 مساءً
   const formatTime12h = (time24: string) => {
     if (!time24 || !time24.includes(':')) return time24;
     const [h, m] = time24.split(':').map(Number);
-    const period = h >= 12 ? 'م' : 'ص';
+    const period = h >= 12 ? 'مساءً' : 'صباحاً';
     const h12 = h % 12 || 12;
     return `${h12}:${m.toString().padStart(2, '0')} ${period}`;
   };

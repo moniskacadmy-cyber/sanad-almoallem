@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Group, Student, EducationalCenter, GroupMembership } from '../types';
+import { formatTime12h } from '../utils/timeZone';
 import {
   Users,
   User,
@@ -471,7 +472,7 @@ export const MainGroupsAndStudentsTabs: React.FC<MainGroupsAndStudentsTabsProps>
                             className="text-[10px] px-2 py-0.5 rounded-lg bg-purple-950/40 text-purple-300 border border-purple-500/20 font-mono flex items-center gap-0.5"
                           >
                             <Clock className="w-2.5 h-2.5" />
-                            {WEEK_DAYS_NAMES[slot.day] || ''} {slot.time}
+                            {WEEK_DAYS_NAMES[slot.day] || ''} {formatTime12h(slot.time)}
                           </span>
                         ))}
                       </div>

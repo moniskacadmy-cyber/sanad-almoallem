@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { formatTime12h } from '../utils/timeZone';
 
 /**
  * بوابة ولي الأمر (قراءة فقط). لا تستخدم Firebase إطلاقًا: ترسل الكود للسيرفر فقط،
@@ -200,7 +201,7 @@ export const ParentPortal: React.FC = () => {
           view.schedule.map((x, i) => (
             <div key={i} className="flex items-center justify-between text-xs rounded-xl bg-slate-950/60 px-3 py-2">
               <span className="font-bold">{DAY_NAMES[x.day] || ''}</span>
-              <span className="font-mono">{x.time}</span>
+              <span className="font-mono">{formatTime12h(x.time)}</span>
               <span className="text-slate-400">{x.subject} • {x.duration} د</span>
             </div>
           ))
