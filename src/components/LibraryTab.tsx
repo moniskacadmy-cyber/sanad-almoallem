@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { buildPrintHtml } from '../utils/printHtml';
 const FileToolsPanel = React.lazy(() => import('./FileToolsPanel'));
 const SmartPrepPanel = React.lazy(() => import('./SmartPrepPanel'));
 import { TeacherProfile, LibraryItem, LibraryItemType } from '../types';
@@ -85,44 +86,7 @@ export function exportToPrintPdf(title: string, content: string, subject?: strin
     return;
   }
   const dateStr = new Intl.DateTimeFormat('ar-EG', { dateStyle: 'full' }).format(new Date());
-  printWindow.document.write(`
-    <!DOCTYPE html>
-    <html dir="rtl" lang="ar">
-    <head>
-      <meta charset="utf-8">
-      <title>${title}</title>
-      <style>
-        body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; direction: rtl; text-align: right; padding: 35px; line-height: 1.8; color: #0f172a; }
-        .header { border-bottom: 2.5px solid #7c3aed; padding-bottom: 12px; margin-bottom: 20px; }
-        h1 { color: #6d28d9; margin: 0 0 10px 0; font-size: 22px; font-weight: 800; }
-        .meta { font-size: 13px; color: #475569; display: flex; gap: 24px; margin-top: 8px; }
-        .content { font-size: 14px; white-space: pre-wrap; line-height: 2; margin-top: 20px; }
-        .footer { margin-top: 40px; border-top: 1px solid #cbd5e1; padding-top: 15px; font-size: 11px; color: #94a3b8; text-align: center; }
-        @media print {
-          body { padding: 15px; }
-          .no-print { display: none; }
-        }
-      </style>
-    </head>
-    <body>
-      <div class="header">
-        <h1>${title}</h1>
-        <div class="meta">
-          ${subject ? `<span><strong>المادة:</strong> ${subject}</span>` : ''}
-          ${teacherName ? `<span><strong>المعلم:</strong> أ. ${teacherName}</span>` : ''}
-          <span><strong>التاريخ:</strong> ${dateStr}</span>
-        </div>
-      </div>
-      <div class="content">${content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
-      <div class="footer">تم التصدير بواسطة منصة سند المعلم - Sanad Al-Moallem</div>
-      <script>
-        window.onload = function() {
-          window.print();
-        };
-      </script>
-    </body>
-    </html>
-  `);
+  printWindow.document.write(buildPrintHtml({ title, content, subject, teacherName, dateStr }));
   printWindow.document.close();
 }
 
