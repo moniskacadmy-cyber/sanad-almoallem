@@ -249,6 +249,18 @@ export async function updateDoc<T extends DocumentData>(
   return firestoreUpdateDoc(reference, sanitized as any);
 }
 
+export async function bulkShiftSchedules(
+  teacherId: string,
+  shifts: { slotId: string; newTime: string }[]
+) {
+  const batch = writeBatch(db);
+  shifts.forEach(({ slotId, newTime }) => {
+    const docRef = doc(db, 'teachers', teacherId, 'schedules', slotId);
+    batch.update(docRef, cleanUndefined({ time: newTime, updatedAt: serverTimestamp() }));
+  });
+  await batch.commit();
+}
+
 /**
  * Safe wrapper for Firestore addDoc that automatically strips `undefined` fields from payloads.
  */

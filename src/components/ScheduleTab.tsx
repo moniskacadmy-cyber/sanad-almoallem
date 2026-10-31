@@ -10,7 +10,9 @@ import {
   subscribeToGroups,
   subscribeToStudents,
   subscribeToSchedules,
+  bulkShiftSchedules,
 } from '../firebase';
+import { TimeShiftModal } from './TimeShiftModal';
 import { useFirebaseSubscription } from '../hooks/useFirebaseSubscription';
 import { exportScheduleToPdf } from '../services/pdfReportService';
 import { VoiceInputButton } from './VoiceInputButton';
@@ -225,6 +227,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
   const students = propsStudents || studentsData;
   const rawSchedules = propsSchedules || rawSchedulesData;
   const [groups, setGroups] = useState<Group[]>([]);
+  const [isTimeShiftOpen, setIsTimeShiftOpen] = useState(false);
 
   useEffect(() => {
     const unsub = subscribeToGroups(profile.id, (g) => setGroups(g));
@@ -913,6 +916,13 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
 
         {/* View Mode Toggle & Add Button */}
         <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            onClick={() => setIsTimeShiftOpen(true)}
+            className="p-1.5 rounded-lg bg-amber-950/50 text-amber-400 hover:bg-amber-950 transition cursor-pointer border border-amber-900/50"
+            title="تعديل التوقيت الصيفي/الشتوي"
+          >
+            <Clock className="w-4 h-4" />
+          </button>
           <div className="flex rounded-xl bg-slate-900 border border-slate-700/80 p-0.5">
             <button
               onClick={() => setViewMode('grid')}
@@ -951,7 +961,6 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
               <span className="hidden sm:inline">القائمة</span>
             </button>
           </div>
-
           <button
             onClick={handleOpenAddDefault}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:brightness-110 text-white text-xs font-bold shadow-lg shadow-purple-950/50 active:scale-95 transition cursor-pointer"
@@ -970,6 +979,16 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
         </div>
       </div>
 
+      {/* Time Shift Modal */}
+      <TimeShiftModal 
+          isOpen={isTimeShiftOpen}
+          onClose={() => setIsTimeShiftOpen(false)}
+          teacherId={profile.id}
+          schedules={schedules}
+          students={students}
+          groups={groups}
+      />
+      
       {/* Smart Upcoming Lesson Countdown Banner */}
       {(() => {
         let badgeText = 'جدول اليوم';
