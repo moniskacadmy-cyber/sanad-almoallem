@@ -10,6 +10,7 @@ import { GoogleGenAI } from '@google/genai';
 import fs from 'fs';
 import { getPauseEndingSoonStudents, isStudentPaused } from './src/services/studentStatus.js';
 import { createRemindersRouter, sendWhatsAppReminderTemplate } from './src/server/remindersCron.js';
+import { buildPrepPrompt, parsePrepInput, parseQuizJson, PREP_SYSTEM } from './src/server/prepPrompts.js';
 import {
   normalizeSlug,
   sanitizePublicProfile,
@@ -383,6 +384,7 @@ export const AI_LIMITS = {
   ask: { perMinute: 10, daily: 100 },
   assistant: { perMinute: 15, daily: 100 },
   transcribe: { perMinute: 5, daily: 50 },
+  prepare: { perMinute: 6, daily: 40 },
 } as const;
 
 export async function aiRateLimiter(
@@ -681,6 +683,42 @@ ${question}
     if (status === 429) return res.status(429).json({ error: 'تم استنفاد حصة Gemini API الحالية للمشروع. يرجى تفعيل الفوترة أو الانتظار حتى تتجدد الحصة.' });
     return res.status(status === 503 ? 503 : 500).json({
       error: status === 503 ? 'خدمة الذكاء الاصطناعي مشغولة حالياً. حاول مرة أخرى بعد قليل.' : 'حدث خطأ أثناء معالجة السؤال بواسطة الذكاء الاصطناعي.',
+    });
+  }
+});
+
+// Smart preparation (handouts, exams, lesson studio, video script). Same Gemini helper, limits and
+// subscription guard as the existing assistant: no parallel AI system.
+app.post('/api/ai/prepare', verifyFirebaseToken, (req, res, next) => aiRateLimiter('prepare', req, res, next), requireActiveSubscription, async (req, res) => {
+  try {
+    const body = getBodyObject(req);
+    const parsed = parsePrepInput(body);
+    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+    const subject = typeof body.subject === 'string' ? body.subject.slice(0, 100) : '';
+    if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: 'خدمة الذكاء الاصطناعي غير مهيأة حالياً.' });
+
+    const response = await generateGeminiTextWithFreeFallback({
+      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+      contents: buildPrepPrompt(parsed.value, subject),
+      config: { systemInstruction: PREP_SYSTEM },
+    });
+    const text = response.text || '';
+    if (!text.trim()) return res.status(502).json({ error: 'لم يصل رد من الذكاء الاصطناعي، حاول مرة أخرى.' });
+
+    if (parsed.value.mode === 'exam_electronic') {
+      try {
+        return res.json({ quiz: parseQuizJson(text) });
+      } catch (e: any) {
+        return res.status(502).json({ error: e?.message || 'تعذر تجهيز الأسئلة، حاول مرة أخرى.' });
+      }
+    }
+    return res.json({ answer: text });
+  } catch (error) {
+    console.error('Gemini prepare error:', error);
+    const status = Number((error as any)?.status);
+    if (status === 429) return res.status(429).json({ error: 'تم استنفاد حصة الذكاء الاصطناعي الحالية. حاول لاحقًا.' });
+    return res.status(status === 503 ? 503 : 500).json({
+      error: status === 503 ? 'خدمة الذكاء الاصطناعي مشغولة حالياً. حاول بعد قليل.' : 'حدث خطأ أثناء إعداد التحضير.',
     });
   }
 });

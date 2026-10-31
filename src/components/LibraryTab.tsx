@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 const FileToolsPanel = React.lazy(() => import('./FileToolsPanel'));
+const SmartPrepPanel = React.lazy(() => import('./SmartPrepPanel'));
 import { TeacherProfile, LibraryItem, LibraryItemType } from '../types';
 import { VoiceInputButton } from './VoiceInputButton';
 import { useBackHandler } from '../services/backHandler';
@@ -121,7 +122,7 @@ interface LibraryTabProps {
 
 export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems }) => {
   // Tab view: Sources & AI vs Templates
-  const [activeSection, setActiveSection] = useState<'sources_ai' | 'templates' | 'file_tools'>('sources_ai');
+  const [activeSection, setActiveSection] = useState<'sources_ai' | 'templates' | 'file_tools' | 'smart_prep'>('sources_ai');
 
   // AI Assistant State
   const [question, setQuestion] = useState('');
@@ -500,11 +501,11 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
       </div>
 
       {/* Navigation Sub-Tabs: AI & Sources vs Templates */}
-      <div className="flex items-center gap-2 p-1 rounded-2xl bg-slate-900 border border-purple-500/20 text-xs">
+      <div className="flex items-center gap-2 p-1 overflow-x-auto rounded-2xl bg-slate-900 border border-purple-500/20 text-xs">
         <button
           type="button"
           onClick={() => setActiveSection('sources_ai')}
-          className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl font-bold transition cursor-pointer ${
+          className={`flex-1 shrink-0 whitespace-nowrap px-3 flex items-center justify-center gap-2 py-2 rounded-xl font-bold transition cursor-pointer ${
             activeSection === 'sources_ai'
               ? 'bg-purple-600 text-white shadow-md'
               : 'text-slate-400 hover:text-white'
@@ -517,7 +518,7 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
         <button
           type="button"
           onClick={() => setActiveSection('templates')}
-          className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl font-bold transition cursor-pointer ${
+          className={`flex-1 shrink-0 whitespace-nowrap px-3 flex items-center justify-center gap-2 py-2 rounded-xl font-bold transition cursor-pointer ${
             activeSection === 'templates'
               ? 'bg-purple-600 text-white shadow-md'
               : 'text-slate-400 hover:text-white'
@@ -530,13 +531,25 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
         <button
           type="button"
           onClick={() => setActiveSection('file_tools')}
-          className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl font-bold transition cursor-pointer ${
+          className={`flex-1 shrink-0 whitespace-nowrap px-3 flex items-center justify-center gap-2 py-2 rounded-xl font-bold transition cursor-pointer ${
             activeSection === 'file_tools'
               ? 'bg-purple-600 text-white shadow-md'
               : 'text-slate-400 hover:text-white'
           }`}
         >
           <span>🛠️ أدوات الملفات</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSection('smart_prep')}
+          className={`flex-1 shrink-0 whitespace-nowrap px-3 flex items-center justify-center gap-2 py-2 rounded-xl font-bold transition cursor-pointer ${
+            activeSection === 'smart_prep'
+              ? 'bg-purple-600 text-white shadow-md'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <span>✨ التحضير الذكي</span>
         </button>
       </div>
 
@@ -815,6 +828,12 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
       )}
 
       {/* SECTION 2: TEMPLATES & LESSON PREP (Secondary View) */}
+      {activeSection === 'smart_prep' && (
+        <React.Suspense fallback={<p className="text-xs text-slate-400 text-center p-6">جارٍ التحميل...</p>}>
+          <SmartPrepPanel profile={profile} />
+        </React.Suspense>
+      )}
+
       {activeSection === 'file_tools' && (
         <React.Suspense fallback={<p className="text-xs text-slate-400 text-center p-6">جارٍ التحميل...</p>}>
           <FileToolsPanel />
