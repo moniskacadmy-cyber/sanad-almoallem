@@ -154,3 +154,19 @@ export async function imagesToPdf(files: File[]): Promise<Uint8Array> {
   }
   return out.save();
 }
+
+/** Plain text of a text-based PDF (scanned PDFs return ''), capped for the AI request. */
+export async function extractPdfText(file: File, maxChars = 12000): Promise<string> {
+  const pdfjs: any = await import('pdfjs-dist');
+  if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+    pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
+  }
+  const doc = await pdfjs.getDocument({ data: await readBytes(file) }).promise;
+  let text = '';
+  for (let i = 1; i <= doc.numPages && text.length < maxChars; i++) {
+    const page = await doc.getPage(i);
+    const content = await page.getTextContent();
+    text += content.items.map((it: any) => ('str' in it ? it.str : '')).filter(Boolean).join(' ') + '\n';
+  }
+  return text.slice(0, maxChars).trim();
+}
