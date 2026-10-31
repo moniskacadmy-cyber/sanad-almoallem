@@ -191,6 +191,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, st
   const [allLessonsMap, setAllLessonsMap] = useState<Record<string, LessonLog[]>>({});
   const [showConfirmSettleStudent, setShowConfirmSettleStudent] = useState<Student | null>(null);
   const [statusModalStudent, setStatusModalStudent] = useState<Student | null>(null);
+  const [parentModalStudent, setParentModalStudent] = useState<Student | null>(null);
   const [hourlyPayStudent, setHourlyPayStudent] = useState<{ student: Student; due: number } | null>(null);
   const [isSettling, setIsSettling] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -2001,6 +2002,14 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, st
                         <span>💵 دفعة ({Number(s.hourlyPaidAmount) || 0}/{hourlyGross})</span>
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => setParentModalStudent(s)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600/25 border border-emerald-500/50 text-emerald-100 font-bold text-xs active:scale-95 transition cursor-pointer"
+                      title="إنشاء كود / رابط ولي الأمر (قراءة فقط)"
+                    >
+                      <span>👨‍👩‍👦 ولي الأمر</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => setStatusModalStudent(s)}
@@ -3999,6 +4008,19 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, st
         </div>
       )}
 
+      {parentModalStudent && (
+        <div className="fixed inset-0 z-[120] bg-black/70 flex items-end sm:items-center justify-center p-3" dir="rtl" onClick={() => setParentModalStudent(null)}>
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-slate-900 border border-emerald-500/30 p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
+            <ParentAccessPanel
+              teacherId={profile.id}
+              teacherName={profile.name}
+              student={students.find((x) => x.id === parentModalStudent.id) || parentModalStudent}
+              defaultOpen
+            />
+            <button type="button" onClick={() => setParentModalStudent(null)} className="w-full py-1.5 rounded-xl bg-slate-800 text-slate-300 text-xs">إغلاق</button>
+          </div>
+        </div>
+      )}
       {hourlyPayStudent && (
         <HourlyPaymentDialog
           teacherId={profile.id}
