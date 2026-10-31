@@ -13,6 +13,7 @@ import {
   bulkShiftSchedules,
 } from '../firebase';
 import { TimeShiftModal } from './TimeShiftModal';
+import { EditLessonModal } from './EditLessonModal';
 import { useFirebaseSubscription } from '../hooks/useFirebaseSubscription';
 import { exportScheduleToPdf } from '../services/pdfReportService';
 import { VoiceInputButton } from './VoiceInputButton';
@@ -1747,8 +1748,20 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
         </div>
       )}
 
-      {/* MODAL 2: QUICK ADD / EDIT SCHEDULE MODAL (WITH MULTIPLE TIME SLOTS SUPPORT) */}
-      {showAddModal && (
+      {/* EDIT LESSON MODAL WITH STUDENT / GROUP SELECTOR */}
+      <EditLessonModal
+        isOpen={!!editingSchedule}
+        onClose={() => setEditingSchedule(null)}
+        teacherId={profile.id}
+        schedule={editingSchedule}
+        students={students}
+        groups={groups}
+        schedules={schedules}
+        onSuccess={() => setEditingSchedule(null)}
+      />
+
+      {/* MODAL 2: QUICK ADD SCHEDULE MODAL (WITH MULTIPLE TIME SLOTS SUPPORT) */}
+      {showAddModal && !editingSchedule && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
           <div className="w-full max-w-xl bg-slate-900 border border-purple-500/40 rounded-3xl p-5 shadow-2xl text-right max-h-[92vh] flex flex-col animate-fadeIn">
             {/* Header */}
@@ -1759,12 +1772,10 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
                 </div>
                 <div>
                   <h3 className="text-sm sm:text-base font-bold text-white">
-                    {editingSchedule ? 'تعديل موعد الحصة' : 'إضافة وتثبيت مواعيد بالجدول'}
+                    إضافة وتثبيت مواعيد بالجدول
                   </h3>
                   <p className="text-[11px] text-purple-300">
-                    {editingSchedule
-                      ? `تعديل توقيت حصة ${editingSchedule.studentName}`
-                      : 'دعم مواعيد متعددة وإضافة طلاب جدد مباشرة'}
+                    دعم مواعيد متعددة وإضافة طلاب جدد مباشرة
                   </p>
                 </div>
               </div>
@@ -1960,139 +1971,6 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
                       </div>
                     </div>
                   )}
-                </div>
-              )}
-
-              {/* SECTION 2: EDITING SINGLE SLOT FORM (When in Edit Mode) */}
-              {editingSchedule && (
-                <div className="p-4 rounded-2xl bg-slate-950/70 border border-purple-900/40 space-y-3.5">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                    <span className="text-xs font-bold text-white">الطالب: {editingSchedule.studentName}</span>
-                    <span className="text-[11px] text-purple-300">{editingSchedule.id}</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-300 mb-1">يوم الحصة *</label>
-                      <select
-                        value={editingSlotData.dayOfWeek}
-                        onChange={(e) =>
-                          setEditingSlotData({ ...editingSlotData, dayOfWeek: Number(e.target.value) })
-                        }
-                        className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 cursor-pointer"
-                      >
-                        {WEEK_DAYS.map((d) => (
-                          <option key={d.dayIndex} value={d.dayIndex}>
-                            {d.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-slate-300 mb-1">وقت البدء *</label>
-                      <select
-                        value={editingSlotData.time}
-                        onChange={(e) => setEditingSlotData({ ...editingSlotData, time: e.target.value })}
-                        className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 cursor-pointer font-mono"
-                      >
-                        {TIME_SLOTS.map((slot) => (
-                          <option key={slot.time24} value={slot.time24}>
-                            {slot.label} ({slot.time24})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-300 mb-1">المدة</label>
-                      <select
-                        value={editingSlotData.duration}
-                        onChange={(e) =>
-                          setEditingSlotData({ ...editingSlotData, duration: Number(e.target.value) })
-                        }
-                        className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 cursor-pointer"
-                      >
-                        <option value={30}>30 دقيقة</option>
-                        <option value={45}>45 دقيقة</option>
-                        <option value={60}>60 دقيقة (ساعة)</option>
-                        <option value={90}>90 دقيقة (ساعة ونصف)</option>
-                        <option value={120}>120 دقيقة (ساعتان)</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-slate-300 mb-1">نوع الحصة</label>
-                      <select
-                        value={editingSlotData.classType}
-                        onChange={(e) => {
-                          const val = e.target.value as ClassType;
-                          setEditingSlotData({
-                            ...editingSlotData,
-                            classType: val,
-                            color: getClassTypeMeta(val).colorId,
-                          });
-                        }}
-                        className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 cursor-pointer"
-                      >
-                        <option value="in_person">حضور شخصي 👤</option>
-                        <option value="online">أونلاين 🌐</option>
-                        <option value="trial">حصة تجريبية ✨</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-slate-300 mb-1">التكرار</label>
-                      <select
-                        value={editingSlotData.recurrence}
-                        onChange={(e) =>
-                          setEditingSlotData({ ...editingSlotData, recurrence: e.target.value as RecurrenceType })
-                        }
-                        className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 cursor-pointer"
-                      >
-                        <option value="weekly">أسبوعياً</option>
-                        <option value="daily">يومياً</option>
-                        <option value="monthly">شهرياً</option>
-                        <option value="once">مرة واحدة</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Color Picker */}
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1.5">لون الحصة بالجدول</label>
-                    <div className="grid grid-cols-4 gap-1.5 p-2 rounded-xl bg-slate-900 border border-slate-800">
-                      {CLASS_COLORS.map((c) => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => setEditingSlotData({ ...editingSlotData, color: c.id })}
-                          style={{ backgroundColor: c.bg, borderColor: c.border }}
-                          className={`py-1 px-2 rounded-lg border text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer ${
-                            editingSlotData.color === c.id ? 'ring-2 ring-white shadow-md' : 'opacity-70'
-                          }`}
-                        >
-                          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c.hex }} />
-                          <span style={{ color: c.text }}>{c.name.split(' ')[0]}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300 mb-1">المكان أو الرابط</label>
-                    <input
-                      type="text"
-                      value={editingSlotData.locationOrLink || ''}
-                      onChange={(e) =>
-                        setEditingSlotData({ ...editingSlotData, locationOrLink: e.target.value })
-                      }
-                      placeholder="رابط Zoom أو مكان الحصة..."
-                      className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400"
-                    />
-                  </div>
                 </div>
               )}
 
