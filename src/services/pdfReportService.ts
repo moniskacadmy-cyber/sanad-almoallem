@@ -145,7 +145,7 @@ export function buildReportHtml(
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <title>${reportTitle} - ${student.name}</title>
+  <title>${escapeHtml(reportTitle)} - ${escapeHtml(student.name)}</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap');
     
@@ -407,19 +407,19 @@ export function buildReportHtml(
     <div class="info-grid">
       <div class="info-item">
         <span class="info-label">👤 اسم الطالب:</span>
-        <span class="info-value">${student.name}</span>
+        <span class="info-value">${escapeHtml(student.name)}</span>
       </div>
       <div class="info-item">
         <span class="info-label">👨‍🏫 المعلم:</span>
-        <span class="info-value">${teacher.name}</span>
+        <span class="info-value">${escapeHtml(teacher.name)}</span>
       </div>
       <div class="info-item">
         <span class="info-label">📚 المادة:</span>
-        <span class="info-value">${student.subject || teacher.subject || 'غير محدد'}</span>
+        <span class="info-value">${escapeHtml(student.subject || teacher.subject || 'غير محدد')}</span>
       </div>
       <div class="info-item">
         <span class="info-label">📱 رقم الواتساب:</span>
-        <span class="info-value" dir="ltr">${student.whatsapp || 'غير مسجل'}</span>
+        <span class="info-value" dir="ltr">${escapeHtml(student.whatsapp || 'غير مسجل')}</span>
       </div>
       <div class="info-item">
         <span class="info-label">💳 سعر الساعة:</span>
@@ -512,7 +512,7 @@ export function buildReportHtml(
       </div>
       <div class="signature-box">
         <div class="signature-line"></div>
-        <p>توقيع المعلم: <strong>${teacher.name}</strong></p>
+        <p>توقيع المعلم: <strong>${escapeHtml(teacher.name)}</strong></p>
       </div>
     </div>
   </div>
@@ -591,9 +591,9 @@ export function buildSchedulePdfHtml(
       return `
         <tr>
           <td>${dayName}</td>
-          <td>${s.time}</td>
-          <td>${student?.name || 'غير محدد'}</td>
-          <td>${s.notes || '-'}</td>
+          <td>${escapeHtml(s.time)}</td>
+          <td>${escapeHtml(student?.name || 'غير محدد')}</td>
+          <td>${escapeHtml(s.notes || '-')}</td>
         </tr>
       `;
     }).join('');
@@ -609,7 +609,7 @@ export function buildSchedulePdfHtml(
       </style>
     </head>
     <body>
-      <h1>جدول الحصص الأسبوعي - ${teacher.name}</h1>
+      <h1>جدول الحصص الأسبوعي - ${escapeHtml(teacher.name)}</h1>
       <p>تاريخ الإصدار: ${issueDateStr}</p>
       <table>
         <thead>

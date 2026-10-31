@@ -13,7 +13,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "NODE_ENV=test tsx --test tests/cleanUndefined.test.ts tests/subscriptionAccess.test.ts tests/firestoreSecurityRegression.test.ts tests/vercelSecurityHeaders.test.ts tests/rateLimiter.test.ts tests/cronReminderRetry.test.ts tests/health.test.ts tests/billing.test.ts tests/agenda.test.ts tests/serverImports.test.ts tests/parent.test.ts tests/pageRanges.test.ts tests/publicPage.test.ts tests/prepPrompts.test.ts"
+    "test": "NODE_ENV=test tsx --test tests/cleanUndefined.test.ts tests/subscriptionAccess.test.ts tests/firestoreSecurityRegression.test.ts tests/vercelSecurityHeaders.test.ts tests/rateLimiter.test.ts tests/cronReminderRetry.test.ts tests/health.test.ts tests/billing.test.ts tests/agenda.test.ts tests/serverImports.test.ts tests/parent.test.ts tests/pageRanges.test.ts tests/publicPage.test.ts tests/prepPrompts.test.ts tests/securityFixes.test.ts"
   },
   "dependencies": {
     "@google/genai": "2.4.0",

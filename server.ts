@@ -11,6 +11,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import { getPauseEndingSoonStudents, isStudentPaused } from './src/services/studentStatus.js';
 import { createRemindersRouter, sendWhatsAppReminderTemplate } from './src/server/remindersCron.js';
+import { safeEqual } from './src/server/secureCompare.js';
 import { buildPrepPrompt, parsePrepInput, parseQuizJson, PREP_SYSTEM } from './src/server/prepPrompts.js';
 import {
   normalizeSlug,
@@ -158,6 +159,8 @@ const PORT = 3000;
 
 // Security: Disable Express identification banner
 app.disable('x-powered-by');
+// Behind Vercel's proxy: use the real client IP (one trusted hop) so IP-based rate limits are per visitor, not global.
+app.set('trust proxy', process.env.VERCEL ? 1 : false);
 
 // Enhanced Security Headers (Clickjacking, MIME sniffing, HSTS, Referrer Policy)
 app.use((_req, res, next) => {
@@ -1435,7 +1438,7 @@ app.get('/api/reminders/cron', async (req, res) => {
     }
 
     const token = authHeader.substring(7).trim();
-    if (token !== cronSecret.trim()) {
+    if (!safeEqual(token, cronSecret.trim())) {
       return res.status(401).json({ error: 'غير مصرح به: رمز CRON_SECRET غير متطابق.' });
     }
 
