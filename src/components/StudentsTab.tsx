@@ -103,6 +103,8 @@ interface StudentsTabProps {
   profile: TeacherProfile;
   students: Student[];
   schedules?: ScheduleSlot[];
+  initialView?: 'records' | 'groups_and_individuals';
+  hideSwitcher?: boolean;
 }
 
 // Helper Component for Attendance
@@ -146,7 +148,13 @@ const AttendanceIndicator: React.FC<{ student: Student }> = ({ student }) => {
   );
 };
 
-export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, students: propsStudents, schedules: propsSchedules = [] }) => {
+export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
+  profile,
+  students: propsStudents,
+  schedules: propsSchedules = [],
+  initialView = 'records',
+  hideSwitcher = false,
+}) => {
   const { data: studentsData = [] } = useFirebaseSubscription(
     profile ? `students/${profile.id}` : null,
     (cb) => subscribeToStudents(profile.id, cb)
@@ -160,7 +168,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, st
   const rawSchedules = propsSchedules || rawSchedulesData;
   const schedules = rawSchedules.filter((s) => students.some((st) => st.id === s.studentId));
   const currency = profile?.currency || 'ج.م';
-  const [activeMainView, setActiveMainView] = useState<'groups_and_individuals' | 'records'>('groups_and_individuals');
+  const [activeMainView, setActiveMainView] = useState<'groups_and_individuals' | 'records'>(initialView);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | ClassType>('all');
   const [paymentFilter, setPaymentFilter] = useState<'all' | PaymentStatus>('all');
@@ -1581,56 +1589,90 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, st
   return (
     <div className="space-y-4 pb-20">
       {/* Top View Mode Switcher & Quick Actions */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-900/90 border border-purple-500/30 shadow-inner flex-1">
-          <button
-            type="button"
-            onClick={() => setActiveMainView('groups_and_individuals')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
-              activeMainView === 'groups_and_individuals'
-                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-950/50 scale-[1.01]'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            <span>المجموعات والطلاب</span>
-          </button>
+      {!hideSwitcher ? (
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-900/90 border border-purple-500/30 shadow-inner flex-1">
+            <button
+              type="button"
+              onClick={() => setActiveMainView('groups_and_individuals')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                activeMainView === 'groups_and_individuals'
+                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-950/50 scale-[1.01]'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              <span>المجموعات والطلاب</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveMainView('records')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
-              activeMainView === 'records'
-                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-950/50 scale-[1.01]'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <BookOpen className="w-4 h-4" />
-            <span>سجل الطلاب المالي</span>
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => setActiveMainView('records')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                activeMainView === 'records'
+                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-950/50 scale-[1.01]'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <BookOpen className="w-4 h-4" />
+              <span>سجل الطلاب المالي</span>
+            </button>
+          </div>
 
-        <div className="flex items-center gap-1.5 justify-end">
-          <button
-            type="button"
-            onClick={handleExportStudentsPdf}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-purple-300 border border-purple-500/30 text-xs font-bold shadow-md transition cursor-pointer"
-            title="تصدير قائمة الطلاب والمواعيد إلى PDF"
-          >
-            <Download className="w-4 h-4 text-purple-400" />
-            <span>تصدير PDF</span>
-          </button>
-          <button
-            type="button"
-            onClick={handleExportStudentsExcel}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-emerald-300 border border-emerald-500/30 text-xs font-bold shadow-md transition cursor-pointer"
-            title="تصدير قائمة الطلاب والمواعيد إلى Excel (CSV)"
-          >
-            <FileText className="w-4 h-4 text-emerald-400" />
-            <span>تصدير Excel</span>
-          </button>
+          <div className="flex items-center gap-1.5 justify-end">
+            <button
+              type="button"
+              onClick={handleExportStudentsPdf}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-purple-300 border border-purple-500/30 text-xs font-bold shadow-md transition cursor-pointer"
+              title="تصدير قائمة الطلاب والمواعيد إلى PDF"
+            >
+              <Download className="w-4 h-4 text-purple-400" />
+              <span>تصدير PDF</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleExportStudentsExcel}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-emerald-300 border border-emerald-500/30 text-xs font-bold shadow-md transition cursor-pointer"
+              title="تصدير قائمة الطلاب والمواعيد إلى Excel (CSV)"
+            >
+              <FileText className="w-4 h-4 text-emerald-400" />
+              <span>تصدير Excel</span>
+            </button>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex items-center justify-between gap-2 border-b border-purple-950/40 pb-2">
+          <div>
+            <h2 className="text-base font-extrabold text-white flex items-center gap-2">
+              <span>الطلاب الفرديين</span>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-purple-950 text-purple-300 border border-purple-500/30 font-mono">
+                {students.length} طالب
+              </span>
+            </h2>
+            <p className="text-[11px] text-slate-400">إدارة طلاب الحصص الفردية وسعر الساعة والحسابات والتقارير</p>
+          </div>
+          <div className="flex items-center gap-1.5 justify-end">
+            <button
+              type="button"
+              onClick={handleExportStudentsPdf}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-purple-300 border border-purple-500/30 text-xs font-bold shadow-md transition cursor-pointer"
+              title="تصدير قائمة الطلاب إلى PDF"
+            >
+              <Download className="w-3.5 h-3.5 text-purple-400" />
+              <span className="hidden sm:inline">PDF</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleExportStudentsExcel}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-emerald-300 border border-emerald-500/30 text-xs font-bold shadow-md transition cursor-pointer"
+              title="تصدير قائمة الطلاب إلى Excel"
+            >
+              <FileText className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden sm:inline">Excel</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {activeMainView === 'groups_and_individuals' ? (
         <GroupManagementTab

@@ -54,6 +54,10 @@ interface HomeTabProps {
   onNavigateToTab: (tabIndex: number) => void;
   onOpenUpgradeModal: () => void;
   onOpenFinancialDashboard?: () => void;
+  onNavigateToIndividualStudents?: () => void;
+  onNavigateToGroups?: () => void;
+  onNavigateToFinancialRecords?: () => void;
+  onNavigateToSchedule?: () => void;
 }
 
 export const HomeTab: React.FC<HomeTabProps> = ({
@@ -63,6 +67,10 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   onNavigateToTab,
   onOpenUpgradeModal,
   onOpenFinancialDashboard,
+  onNavigateToIndividualStudents,
+  onNavigateToGroups,
+  onNavigateToFinancialRecords,
+  onNavigateToSchedule,
 }) => {
   // Only valid schedules belonging to active students (excludes paused and archived students)
   const schedules = rawSchedules.filter((s) => {
@@ -845,9 +853,13 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         )}
       </div>
 
-      {/* 3. كارت أخضر غامق عريض: "الملخص المالي والأرباح (نظام سعر الساعة)" */}
+      {/* 3. كارت أخضر غامق عريض: "سجل الطلاب المالي والأرباح" */}
       <div
-        onClick={() => onOpenFinancialDashboard && onOpenFinancialDashboard()}
+        onClick={() => {
+          if (onNavigateToFinancialRecords) onNavigateToFinancialRecords();
+          else if (onOpenFinancialDashboard) onOpenFinancialDashboard();
+          else onNavigateToTab(3);
+        }}
         className="rounded-3xl bg-gradient-to-r from-emerald-950/90 via-teal-950 to-slate-900 border border-emerald-500/40 p-4 sm:p-5 shadow-xl hover:border-emerald-400/60 transition cursor-pointer space-y-2 relative group"
       >
         <div className="flex items-center justify-between">
@@ -857,7 +869,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-black text-white">
-                الملخص المالي والأرباح
+                سجل الطلاب المالي والأرباح
               </h3>
               <p className="text-[10px] text-emerald-300/80">العملة المعتمدة: {profile.currency || 'ج.م'}</p>
             </div>
@@ -869,62 +881,62 @@ export const HomeTab: React.FC<HomeTabProps> = ({
         </div>
 
         <p className="text-xs text-emerald-200/80 leading-relaxed">
-          متابعة أرباح الشهر وساعات التدريس والمستحقات المعلقة والتصفية لكل طالب
+          متابعة أرباح الشهر وساعات التدريس والمستحقات المعلقة والتصفية لكل طالب ومجموعة (تصدير PDF / Excel)
         </p>
 
         <div className="flex items-center justify-end pt-1">
           <div className="inline-flex items-center gap-1 text-xs font-bold text-emerald-300 group-hover:text-emerald-200 transition">
-            <span>عرض الحسابات</span>
+            <span>فتح السجل المالي المستقل</span>
             <ArrowLeft className="w-3.5 h-3.5 transform group-hover:-translate-x-1 transition" />
           </div>
         </div>
       </div>
 
-      {/* 4. صف من 4 كروت صغيرة */}
+      {/* 4. كروت الأقسام والصفحات المستقلة */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        {/* Card 1: الطلاب */}
+        {/* Card 1: الطلاب الفرديين */}
         <div
-          onClick={() => onNavigateToTab(1)}
-          className="rounded-2xl bg-slate-900/90 border border-purple-500/20 hover:border-purple-500/40 p-3.5 shadow-md transition cursor-pointer space-y-1 text-right"
+          onClick={() => (onNavigateToIndividualStudents ? onNavigateToIndividualStudents() : onNavigateToTab(1))}
+          className="rounded-2xl bg-slate-900/90 border border-purple-500/20 hover:border-purple-500/50 p-3.5 shadow-md transition cursor-pointer space-y-1 text-right active:scale-95"
         >
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-bold">الطلاب</span>
+            <span className="text-xs font-bold">الطلاب الفرديين</span>
             <Users className="w-4 h-4 text-purple-400" />
           </div>
           <div className="text-lg font-black text-white">{students.length} طالب</div>
-          <p className="text-[10px] text-purple-300/80">الطلاب النشطين</p>
+          <p className="text-[10px] text-purple-300/80">الحصص الفردية وسعر الساعة 👤</p>
         </div>
 
-        {/* Card 2: حصص اليوم */}
+        {/* Card 2: المجموعات والسناتر */}
         <div
-          onClick={() => onNavigateToTab(2)}
-          className="rounded-2xl bg-slate-900/90 border border-purple-500/20 hover:border-purple-500/40 p-3.5 shadow-md transition cursor-pointer space-y-1 text-right"
+          onClick={() => (onNavigateToGroups ? onNavigateToGroups() : onNavigateToTab(2))}
+          className="rounded-2xl bg-slate-900/90 border border-purple-500/20 hover:border-purple-500/50 p-3.5 shadow-md transition cursor-pointer space-y-1 text-right active:scale-95"
         >
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-bold">حصص اليوم</span>
+            <span className="text-xs font-bold">المجموعات والسناتر</span>
+            <BookOpen className="w-4 h-4 text-indigo-400" />
+          </div>
+          <div className="text-lg font-black text-white">إدارة المجموعات</div>
+          <p className="text-[10px] text-indigo-300/80">السناتر والاشتراكات الشهرية 🏫</p>
+        </div>
+
+        {/* Card 3: المواعيد والحصص */}
+        <div
+          onClick={() => (onNavigateToSchedule ? onNavigateToSchedule() : onNavigateToTab(4))}
+          className="rounded-2xl bg-slate-900/90 border border-purple-500/20 hover:border-purple-500/50 p-3.5 shadow-md transition cursor-pointer space-y-1 text-right active:scale-95"
+        >
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-xs font-bold">المواعيد والحصص</span>
             <Calendar className="w-4 h-4 text-amber-400" />
           </div>
-          <div className="text-lg font-black text-white">{todayClasses.length} حصص</div>
-          <p className="text-[10px] text-amber-300/80">{todayArabicName}</p>
+          <div className="text-lg font-black text-white">{todayClasses.length} حصص اليوم</div>
+          <p className="text-[10px] text-amber-300/80">{schedules.length} موعد أسبوعي 📅</p>
         </div>
 
-        {/* Card 3: مواعيد ثابتة */}
-        <div
-          onClick={() => onNavigateToTab(2)}
-          className="rounded-2xl bg-slate-900/90 border border-purple-500/20 hover:border-purple-500/40 p-3.5 shadow-md transition cursor-pointer space-y-1 text-right"
-        >
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-bold">مواعيد ثابتة</span>
-            <Clock className="w-4 h-4 text-sky-400" />
-          </div>
-          <div className="text-lg font-black text-white">{schedules.length}</div>
-          <p className="text-[10px] text-sky-300/80">موعد أسبوعي</p>
-        </div>
-
-        {/* Card 4: الاشتراك */}
+        {/* Card 4: الاشتراك والترقية */}
         <div
           onClick={onOpenUpgradeModal}
-          className="rounded-2xl bg-slate-900/90 border border-purple-500/20 hover:border-purple-500/40 p-3.5 shadow-md transition cursor-pointer space-y-1 text-right"
+          className="rounded-2xl bg-slate-900/90 border border-purple-500/20 hover:border-purple-500/50 p-3.5 shadow-md transition cursor-pointer space-y-1 text-right active:scale-95"
         >
           <div className="flex items-center justify-between text-slate-400">
             <span className="text-xs font-bold">الاشتراك</span>
@@ -932,12 +944,12 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           </div>
           <div className="text-lg font-black text-emerald-400">
             {profile.subscriptionStatus === 'active'
-              ? 'نشط 👑'
+              ? 'مشترك 👑'
               : profile.subscriptionStatus === 'trial'
               ? 'تجريبي ✨'
               : 'منتهي ⚠️'}
           </div>
-          <p className="text-[10px] text-emerald-300/80">تجديد أو ترقية ⬅</p>
+          <p className="text-[10px] text-emerald-300/80">ترقية أو تجديد الباقة 💎</p>
         </div>
       </div>
 

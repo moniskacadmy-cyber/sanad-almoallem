@@ -1422,13 +1422,13 @@ export async function addLibraryItem(
   try {
     const colRef = collection(db, 'teachers', teacherId, 'library');
     const newDoc = doc(colRef);
-    await setDoc(newDoc, {
+    await setDoc(newDoc, cleanUndefined({
       ...item,
       id: newDoc.id,
       teacherId,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
-    });
+    }));
     return newDoc.id;
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
@@ -1442,10 +1442,10 @@ export async function updateLibraryItem(
 ) {
   const path = `teachers/${teacherId}/library/${itemId}`;
   try {
-    await updateDoc(doc(db, 'teachers', teacherId, 'library', itemId), {
+    await updateDoc(doc(db, 'teachers', teacherId, 'library', itemId), cleanUndefined({
       ...updates,
       updatedAt: serverTimestamp(),
-    });
+    }));
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }

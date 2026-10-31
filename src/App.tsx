@@ -36,6 +36,7 @@ import { getStoredNotificationPrefs } from './components/NotificationCenter';
 
 // Code-split heavy screen tabs with React.lazy to accelerate initial load time
 const StudentsTab = React.lazy(() => import('./components/StudentsTab').then((m) => ({ default: m.StudentsTab })));
+const GroupManagementTab = React.lazy(() => import('./components/GroupManagementTab').then((m) => ({ default: m.GroupManagementTab })));
 const ScheduleTab = React.lazy(() => import('./components/ScheduleTab').then((m) => ({ default: m.ScheduleTab })));
 const LibraryTab = React.lazy(() => import('./components/LibraryTab').then((m) => ({ default: m.LibraryTab })));
 const SettingsTab = React.lazy(() => import('./components/SettingsTab').then((m) => ({ default: m.SettingsTab })));
@@ -43,7 +44,9 @@ const FinancialDashboard = React.lazy(() => import('./components/FinancialDashbo
 const AdminDashboard = React.lazy(() => import('./components/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
 import {
   Home,
+  User as UserIcon,
   Users,
+  DollarSign,
   Calendar,
   BookOpen,
   Settings,
@@ -150,29 +153,22 @@ export default function App() {
 
   const handleSidebarSelect = (itemId: string) => {
     setActiveSidebarItem(itemId);
+    setShowFinancialDashboard(false);
+    setShowAdminView(false);
     if (itemId === 'home') {
-      setActiveTab(0);
-      setShowFinancialDashboard(false);
-      setShowAdminView(false);
-    } else if (itemId === 'students') {
-      setActiveTab(1);
-      setShowFinancialDashboard(false);
-      setShowAdminView(false);
-    } else if (itemId === 'appointments') {
-      setActiveTab(2);
-      setShowFinancialDashboard(false);
-      setShowAdminView(false);
-    } else if (itemId === 'classes') {
-      setActiveTab(3);
-      setShowFinancialDashboard(false);
-      setShowAdminView(false);
-    } else if (itemId === 'profits' || itemId === 'expenses' || itemId === 'reports') {
-      setShowFinancialDashboard(true);
-      setShowAdminView(false);
-    } else if (itemId === 'reminders' || itemId === 'notifications' || itemId === 'settings') {
-      setActiveTab(4);
-      setShowFinancialDashboard(false);
-      setShowAdminView(false);
+      handleSelectTab(0);
+    } else if (itemId === 'students' || itemId === 'individual_students') {
+      handleSelectTab(1);
+    } else if (itemId === 'groups') {
+      handleSelectTab(2);
+    } else if (itemId === 'financial' || itemId === 'profits' || itemId === 'expenses' || itemId === 'reports') {
+      handleSelectTab(3);
+    } else if (itemId === 'appointments' || itemId === 'schedule') {
+      handleSelectTab(4);
+    } else if (itemId === 'classes' || itemId === 'library') {
+      handleSelectTab(5);
+    } else if (itemId === 'settings' || itemId === 'reminders' || itemId === 'notifications') {
+      handleSelectTab(6);
     }
   };
 
@@ -293,7 +289,10 @@ export default function App() {
   }, [activeTab, showAdminView, showUpgradeModal, showFinancialDashboard]);
 
   const handleSelectTab = (idx: number) => {
-    if (idx === activeTab) return;
+    if (showFinancialDashboard && idx !== 3) {
+      setShowFinancialDashboard(false);
+    }
+    if (idx === activeTab && !showFinancialDashboard) return;
     setActiveTab(idx);
     pushAppHistoryState({ tab: idx });
   };
@@ -680,12 +679,22 @@ export default function App() {
     );
   }
 
+  const PAGE_TITLES: Record<number, string> = {
+    0: 'الرئيسية',
+    1: 'الطلاب الفرديين',
+    2: 'المجموعات والسناتر',
+    3: 'السجل المالي والأرباح',
+    4: 'المواعيد والحصص',
+    5: 'مكتبتي التعليمية',
+    6: 'الإعدادات',
+  };
+
   const tabs = [
     { label: t('nav.home', 'الرئيسية'), icon: Home },
-    { label: t('nav.students', 'الطلاب'), icon: Users, badge: students.length },
-    { label: t('nav.appointments', 'المواعيد'), icon: Calendar, badge: schedules.length },
-    { label: t('nav.classes', 'مكتبتي'), icon: BookOpen },
-    { label: t('nav.settings', 'الإعدادات'), icon: Settings },
+    { label: 'الطلاب', icon: UserIcon, badge: students.length },
+    { label: 'المجموعات', icon: Users },
+    { label: 'المالية', icon: DollarSign },
+    { label: 'المواعيد', icon: Calendar, badge: schedules.length },
   ];
 
   return (
@@ -738,10 +747,13 @@ export default function App() {
                 <BookOpen className="w-4 h-4" />
               </div>
             )}
-            <div>
-              <h1 className="text-sm font-extrabold text-slate-900 dark:text-white tracking-wide">
-                سند المعلم
+            <div className="min-w-0">
+              <h1 className="text-sm font-extrabold text-slate-900 dark:text-white tracking-wide truncate">
+                {activeTab === 0 ? 'سند المعلم' : PAGE_TITLES[activeTab] || 'سند المعلم'}
               </h1>
+              {activeTab !== 0 && (
+                <p className="text-[10px] text-purple-600 dark:text-purple-300 font-medium truncate">سند المعلم</p>
+              )}
             </div>
           </div>
 
@@ -832,14 +844,17 @@ export default function App() {
               </div>
             }
           >
-            {showFinancialDashboard ? (
+            {showFinancialDashboard || activeTab === 3 ? (
               <FinancialDashboard
                 profile={profile}
                 students={students}
-                onBackToApp={() => setShowFinancialDashboard(false)}
+                onBackToApp={() => {
+                  setShowFinancialDashboard(false);
+                  handleSelectTab(0);
+                }}
                 onOpenStudentDetails={() => {
                   setShowFinancialDashboard(false);
-                  setActiveTab(1);
+                  handleSelectTab(1);
                 }}
               />
             ) : (
@@ -849,9 +864,13 @@ export default function App() {
                     profile={profile}
                     students={students}
                     schedules={schedules}
-                    onNavigateToTab={(t) => setActiveTab(t)}
+                    onNavigateToTab={(t) => handleSelectTab(t)}
                     onOpenUpgradeModal={() => setShowUpgradeModal(true)}
-                    onOpenFinancialDashboard={() => setShowFinancialDashboard(true)}
+                    onOpenFinancialDashboard={() => handleSelectTab(3)}
+                    onNavigateToIndividualStudents={() => handleSelectTab(1)}
+                    onNavigateToGroups={() => handleSelectTab(2)}
+                    onNavigateToFinancialRecords={() => handleSelectTab(3)}
+                    onNavigateToSchedule={() => handleSelectTab(4)}
                   />
                 )}
                 {activeTab === 1 && (
@@ -859,19 +878,32 @@ export default function App() {
                     profile={profile}
                     students={students}
                     schedules={schedules}
+                    initialView="records"
+                    hideSwitcher={true}
                   />
                 )}
                 {activeTab === 2 && (
+                  <GroupManagementTab
+                    teacherId={profile.id}
+                    profile={profile}
+                    currency={profile.currency || 'ج.م'}
+                    defaultSubject={profile.subject || 'اللغة العربية'}
+                    initialStudents={students}
+                    initialView="groups"
+                    hideSwitcher={true}
+                  />
+                )}
+                {activeTab === 4 && (
                   <ScheduleTab
                     profile={profile}
                     students={students}
                     schedules={schedules}
                   />
                 )}
-                {activeTab === 3 && (
+                {activeTab === 5 && (
                   <LibraryTab profile={profile} libraryItems={libraryItems} />
                 )}
-                {activeTab === 4 && (
+                {activeTab === 6 && (
                   <SettingsTab
                     profile={profile}
                     students={students}
@@ -880,7 +912,7 @@ export default function App() {
                     isAdmin={isAdmin}
                     onOpenUpgradeModal={() => setShowUpgradeModal(true)}
                     onOpenAdminDashboard={() => setShowAdminView(true)}
-                    onOpenFinancialDashboard={() => setShowFinancialDashboard(true)}
+                    onOpenFinancialDashboard={() => handleSelectTab(3)}
                   />
                 )}
               </>
@@ -892,7 +924,9 @@ export default function App() {
         <nav className="secondary-nav fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[460px] z-40 bg-white/95 dark:bg-slate-950/95 backdrop-blur-lg border-t border-slate-200 dark:border-purple-900/40 px-2 py-1.5 flex items-center justify-around shadow-2xl transition-colors duration-200">
           {tabs.map((tab, idx) => {
             const Icon = tab.icon;
-            const isActive = activeTab === idx;
+            const isActive =
+              (idx === 3 && (showFinancialDashboard || activeTab === 3)) ||
+              (activeTab === idx && !showFinancialDashboard);
             return (
               <button
                 key={tab.label}

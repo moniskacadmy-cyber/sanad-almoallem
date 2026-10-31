@@ -9,6 +9,7 @@ import {
   addLibraryItem,
   deleteLibraryItem,
   seedDefaultLibraryItems,
+  cleanUndefined,
 } from '../firebase';
 import {
   BookOpen,
@@ -30,7 +31,100 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
+  Search,
+  Download,
+  Printer,
+  Cloud,
+  Wrench,
+  GraduationCap,
 } from 'lucide-react';
+
+export function exportToWord(title: string, content: string, subject?: string, teacherName?: string) {
+  const dateStr = new Intl.DateTimeFormat('ar-EG', { dateStyle: 'full' }).format(new Date());
+  const headerHtml = `
+    <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+    <head>
+      <meta charset='utf-8'>
+      <title>${title}</title>
+      <style>
+        body { font-family: 'Segoe UI', Arial, Tahoma, sans-serif; direction: rtl; text-align: right; padding: 30px; line-height: 1.8; color: #1e293b; background-color: #ffffff; }
+        h1 { color: #6d28d9; font-size: 20pt; border-bottom: 2px solid #7c3aed; padding-bottom: 8px; margin-bottom: 12px; }
+        .meta-box { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 16px; margin-bottom: 20px; font-size: 11pt; color: #475569; }
+        .meta-item { display: inline-block; margin-left: 20px; }
+        .content { font-size: 13pt; white-space: pre-wrap; line-height: 1.9; margin-top: 15px; }
+        .footer { margin-top: 35px; border-top: 1px solid #cbd5e1; padding-top: 12px; font-size: 10pt; color: #94a3b8; text-align: center; }
+      </style>
+    </head>
+    <body dir="rtl">
+      <h1>${title}</h1>
+      <div class="meta-box">
+        ${subject ? `<span class="meta-item"><strong>المادة:</strong> ${subject}</span>` : ''}
+        ${teacherName ? `<span class="meta-item"><strong>المعلم:</strong> أ. ${teacherName}</span>` : ''}
+        <span class="meta-item"><strong>التاريخ:</strong> ${dateStr}</span>
+      </div>
+      <div class="content">${content.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')}</div>
+      <div class="footer">تم التصدير من منصة سند المعلم - Sanad Al-Moallem | منصة المعلم الذكية</div>
+    </body>
+    </html>
+  `;
+  const blob = new Blob(['\ufeff' + headerHtml], { type: 'application/msword;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${title.replace(/[\/\\?%*:|"<>]/g, '_')}.doc`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export function exportToPrintPdf(title: string, content: string, subject?: string, teacherName?: string) {
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    alert('يرجى السماح بالنوافذ المنبثقة لطباعة المستند أو تصديره إلى PDF');
+    return;
+  }
+  const dateStr = new Intl.DateTimeFormat('ar-EG', { dateStyle: 'full' }).format(new Date());
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html dir="rtl" lang="ar">
+    <head>
+      <meta charset="utf-8">
+      <title>${title}</title>
+      <style>
+        body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; direction: rtl; text-align: right; padding: 35px; line-height: 1.8; color: #0f172a; }
+        .header { border-bottom: 2.5px solid #7c3aed; padding-bottom: 12px; margin-bottom: 20px; }
+        h1 { color: #6d28d9; margin: 0 0 10px 0; font-size: 22px; font-weight: 800; }
+        .meta { font-size: 13px; color: #475569; display: flex; gap: 24px; margin-top: 8px; }
+        .content { font-size: 14px; white-space: pre-wrap; line-height: 2; margin-top: 20px; }
+        .footer { margin-top: 40px; border-top: 1px solid #cbd5e1; padding-top: 15px; font-size: 11px; color: #94a3b8; text-align: center; }
+        @media print {
+          body { padding: 15px; }
+          .no-print { display: none; }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h1>${title}</h1>
+        <div class="meta">
+          ${subject ? `<span><strong>المادة:</strong> ${subject}</span>` : ''}
+          ${teacherName ? `<span><strong>المعلم:</strong> أ. ${teacherName}</span>` : ''}
+          <span><strong>التاريخ:</strong> ${dateStr}</span>
+        </div>
+      </div>
+      <div class="content">${content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+      <div class="footer">تم التصدير بواسطة منصة سند المعلم - Sanad Al-Moallem</div>
+      <script>
+        window.onload = function() {
+          window.print();
+        };
+      </script>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
+}
 
 async function extractTextFromPdf(file: File): Promise<{ text: string; isScanned: boolean }> {
   try {
@@ -164,6 +258,12 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
   const [copiedPrepModal, setCopiedPrepModal] = useState(false);
   const [prepModalSuccessMsg, setPrepModalSuccessMsg] = useState(false);
 
+  // Search Bar State
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Auto-Save Cloud Status State
+  const [cloudStatus, setCloudStatus] = useState<'saved' | 'saving' | 'idle'>('saved');
+
   // Register modals on back handler stack
   useBackHandler(showAddSourceModal, () => setShowAddSourceModal(false), 'library_add_source_modal');
   useBackHandler(!!previewingSource, () => setPreviewingSource(null), 'library_preview_source');
@@ -171,18 +271,35 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
   useBackHandler(!!viewingItem, () => setViewingItem(null), 'library_viewing_item');
   useBackHandler(showCreateLessonPrepModal, () => setShowCreateLessonPrepModal(false), 'library_create_lesson_prep_modal');
 
-  // Filter items into sources vs templates
+  // Filter items into sources vs templates and apply instant search
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+
   const sources = libraryItems.filter(
     (item) => item.type === 'pdf' || item.type === 'image' || item.type === 'book'
   );
+
+  const filteredSources = sources.filter((item) => {
+    if (!normalizedQuery) return true;
+    return (
+      (item.title && item.title.toLowerCase().includes(normalizedQuery)) ||
+      (item.subject && item.subject.toLowerCase().includes(normalizedQuery)) ||
+      (item.fileName && item.fileName.toLowerCase().includes(normalizedQuery)) ||
+      (item.content && item.content.toLowerCase().includes(normalizedQuery))
+    );
+  });
 
   const templates = libraryItems.filter(
     (item) => item.type === 'lesson_plan' || item.type === 'quiz' || item.type === 'summary'
   );
 
   const filteredTemplates = templates.filter((t) => {
-    if (templateFilter === 'all') return true;
-    return t.type === templateFilter;
+    if (templateFilter !== 'all' && t.type !== templateFilter) return false;
+    if (!normalizedQuery) return true;
+    return (
+      (t.title && t.title.toLowerCase().includes(normalizedQuery)) ||
+      (t.subject && t.subject.toLowerCase().includes(normalizedQuery)) ||
+      (t.content && t.content.toLowerCase().includes(normalizedQuery))
+    );
   });
 
   // Handle Ask Gemini AI
@@ -351,8 +468,9 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
     if (!sourceTitle.trim()) return;
 
     setIsSavingSource(true);
+    setCloudStatus('saving');
     try {
-      await addLibraryItem(profile.id, {
+      await addLibraryItem(profile.id, cleanUndefined({
         title: sourceTitle.trim(),
         type: sourceType,
         subject: sourceSubject.trim(),
@@ -360,8 +478,10 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
         fileName: sourceFileName.trim() || undefined,
         fileSize: sourceFileSize.trim() || undefined,
         fileData: sourceFileData || undefined,
-      });
+      }));
 
+      setCloudStatus('saved');
+      setTimeout(() => setCloudStatus('idle'), 3000);
       setShowAddSourceModal(false);
       setSourceTitle('');
       setSourceContent('');
@@ -370,6 +490,7 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
       setSourceFileData(undefined);
     } catch (err) {
       console.error('Error saving source:', err);
+      setCloudStatus('idle');
     } finally {
       setIsSavingSource(false);
     }
@@ -456,13 +577,16 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
   const handleSavePrepModalToLibrary = async () => {
     if (!prepModalContent.trim()) return;
     setIsSavingPrepModal(true);
+    setCloudStatus('saving');
     try {
-      await addLibraryItem(profile.id, {
+      await addLibraryItem(profile.id, cleanUndefined({
         title: `تحضير: ${prepModalTopic.trim() || 'درس جديد'} (${profile.subject})`,
         type: 'lesson_plan',
         subject: profile.subject,
         content: prepModalContent.trim(),
-      });
+      }));
+      setCloudStatus('saved');
+      setTimeout(() => setCloudStatus('idle'), 3000);
       setPrepModalSuccessMsg(true);
       setTimeout(() => {
         setPrepModalSuccessMsg(false);
@@ -470,6 +594,7 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
       }, 1500);
     } catch (err) {
       console.error('Error saving lesson prep:', err);
+      setCloudStatus('idle');
     } finally {
       setIsSavingPrepModal(false);
     }
@@ -477,80 +602,141 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
 
   return (
     <div className="space-y-4 pb-20 select-none">
-      {/* Top Header */}
-      <div className="flex items-center justify-between">
+      {/* Top Header with Title and Auto-Save Cloud Indicator */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
         <div>
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <span>مكتبتي - مصادر التدريس الخاصة بك</span>
-          </h2>
-          <p className="text-xs text-slate-400">
-            المساعد الذكي لمناهجك ومستودع الكتب والتحضيرات
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-extrabold text-white tracking-wide">
+              مكتبتي التعليمية
+            </h2>
+            {cloudStatus === 'saving' && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-950/80 border border-amber-500/40 text-amber-300 text-[10px] font-bold animate-pulse">
+                <Loader2 className="w-3 h-3 animate-spin text-amber-400" />
+                <span>جارٍ الحفظ في السحابة...</span>
+              </span>
+            )}
+            {cloudStatus === 'saved' && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold">
+                <Cloud className="w-3 h-3 text-emerald-400" />
+                <span>متصل بالسحابة ☁️</span>
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-slate-400 mt-0.5">
+            المساعد الذكي لمناهجك، مستودع المراجع والكتب، والتحضيرات
           </p>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => handleOpenCreateLessonPrep()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold transition cursor-pointer shadow-lg shadow-purple-950/40 active:scale-95"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold transition cursor-pointer shadow-lg shadow-purple-950/40 active:scale-95"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>إنشاء تحضير للحصة 📝</span>
+            <span>إنشاء تحضير جديد 📝</span>
           </button>
         </div>
       </div>
 
-      {/* Navigation Sub-Tabs: AI & Sources vs Templates */}
-      <div className="flex items-center gap-2 p-1 overflow-x-auto rounded-2xl bg-slate-900 border border-purple-500/20 text-xs">
-        <button
-          type="button"
+      {/* Grid Cards Layout for Library Sections */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        {/* Card 1: المساعد الذكي والمصادر */}
+        <div
           onClick={() => setActiveSection('sources_ai')}
-          className={`flex-1 shrink-0 whitespace-nowrap px-3 flex items-center justify-center gap-2 py-2 rounded-xl font-bold transition cursor-pointer ${
+          className={`rounded-2xl p-3.5 border transition cursor-pointer space-y-1.5 active:scale-95 ${
             activeSection === 'sources_ai'
-              ? 'bg-purple-600 text-white shadow-md'
-              : 'text-slate-400 hover:text-white'
+              ? 'bg-gradient-to-br from-purple-900/90 via-purple-950 to-indigo-950 border-purple-400 text-white shadow-lg shadow-purple-950/60 ring-2 ring-purple-400/40'
+              : 'bg-slate-900/90 hover:bg-slate-800/90 border-slate-700/80 text-slate-300 hover:border-purple-500/30'
           }`}
         >
-          <Sparkles className="w-4 h-4 text-amber-300" />
-          <span>المساعد الذكي والمصادر ({sources.length})</span>
-        </button>
+          <div className="flex items-center justify-between">
+            <Sparkles className={`w-5 h-5 ${activeSection === 'sources_ai' ? 'text-amber-300 animate-pulse' : 'text-purple-400'}`} />
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-950/80 text-purple-200 border border-purple-500/30">
+              {sources.length} مصادر
+            </span>
+          </div>
+          <h3 className="text-xs font-black text-white">المساعد الذكي والمصادر</h3>
+          <p className="text-[10px] opacity-80 leading-tight">أسئلة الـ AI والاستناد للمناهج المرفوعة 📚</p>
+        </div>
 
-        <button
-          type="button"
+        {/* Card 2: نماذج التحضير والاختبارات */}
+        <div
           onClick={() => setActiveSection('templates')}
-          className={`flex-1 shrink-0 whitespace-nowrap px-3 flex items-center justify-center gap-2 py-2 rounded-xl font-bold transition cursor-pointer ${
+          className={`rounded-2xl p-3.5 border transition cursor-pointer space-y-1.5 active:scale-95 ${
             activeSection === 'templates'
-              ? 'bg-purple-600 text-white shadow-md'
-              : 'text-slate-400 hover:text-white'
+              ? 'bg-gradient-to-br from-purple-900/90 via-purple-950 to-indigo-950 border-purple-400 text-white shadow-lg shadow-purple-950/60 ring-2 ring-purple-400/40'
+              : 'bg-slate-900/90 hover:bg-slate-800/90 border-slate-700/80 text-slate-300 hover:border-purple-500/30'
           }`}
         >
-          <FileText className="w-4 h-4" />
-          <span>نماذج التحضير والاختبارات ({templates.length})</span>
-        </button>
+          <div className="flex items-center justify-between">
+            <FileText className={`w-5 h-5 ${activeSection === 'templates' ? 'text-amber-300' : 'text-indigo-400'}`} />
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-950/80 text-indigo-200 border border-indigo-500/30">
+              {templates.length} قوالب
+            </span>
+          </div>
+          <h3 className="text-xs font-black text-white">نماذج التحضير والاختبارات</h3>
+          <p className="text-[10px] opacity-80 leading-tight">نماذج التحضير الجاهزة والاختبارات 📝</p>
+        </div>
 
-        <button
-          type="button"
+        {/* Card 3: أدوات الملفات */}
+        <div
           onClick={() => setActiveSection('file_tools')}
-          className={`flex-1 shrink-0 whitespace-nowrap px-3 flex items-center justify-center gap-2 py-2 rounded-xl font-bold transition cursor-pointer ${
+          className={`rounded-2xl p-3.5 border transition cursor-pointer space-y-1.5 active:scale-95 ${
             activeSection === 'file_tools'
-              ? 'bg-purple-600 text-white shadow-md'
-              : 'text-slate-400 hover:text-white'
+              ? 'bg-gradient-to-br from-purple-900/90 via-purple-950 to-indigo-950 border-purple-400 text-white shadow-lg shadow-purple-950/60 ring-2 ring-purple-400/40'
+              : 'bg-slate-900/90 hover:bg-slate-800/90 border-slate-700/80 text-slate-300 hover:border-purple-500/30'
           }`}
         >
-          <span>🛠️ أدوات الملفات</span>
-        </button>
+          <div className="flex items-center justify-between">
+            <Wrench className={`w-5 h-5 ${activeSection === 'file_tools' ? 'text-amber-300' : 'text-teal-400'}`} />
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-950/80 text-teal-200 border border-teal-500/30">
+              تفريغ وتنسيق
+            </span>
+          </div>
+          <h3 className="text-xs font-black text-white">أدوات الملفات</h3>
+          <p className="text-[10px] opacity-80 leading-tight">تفريغ وتحويل المستندات والملفات 🛠️</p>
+        </div>
 
-        <button
-          type="button"
+        {/* Card 4: التحضير الذكي */}
+        <div
           onClick={() => setActiveSection('smart_prep')}
-          className={`flex-1 shrink-0 whitespace-nowrap px-3 flex items-center justify-center gap-2 py-2 rounded-xl font-bold transition cursor-pointer ${
+          className={`rounded-2xl p-3.5 border transition cursor-pointer space-y-1.5 active:scale-95 ${
             activeSection === 'smart_prep'
-              ? 'bg-purple-600 text-white shadow-md'
-              : 'text-slate-400 hover:text-white'
+              ? 'bg-gradient-to-br from-purple-900/90 via-purple-950 to-indigo-950 border-purple-400 text-white shadow-lg shadow-purple-950/60 ring-2 ring-purple-400/40'
+              : 'bg-slate-900/90 hover:bg-slate-800/90 border-slate-700/80 text-slate-300 hover:border-purple-500/30'
           }`}
         >
-          <span>✨ التحضير الذكي</span>
-        </button>
+          <div className="flex items-center justify-between">
+            <GraduationCap className={`w-5 h-5 ${activeSection === 'smart_prep' ? 'text-amber-300' : 'text-amber-400'}`} />
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-950/80 text-amber-200 border border-amber-500/30">
+              توليد AI
+            </span>
+          </div>
+          <h3 className="text-xs font-black text-white">التحضير الذكي الشامل</h3>
+          <p className="text-[10px] opacity-80 leading-tight">صناعة خطة درس متكاملة بالذكاء الاصطناعي ✨</p>
+        </div>
+      </div>
+
+      {/* Instant Search Bar */}
+      <div className="relative">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="بحث سريع في كتب المناهج، المصادر، ونماذج التحضيرات..."
+          className="w-full rounded-2xl bg-slate-900/90 border border-slate-700/80 px-4 py-2.5 pr-10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 transition"
+        />
+        <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-3" />
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery('')}
+            className="absolute left-3 top-2.5 text-slate-400 hover:text-white text-xs p-1 cursor-pointer"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       {/* SECTION 1: AI ASSISTANT & SOURCES (Default & Main View) */}
@@ -684,6 +870,26 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
 
                     <button
                       type="button"
+                      onClick={() => exportToWord('إجابة المساعد الذكي', aiAnswer, profile.subject, profile.name)}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-950/80 border border-blue-500/40 hover:bg-blue-900 text-blue-300 text-[10px] font-semibold transition cursor-pointer"
+                      title="تصدير إلى ملف Word (.doc)"
+                    >
+                      <Download className="w-3 h-3" />
+                      <span>Word</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => exportToPrintPdf('إجابة المساعد الذكي', aiAnswer, profile.subject, profile.name)}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-950/80 border border-rose-500/40 hover:bg-rose-900 text-rose-300 text-[10px] font-semibold transition cursor-pointer"
+                      title="طباعة / تصدير PDF"
+                    >
+                      <Printer className="w-3 h-3" />
+                      <span>PDF</span>
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={handleShareAnswerWhatsApp}
                       className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-950/80 border border-emerald-500/40 hover:bg-emerald-900 text-emerald-300 text-[10px] font-semibold transition cursor-pointer"
                     >
@@ -723,7 +929,7 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                   <span>مصادر التدريس الخاصة بك</span>
                   <span className="text-[10px] px-2 py-0.2 rounded-full bg-purple-950 text-purple-300 border border-purple-500/30">
-                    {sources.length} مصادر
+                    {filteredSources.length} مصادر
                   </span>
                 </h3>
                 <p className="text-[11px] text-slate-400 mt-0.5">
@@ -750,12 +956,14 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
             </div>
 
             {/* Sources List */}
-            {sources.length === 0 ? (
+            {filteredSources.length === 0 ? (
               <div className="py-6 px-4 text-center rounded-2xl bg-slate-950/60 border border-dashed border-slate-800 space-y-2">
                 <div className="w-12 h-12 rounded-2xl bg-purple-950/50 text-purple-400 flex items-center justify-center mx-auto border border-purple-500/20">
                   <FileUp className="w-6 h-6" />
                 </div>
-                <h4 className="text-xs font-bold text-white">لم تقم برفع مصادر أو كتب بعد</h4>
+                <h4 className="text-xs font-bold text-white">
+                  {searchQuery ? 'لا توجد نتائج بحث مطابقة للمصادر' : 'لم تقم برفع مصادر أو كتب بعد'}
+                </h4>
                 <p className="text-[11px] text-slate-400 max-w-xs mx-auto leading-relaxed">
                   ارفع كتب المناهج (PDF)، صور الدروس، أو المذكرات الخاصة بك ليجيب المساعد الذكي بدقة متناهية بناءً على مراجعك المعتمدة!
                 </p>
@@ -770,7 +978,7 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
               </div>
             ) : (
               <div className="space-y-2">
-                {sources.map((src) => (
+                {filteredSources.map((src) => (
                   <div
                     key={src.id}
                     className="flex items-center justify-between p-3 rounded-2xl bg-slate-950 border border-slate-800 hover:border-purple-500/30 transition group"
@@ -1178,7 +1386,7 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
               {viewingItem.content}
             </div>
 
-            <div className="flex items-center gap-2 pt-2">
+            <div className="flex flex-wrap items-center gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => {
@@ -1186,10 +1394,30 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
                   setCopiedId(viewingItem.id);
                   setTimeout(() => setCopiedId(null), 2000);
                 }}
-                className="flex-1 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+                className="flex-1 py-2 px-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
               >
                 {copiedId === viewingItem.id ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
-                <span>{copiedId === viewingItem.id ? 'تم النسخ بنجاح!' : 'نسخ النص بالكامل'}</span>
+                <span>{copiedId === viewingItem.id ? 'تم النسخ' : 'نسخ النص'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => exportToWord(viewingItem.title, viewingItem.content, viewingItem.subject || profile.subject, profile.name)}
+                className="py-2 px-2.5 rounded-xl bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/40 text-blue-300 font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1"
+                title="تصدير إلى ملف Word (.doc)"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Word</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => exportToPrintPdf(viewingItem.title, viewingItem.content, viewingItem.subject || profile.subject, profile.name)}
+                className="py-2 px-2.5 rounded-xl bg-rose-600/30 hover:bg-rose-600/50 border border-rose-500/40 text-rose-300 font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1"
+                title="طباعة / تصدير PDF"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>PDF</span>
               </button>
 
               <button
@@ -1200,17 +1428,17 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
                   handleOpenCreateLessonPrep(viewingItem.title);
                   setPrepModalContent(text);
                 }}
-                className="py-2 px-3 rounded-xl bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-300 font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+                className="py-2 px-2.5 rounded-xl bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-300 font-bold text-xs transition cursor-pointer flex items-center justify-center gap-1"
                 title="تعديل وإرسال هذا النموذج عبر الواتساب"
               >
-                <MessageCircle className="w-4 h-4" />
-                <span>إرسال عبر واتساب</span>
+                <MessageCircle className="w-3.5 h-3.5" />
+                <span>واتساب</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setViewingItem(null)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition cursor-pointer"
+                className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition cursor-pointer"
               >
                 إغلاق
               </button>
@@ -1330,36 +1558,54 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
               <button
                 type="button"
                 onClick={handleSendPrepWhatsApp}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-lg shadow-emerald-950/50 active:scale-98"
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow-lg shadow-emerald-950/50 active:scale-98"
               >
                 <Send className="w-4 h-4" />
                 <span>إرسال التحضير عبر واتساب الآن 💬</span>
               </button>
 
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
                 <button
                   type="button"
                   disabled={isSavingPrepModal}
                   onClick={handleSavePrepModalToLibrary}
-                  className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 text-xs font-bold transition cursor-pointer disabled:opacity-50 active:scale-98"
+                  className="flex items-center justify-center gap-1 py-2 px-2 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 text-xs font-bold transition cursor-pointer disabled:opacity-50 active:scale-98"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                  <span>{isSavingPrepModal ? 'جارٍ الحفظ...' : 'حفظ في مكتبتي'}</span>
+                  <span>{isSavingPrepModal ? 'جارٍ الحفظ...' : 'حفظ'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => exportToWord(`تحضير ${prepModalTopic || 'درس'}`, prepModalContent, profile.subject, profile.name)}
+                  className="flex items-center justify-center gap-1 py-2 px-2 rounded-xl bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/40 text-blue-200 text-xs font-bold transition cursor-pointer active:scale-98"
+                >
+                  <Download className="w-3.5 h-3.5 text-blue-300" />
+                  <span>Word</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => exportToPrintPdf(`تحضير ${prepModalTopic || 'درس'}`, prepModalContent, profile.subject, profile.name)}
+                  className="flex items-center justify-center gap-1 py-2 px-2 rounded-xl bg-rose-600/30 hover:bg-rose-600/50 border border-rose-500/40 text-rose-200 text-xs font-bold transition cursor-pointer active:scale-98"
+                >
+                  <Printer className="w-3.5 h-3.5 text-rose-300" />
+                  <span>PDF</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={handleCopyPrepModal}
-                  className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition cursor-pointer active:scale-98"
+                  className="flex items-center justify-center gap-1 py-2 px-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition cursor-pointer active:scale-98"
                 >
                   {copiedPrepModal ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedPrepModal ? 'تم النسخ!' : 'نسخ النص'}</span>
+                  <span>{copiedPrepModal ? 'تم النسخ' : 'نسخ'}</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setShowCreateLessonPrepModal(false)}
-                  className="flex items-center justify-center py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition cursor-pointer active:scale-98"
+                  className="flex items-center justify-center py-2 px-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition cursor-pointer active:scale-98"
                 >
                   إلغاء
                 </button>

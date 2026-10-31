@@ -19,6 +19,7 @@ import {
   UserCheck,
   Coins,
   Check,
+  Download,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -475,11 +476,53 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
     }
   };
 
+  // Export Excel/CSV Report
+  const handleExportExcel = () => {
+    if (studentFinancials.length === 0) {
+      alert('لا توجد بيانات مالية لتصديرها حالياً.');
+      return;
+    }
+    try {
+      let csvContent = '\uFEFF';
+      csvContent += 'رقم,اسم الطالب,المادة,نظام الحساب,حصص الفترة,ساعات التدريس,المستحقات المعلقة,المبالغ المحصلة,العملة\n';
+
+      studentFinancials.forEach((item, idx) => {
+        const billingType = item.isMonthly
+          ? `اشتراك شهري (${item.periodAmount})`
+          : `سعر الساعة (${item.hourlyRate}/س)`;
+        const row = [
+          idx + 1,
+          `"${(item.student.name || '').replace(/"/g, '""')}"`,
+          `"${(item.student.subject || '').replace(/"/g, '""')}"`,
+          `"${billingType}"`,
+          item.lessonsCount,
+          item.isMonthly ? 0 : item.periodHours,
+          item.pendingAmount,
+          item.collectedAmount,
+          `"${currency}"`,
+        ];
+        csvContent += row.join(',') + '\n';
+      });
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `financial_report_${selectedMonthInfo.label}_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Error generating Excel/CSV in FinancialDashboard:', err);
+      alert('حدث خطأ أثناء تصدير ملف Excel.');
+    }
+  };
+
   return (
     <div className="space-y-4 pb-20 select-none text-right">
       {/* Top Header */}
       <div className="flex items-center justify-between border-b border-purple-900/30 pb-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             type="button"
             onClick={handleExportPDF}
@@ -487,6 +530,15 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
           >
             <FileText className="w-3.5 h-3.5" />
             <span>تصدير PDF</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer shadow"
+            title="تصدير السجل المالي إلى Excel (CSV)"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>تصدير Excel</span>
           </button>
           <button
             type="button"

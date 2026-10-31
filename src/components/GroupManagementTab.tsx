@@ -58,6 +58,8 @@ export interface GroupManagementTabProps {
   onSelectStudent?: (student: Student) => void;
   onOpenAddStudent?: () => void;
   onOpenAddGroup?: () => void;
+  initialView?: 'groups' | 'individuals';
+  hideSwitcher?: boolean;
 }
 
 const COMMON_SUBJECTS = [
@@ -133,9 +135,11 @@ export const GroupManagementTab: React.FC<GroupManagementTabProps> = ({
   onSelectStudent,
   onOpenAddStudent,
   onOpenAddGroup,
+  initialView = 'groups',
+  hideSwitcher = false,
 }) => {
   // Tabs: 'groups' or 'individuals'
-  const [activeTab, setActiveTab] = useState<'groups' | 'individuals'>('groups');
+  const [activeTab, setActiveTab] = useState<'groups' | 'individuals'>(initialView);
 
   // Real-time Firestore State
   const [groups, setGroups] = useState<Group[]>(initialGroups || []);
@@ -540,65 +544,91 @@ export const GroupManagementTab: React.FC<GroupManagementTabProps> = ({
       {/* ------------------------------------------------------------- */}
       {/* TABS HEADER: 'المجموعات' vs 'الطلاب الفرديين'                 */}
       {/* ------------------------------------------------------------- */}
-      <div className="flex items-center justify-between gap-2 border-b border-purple-900/30 pb-3">
-        <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-inner w-full sm:w-auto">
-          {/* Tab 1: Groups */}
-          <button
-            type="button"
-            onClick={() => setActiveTab('groups')}
-            className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-black transition-all cursor-pointer ${
-              activeTab === 'groups'
-                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-950/40 scale-[1.02]'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            <span>المجموعات (السناتر)</span>
-            <span
-              className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                activeTab === 'groups'
-                  ? 'bg-purple-900/80 text-purple-200'
-                  : 'bg-slate-800 text-slate-400'
-              }`}
-            >
-              {activeGroups.length}
+      {hideSwitcher ? (
+        <div className="flex items-center justify-between gap-2 border-b border-purple-900/30 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center border border-indigo-500/30">
+              <Users className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-black text-white">إدارة المجموعات والسناتر</h2>
+              <p className="text-[10px] text-indigo-300/80">المجموعات الدراسية، الحضور، وتوزيع مواعيد السناتر</p>
+            </div>
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-purple-900/80 text-purple-200">
+              {activeGroups.length} مجموعات
             </span>
-          </button>
+          </div>
 
-          {/* Tab 2: Individual Students */}
           <button
             type="button"
-            onClick={() => setActiveTab('individuals')}
-            className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-black transition-all cursor-pointer ${
-              activeTab === 'individuals'
-                ? 'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg shadow-indigo-950/40 scale-[1.02]'
-                : 'text-slate-400 hover:text-white'
-            }`}
+            onClick={() => setShowAddGroupModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md shadow-purple-950/40 transition active:scale-95 cursor-pointer"
           >
-            <User className="w-4 h-4" />
-            <span>الطلاب الفرديين</span>
-            <span
-              className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                activeTab === 'individuals'
-                  ? 'bg-indigo-900/80 text-indigo-200'
-                  : 'bg-slate-800 text-slate-400'
-              }`}
-            >
-              {individualStudents.length}
-            </span>
+            <Plus className="w-4 h-4" />
+            <span>مجموعة جديدة</span>
           </button>
         </div>
+      ) : (
+        <div className="flex items-center justify-between gap-2 border-b border-purple-900/30 pb-3">
+          <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-inner w-full sm:w-auto">
+            {/* Tab 1: Groups */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('groups')}
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                activeTab === 'groups'
+                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-950/40 scale-[1.02]'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              <span>المجموعات (السناتر)</span>
+              <span
+                className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                  activeTab === 'groups'
+                    ? 'bg-purple-900/80 text-purple-200'
+                    : 'bg-slate-800 text-slate-400'
+                }`}
+              >
+                {activeGroups.length}
+              </span>
+            </button>
 
-        {/* Quick Add Button in Header */}
-        <button
-          type="button"
-          onClick={() => setShowChoiceModal(true)}
-          className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md shadow-purple-950/40 transition active:scale-95 cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>إضافة جديدة</span>
-        </button>
-      </div>
+            {/* Tab 2: Individual Students */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('individuals')}
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                activeTab === 'individuals'
+                  ? 'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg shadow-indigo-950/40 scale-[1.02]'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <User className="w-4 h-4" />
+              <span>الطلاب الفرديين</span>
+              <span
+                className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                  activeTab === 'individuals'
+                    ? 'bg-indigo-900/80 text-indigo-200'
+                    : 'bg-slate-800 text-slate-400'
+                }`}
+              >
+                {individualStudents.length}
+              </span>
+            </button>
+          </div>
+
+          {/* Quick Add Button in Header */}
+          <button
+            type="button"
+            onClick={() => setShowChoiceModal(true)}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md shadow-purple-950/40 transition active:scale-95 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>إضافة جديدة</span>
+          </button>
+        </div>
+      )}
 
       {/* ------------------------------------------------------------- */}
       {/* Search & Filter Bar                                           */}

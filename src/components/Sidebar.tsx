@@ -14,6 +14,8 @@ import {
   X,
   ShieldCheck,
   Globe,
+  Library,
+  Building2,
 } from 'lucide-react';
 import { TeacherProfile } from '../types';
 import { ThemeSidebarToggle } from './ThemeToggle';
@@ -43,14 +45,11 @@ export function Sidebar({ isOpen, onClose, activeItem, onSelect, profile }: Side
 
   const menuItems = [
     { id: 'home', label: t('nav.home', 'الرئيسية'), icon: LayoutGrid },
-    { id: 'students', label: t('nav.students', 'المجموعات والطلاب'), icon: Users },
-    { id: 'appointments', label: t('nav.appointments', 'المواعيد'), icon: Calendar },
-    { id: 'classes', label: t('nav.classes', 'الحصص'), icon: BookOpen },
-    { id: 'profits', label: t('nav.profits', 'الأرباح'), icon: DollarSign },
-    { id: 'expenses', label: t('nav.expenses', 'المصروفات'), icon: Wallet },
-    { id: 'reports', label: t('nav.reports', 'التقارير'), icon: BarChart3 },
-    { id: 'reminders', label: t('nav.reminders', 'التذكيرات'), icon: CheckSquare, defaultActive: true },
-    { id: 'notifications', label: t('nav.notifications', 'الإشعارات'), icon: Bell },
+    { id: 'students', label: 'الطلاب الفرديين', icon: Users },
+    { id: 'groups', label: 'المجموعات والسناتر', icon: Building2 },
+    { id: 'financial', label: 'السجل المالي والأرباح', icon: DollarSign },
+    { id: 'appointments', label: 'المواعيد والحصص', icon: Calendar },
+    { id: 'library', label: 'مكتبتي', icon: Library },
     { id: 'settings', label: t('nav.settings', 'الإعدادات'), icon: Settings },
   ];
 
@@ -148,7 +147,7 @@ export function Sidebar({ isOpen, onClose, activeItem, onSelect, profile }: Side
           <div className="flex-1 overflow-y-auto p-3 space-y-1.5" id="sidebar-nav-menu">
             {menuItems.map((item) => {
               const Icon = item.icon;
-              const isActive = activeItem === item.id || (!activeItem && item.defaultActive);
+              const isActive = activeItem === item.id || (!activeItem && item.id === 'home');
 
               return (
                 <button
