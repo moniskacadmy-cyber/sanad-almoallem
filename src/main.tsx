@@ -46,11 +46,19 @@ const rootElement = document.getElementById('root');
 const isParentPortal =
   typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('parent');
 const ParentPortal = React.lazy(() => import('./components/ParentPortal'));
+// Public teacher page (/t/slug) and teachers directory (/teachers): no login, no teacher app, no Firebase.
+const isPublicPage =
+  typeof window !== 'undefined' && (window.location.pathname.startsWith('/t/') || window.location.pathname === '/teachers');
+const PublicTeacherPage = React.lazy(() => import('./components/PublicTeacherPage'));
 
 if (rootElement) {
   createRoot(rootElement).render(
     <ErrorBoundary>
-      {isParentPortal ? (
+      {isPublicPage ? (
+        <React.Suspense fallback={null}>
+          <PublicTeacherPage />
+        </React.Suspense>
+      ) : isParentPortal ? (
         <React.Suspense fallback={null}>
           <ParentPortal />
         </React.Suspense>
