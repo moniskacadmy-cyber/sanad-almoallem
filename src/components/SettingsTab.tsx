@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { PublicPagePanel } from './PublicPagePanel';
 import { useTranslation } from 'react-i18next';
 import { TeacherProfile, Student, ScheduleSlot, LibraryItem, BackupData, ReminderLog, ReminderSettings, DEFAULT_WHATSAPP_TEMPLATES, SUPPORTED_CURRENCIES, NotificationPreferences, DEFAULT_NOTIFICATION_PREFERENCES, DoNotDisturbSettings, DEFAULT_DND_SETTINGS, isInDoNotDisturbPeriod } from '../types';
 import { getStoredNotificationPrefs } from './NotificationCenter';
@@ -1369,6 +1370,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </div>
         )}
       </div>
+
+      <PublicPagePanel profile={profile} />
 
       {/* Focus Mode Toggle */}
       <div className="p-4 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-between">

@@ -11,6 +11,12 @@ import fs from 'fs';
 import { getPauseEndingSoonStudents, isStudentPaused } from './src/services/studentStatus.js';
 import { createRemindersRouter, sendWhatsAppReminderTemplate } from './src/server/remindersCron.js';
 import {
+  normalizeSlug,
+  sanitizePublicProfile,
+  toPublicView,
+  validateBooking,
+} from './src/server/publicPage.js';
+import {
   buildParentView,
   clampExpiryDays,
   generateParentCode,
@@ -1204,6 +1210,176 @@ app.post('/api/parent/data', userRateLimiter, async (req, res) => {
   } catch (err) {
     console.error('parent data error:', err);
     return res.status(500).json({ error: 'تعذر تحميل البيانات، حاول مرة أخرى.' });
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// Public teacher page + booking requests. Everything goes through the server (Admin SDK): the collections
+// `publicTeachers` and `bookingRequests` are closed to clients by the Firestore rules. Only whitelisted
+// public fields are ever returned and student data is never involved.
+// ---------------------------------------------------------------------------------------------
+async function bookingRateLimiter(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const key = `book:${req.ip || 'anon'}`;
+  const result = await incrementRedisCounter(`ratelimit:${key}`, 3600, 5);
+  const blocked = result.limited || (result.unavailable && !checkAndIncrementMemoryAiBucket(key, 3600_000, 5));
+  if (blocked) return res.status(429).json({ error: 'تم إرسال طلبات كتيرة، حاول بعد ساعة.' });
+  next();
+}
+
+app.get('/api/public/profile', verifyFirebaseToken, userRateLimiter, async (req, res) => {
+  try {
+    const uid = (req as any).user?.uid as string;
+    const snap = await getAdminDb().collection('publicTeachers').where('teacherId', '==', uid).limit(1).get();
+    if (snap.empty) return res.json({ success: true, profile: null });
+    const d = snap.docs[0].data();
+    return res.json({ success: true, profile: { ...toPublicView(d), enabled: d.enabled === true, directoryListed: d.directoryListed === true } });
+  } catch (err) {
+    console.error('public profile read error:', err);
+    return res.status(500).json({ error: 'تعذر قراءة الصفحة العامة.' });
+  }
+});
+
+app.post('/api/public/profile', verifyFirebaseToken, userRateLimiter, async (req, res) => {
+  try {
+    const uid = (req as any).user?.uid as string;
+    const body = getBodyObject(req);
+    const slug = normalizeSlug(body.slug);
+    if (!slug) return res.status(400).json({ error: 'الرابط لازم يكون 3 إلى 40 حرف (حروف وأرقام وشرطة فقط).' });
+    const data = sanitizePublicProfile(body);
+    if (data.name.length < 2 || data.subject.length < 2) return res.status(400).json({ error: 'اكتب الاسم والمادة.' });
+
+    const dbAdmin = getAdminDb();
+    const ref = dbAdmin.collection('publicTeachers').doc(slug);
+    const [existing, mine] = await Promise.all([
+      ref.get(),
+      dbAdmin.collection('publicTeachers').where('teacherId', '==', uid).get(),
+    ]);
+    if (existing.exists && (existing.data() as any).teacherId !== uid) {
+      return res.status(409).json({ error: 'الرابط ده مستخدم، اختار اسم تاني.' });
+    }
+    const batch = dbAdmin.batch();
+    mine.forEach((d: any) => {
+      if (d.id !== slug) batch.delete(d.ref);
+    });
+    batch.set(ref, {
+      ...data,
+      directoryListed: data.enabled && data.directoryListed,
+      slug,
+      teacherId: uid,
+      updatedAtMs: Date.now(),
+    });
+    await batch.commit();
+    return res.json({ success: true, slug });
+  } catch (err) {
+    console.error('public profile save error:', err);
+    return res.status(500).json({ error: 'تعذر حفظ الصفحة العامة.' });
+  }
+});
+
+app.get('/api/public/teacher', userRateLimiter, async (req, res) => {
+  try {
+    const slug = normalizeSlug(typeof req.query.slug === 'string' ? decodeURIComponent(req.query.slug) : '');
+    if (!slug) return res.status(404).json({ error: 'الصفحة غير موجودة.' });
+    const snap = await getAdminDb().collection('publicTeachers').doc(slug).get();
+    if (!snap.exists || (snap.data() as any).enabled !== true) return res.status(404).json({ error: 'الصفحة غير موجودة.' });
+    return res.json({ success: true, teacher: toPublicView(snap.data() as any) });
+  } catch (err) {
+    console.error('public teacher read error:', err);
+    return res.status(500).json({ error: 'تعذر تحميل الصفحة.' });
+  }
+});
+
+app.get('/api/public/directory', userRateLimiter, async (req, res) => {
+  try {
+    const q = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 60) : '';
+    const snap = await getAdminDb()
+      .collection('publicTeachers')
+      .where('enabled', '==', true)
+      .where('directoryListed', '==', true)
+      .limit(200)
+      .get();
+    let list = snap.docs.map((d: any) => toPublicView(d.data()));
+    if (q) list = list.filter((t: any) => `${t.name} ${t.subject} ${t.city}`.includes(q));
+    return res.json({ success: true, teachers: list.slice(0, 60).map((t: any) => ({ ...t, bio: t.bio.slice(0, 120) })) });
+  } catch (err) {
+    console.error('public directory error:', err);
+    return res.status(500).json({ error: 'تعذر تحميل الدليل.' });
+  }
+});
+
+app.post('/api/public/book', bookingRateLimiter, async (req, res) => {
+  try {
+    const body = getBodyObject(req);
+    const slug = normalizeSlug(body.slug);
+    const check = validateBooking(body);
+    if (!check.ok) return res.status(400).json({ error: check.error });
+    if (!slug) return res.status(404).json({ error: 'الصفحة غير موجودة.' });
+
+    const dbAdmin = getAdminDb();
+    const t = await dbAdmin.collection('publicTeachers').doc(slug).get();
+    if (!t.exists || (t.data() as any).enabled !== true) return res.status(404).json({ error: 'الصفحة غير موجودة.' });
+    const teacherId = (t.data() as any).teacherId as string;
+
+    await dbAdmin.collection('bookingRequests').add({
+      ...check.value,
+      teacherId,
+      slug,
+      status: 'pending',
+      createdAtMs: Date.now(),
+    });
+
+    // Best effort: tell the teacher on the phone. A push failure must never fail the booking.
+    try {
+      const { tokens } = await loadDeviceTokens(dbAdmin, teacherId);
+      if (tokens.length) {
+        await sendPush(
+          getAdminMessaging(getApps()[0]),
+          tokens,
+          { title: 'طلب حجز جديد 📅', body: `${check.value.studentName} طلب حجز حصة من صفحتك العامة.`, tag: `booking-${Date.now()}` },
+          { kind: 'booking' },
+          86400
+        );
+      }
+    } catch (pushErr) {
+      console.warn('booking push failed:', pushErr);
+    }
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('booking error:', err);
+    return res.status(500).json({ error: 'تعذر إرسال الطلب، حاول مرة أخرى.' });
+  }
+});
+
+app.get('/api/public/bookings', verifyFirebaseToken, userRateLimiter, async (req, res) => {
+  try {
+    const uid = (req as any).user?.uid as string;
+    const snap = await getAdminDb().collection('bookingRequests').where('teacherId', '==', uid).limit(200).get();
+    const rows = snap.docs
+      .map((d: any) => ({ id: d.id, ...d.data() }))
+      .sort((a: any, b: any) => (b.createdAtMs || 0) - (a.createdAtMs || 0))
+      .slice(0, 100);
+    return res.json({ success: true, bookings: rows });
+  } catch (err) {
+    console.error('bookings read error:', err);
+    return res.status(500).json({ error: 'تعذر تحميل الطلبات.' });
+  }
+});
+
+app.post('/api/public/bookings/decide', verifyFirebaseToken, userRateLimiter, async (req, res) => {
+  try {
+    const uid = (req as any).user?.uid as string;
+    const body = getBodyObject(req);
+    const id = typeof body.id === 'string' ? body.id : '';
+    const status = body.status === 'approved' || body.status === 'rejected' ? body.status : '';
+    if (!id || id.includes('/') || !status) return res.status(400).json({ error: 'بيانات غير صالحة.' });
+    const ref = getAdminDb().collection('bookingRequests').doc(id);
+    const snap = await ref.get();
+    if (!snap.exists || (snap.data() as any).teacherId !== uid) return res.status(404).json({ error: 'الطلب غير موجود.' });
+    await ref.update({ status, decidedAtMs: Date.now() });
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('booking decide error:', err);
+    return res.status(500).json({ error: 'تعذر تحديث الطلب.' });
   }
 });
 
