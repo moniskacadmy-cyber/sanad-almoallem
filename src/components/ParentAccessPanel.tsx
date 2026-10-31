@@ -17,8 +17,8 @@ interface Props {
 }
 
 /** لوحة المعلم: إنشاء كود/رابط ولي الأمر (قراءة فقط) وإلغاؤه، وإظهار الرصيد، واختيار المذكرات اللي تظهر له. */
-export const ParentAccessPanel: React.FC<Props> = ({ teacherId, teacherName, student }) => {
-  const [open, setOpen] = useState(false);
+export const ParentAccessPanel: React.FC<Props & { defaultOpen?: boolean }> = ({ teacherId, teacherName, student, defaultOpen = false }) => {
+  const [open, setOpen] = useState(defaultOpen);
   const [link, setLink] = useState<ParentLinkInfo | null>(null);
   const [days, setDays] = useState(90);
   const [busy, setBusy] = useState(false);
