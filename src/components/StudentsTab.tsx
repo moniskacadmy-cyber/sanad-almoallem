@@ -1812,6 +1812,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({ profile, st
       </div>
 
       {/* Students List */}
+      <p className="text-center text-[10px] text-slate-500" dir="ltr">
+        v{String((import.meta as any).env?.VITE_BUILD_ID || 'dev')}
+      </p>
       {filteredStudents.length === 0 ? (
         <div className="rounded-2xl bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 p-8 text-center">
           <BookOpen className="w-10 h-10 mx-auto text-purple-600 dark:text-purple-400/60 mb-2" />
