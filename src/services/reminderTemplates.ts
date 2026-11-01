@@ -3,7 +3,11 @@
  * instead of the literal student name / amounts, so the next time it is opened the dynamic parts
  * (name, amount due, remaining lessons...) are filled with the CURRENT values, not stale ones.
  */
-export type ReminderKind = 'schedule' | 'dues' | 'prepaid' | 'custom';
+export type ReminderKind = 'schedule' | 'dues' | 'prepaid' | 'custom' | 'welcome';
+
+/** Default group welcome message (editable + saveable by the teacher). */
+export const DEFAULT_GROUP_WELCOME = `أهلاً ومرحباً بكم جميعاً في بيئتنا التعليمية المباركة (أكاديمية مؤنسك / سند المعلم).
+يسعدني انضمامكم معنا لنبدأ سوياً رحلة تعليمية متميزة ومنظمة نحو التفوق والنجاح. نهدف هنا إلى تقديم محتوى علمي راقٍ ومتابعة دقيقة لكل طالب وطالبة لتحقيق أفضل النتائج بإذن الله.\n\n📌 تنبيهات هامة لضمان أفضل تجربة:\n\n• يُرجى مراجعة مواعيد الحصص الخاصة بكم والمتابعة المستمرة عبر الجدول.\n• سيتم نشر التذكيرات والمواعيد بشكل منتظم، مع مراعاة الفروق الزمنية لدولتنا الحبيبة والدول المجاورة لضمان التنسيق التام.\n• هذا الجروب مخصص للتواصل الفعّال وكل ما يخص العملية التعليمية.\n\nنسأل الله التوفيق لنا ولكم، وبداية موفقة لجميع الطلاب والطالبات.\nمع خالص تحياتي وتقديري.`;
 
 export type ReminderVars = Record<string, string>;
 

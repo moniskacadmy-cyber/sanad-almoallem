@@ -8,7 +8,7 @@ import { StudentStatusModal } from './StudentStatusModal';
 import { HourlyPaymentDialog } from './HourlyPaymentDialog';
 import { ParentAccessPanel } from './ParentAccessPanel';
 import { appendParentLink } from '../services/parentLink';
-import { templatize, fillTemplate, studentWord, teacherWord, swapWord, type ReminderKind } from '../services/reminderTemplates';
+import { templatize, fillTemplate, DEFAULT_GROUP_WELCOME, studentWord, teacherWord, swapWord, type ReminderKind } from '../services/reminderTemplates';
 import { StudentPdfExportModal } from './StudentPdfExportModal';
 import { PerformanceInsights } from './PerformanceInsights';
 import { GroupManagementTab } from './GroupManagementTab';
@@ -273,7 +273,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
 
   // WhatsApp Reminder Modal State
   const [reminderModalStudent, setReminderModalStudent] = useState<Student | null>(null);
-  const [reminderType, setReminderType] = useState<'schedule' | 'dues' | 'prepaid' | 'custom'>('schedule');
+  const [reminderType, setReminderType] = useState<ReminderKind>('schedule');
   const [reminderCustomText, setReminderCustomText] = useState('');
   const [copiedReminder, setCopiedReminder] = useState(false);
   const [saveReminderForAll, setSaveReminderForAll] = useState(false);
@@ -1379,8 +1379,9 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
 
   const generateReminderText = (
     student: Student,
-    type: 'schedule' | 'dues' | 'prepaid' | 'custom'
+    type: ReminderKind
   ): string => {
+    if (type === 'welcome') return DEFAULT_GROUP_WELCOME;
     const teacherName = profile.name || 'معلمك';
     const studentName = student.name;
     const subject = student.subject || profile.subject || 'المادة';
@@ -1492,6 +1493,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
     if (!reminderModalStudent) return;
     setReminderType(type);
     setReminderSaveNotice(null);
+    setSaveReminderForAll(type === 'welcome'); // the group welcome is shared by everyone
     setReminderCustomText(buildReminderText(reminderModalStudent, type));
   };
 
@@ -3990,11 +3992,12 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
             {/* Reminder Type Selector Tabs */}
             <div className="space-y-1.5">
               <label className="block text-[11px] font-bold text-slate-300">اختر نوع التذكير:</label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
                 {[
                   { id: 'schedule', label: 'موعد الحصة ⏰' },
                   { id: 'dues', label: 'المستحقات 💰' },
                   { id: 'prepaid', label: 'رصيد الحصص ⏳' },
+                  { id: 'welcome', label: 'ترحيب بالمجموعة 👋' },
                   { id: 'custom', label: 'رسالة مخصصة ✍️' },
                 ].map((tab) => (
                   <button
