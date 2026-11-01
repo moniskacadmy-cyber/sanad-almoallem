@@ -1,10 +1,11 @@
-// Firebase Service Worker for Background Web Push Notifications
-// Reads configuration dynamically from query parameters passed during registration.
+// Firebase Service Worker for Background Web Push Notifications (سند المعلم)
+// يدعم استقبال الإشعارات في الخلفية عند إغلاق التطبيق والتوجيه الذكي عند النقر
 
 importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging-compat.js');
 
-function getFirebaseConfigFromLocation() {
+// استخراج إعدادات Firebase Project ديناميكياً من معلمات الرابط أو الاعتماد على إعدادات المشروع الافتراضية
+function getFirebaseConfig() {
   const params = new URLSearchParams(self.location.search);
   const apiKey = params.get('apiKey');
   const projectId = params.get('projectId');
@@ -17,25 +18,26 @@ function getFirebaseConfigFromLocation() {
     return {
       apiKey,
       projectId,
-      messagingSenderId: messagingSenderId || undefined,
-      appId: appId || undefined,
+      messagingSenderId: messagingSenderId || '234541494466',
+      appId: appId || '1:234541494466:web:b040e478d26a745f400b5b',
       authDomain: authDomain || `${projectId}.firebaseapp.com`,
       storageBucket: storageBucket || `${projectId}.firebasestorage.app`,
     };
   }
 
+  // إعدادات Firebase Project الافتراضية لتطبيق سند المعلم
   return {
     apiKey: 'AIzaSyBOWJa3xUpdSJIfT1MwDO5UP9LJvC41WkY',
+    authDomain: 'sanadak-3cc89.firebaseapp.com',
     projectId: 'sanadak-3cc89',
+    storageBucket: 'sanadak-3cc89.firebasestorage.app',
     messagingSenderId: '234541494466',
     appId: '1:234541494466:web:b040e478d26a745f400b5b',
-    authDomain: 'sanadak-3cc89.firebaseapp.com',
-    storageBucket: 'sanadak-3cc89.firebasestorage.app',
   };
 }
 
-const firebaseConfig = getFirebaseConfigFromLocation();
-let fcmSdkReady = false; // when true, onBackgroundMessage below shows the notification (the raw push listener must not)
+const firebaseConfig = getFirebaseConfig();
+let fcmSdkReady = false;
 
 if (firebaseConfig.apiKey && firebaseConfig.projectId) {
   try {
@@ -43,14 +45,15 @@ if (firebaseConfig.apiKey && firebaseConfig.projectId) {
     const messaging = firebase.messaging();
     fcmSdkReady = true;
 
+    // استقبال الإشعارات في الخلفية وتحويلها إلى Notification ناطق وتنبيه تفاعلي
     messaging.onBackgroundMessage((payload) => {
-      console.log('[firebase-messaging-sw.js] Received background message:', payload);
-      const notificationTitle = payload.notification?.title || payload.data?.title || 'تذكير بالحصة ⏰';
+      console.log('[firebase-messaging-sw.js] Received background message: ', payload);
+
+      const notificationTitle = payload.notification?.title || payload.data?.title || 'تذكير حصة جديدة ⏰';
       const notificationOptions = {
-        body: payload.notification?.body || payload.data?.body || 'لديك حصة دراسية قريبة.',
-        icon: '/pwa-192x192.png',
-        badge: '/favicon.ico',
-        // One notification per class/task (two students at the same time must not replace each other)
+        body: payload.notification?.body || payload.data?.body || 'لديك حصة قادمة الآن!',
+        icon: '/icon-192.png', // مسار أيقونة تطبيقك
+        badge: '/badge-icon.png',
         tag: [payload.data?.tag || 'lesson-reminder', payload.data?.scheduleId || payload.data?.groupSlotId || payload.data?.taskId || '']
           .filter(Boolean)
           .join('-'),
@@ -58,8 +61,11 @@ if (firebaseConfig.apiKey && firebaseConfig.projectId) {
         requireInteraction: true,
         silent: false,
         timestamp: Date.now(),
-        vibrate: [300, 150, 300, 150, 300],
-        data: payload.data || {},
+        vibrate: [200, 100, 200],
+        data: {
+          url: payload.data?.url || payload.data?.click_action || '/',
+          ...payload.data,
+        },
         actions:
           payload.data?.kind === 'pause-ending'
             ? [
@@ -72,11 +78,11 @@ if (firebaseConfig.apiKey && firebaseConfig.projectId) {
       self.registration.showNotification(notificationTitle, notificationOptions);
     });
   } catch (err) {
-    console.warn('[firebase-messaging-sw.js] Initialization warning:', err);
+    console.warn('[firebase-messaging-sw.js] Firebase initialization warning:', err);
   }
 }
 
-// Auto claim and skip waiting on install/activate to prevent stale service workers
+// التثبيت والتفعيل الفوري للـ Service Worker لمنع التداخل والـ Cache القديم
 self.addEventListener('install', () => {
   self.skipWaiting();
 });
@@ -85,50 +91,58 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-// Fallback native push event listener when browser wakes service worker
-self.addEventListener('push', (event) => {
-  if (fcmSdkReady || !event.data) return;
-  try {
-    const payload = event.data.json();
-    const title = payload.notification?.title || payload.data?.title || 'سند المعلم 🔔';
-    const body = payload.notification?.body || payload.data?.body || 'لديك تذكير جديد بجدول الحصص والمهام.';
-    const options = {
-      body,
-      icon: '/pwa-192x192.png',
-      badge: '/favicon.ico',
-      tag: payload.data?.tag || 'sanad-push',
-      renotify: true,
-      requireInteraction: true,
-      vibrate: [200, 100, 200],
-      data: payload.data || {},
-    };
-    event.waitUntil(self.registration.showNotification(title, options));
-  } catch (e) {
-    console.warn('[firebase-messaging-sw.js] Push parse note:', e);
-  }
-});
-
+// التعامل مع النقر على الإشعار المجدول وإعادة التوجيه بسلاسة
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  // Pause-ending reminder: the two buttons (or a tap) tell the app what to do.
+  const targetUrl = event.notification.data?.url || '/';
+
+  // معالجة إجراءات إيقاف مؤقت إذا وجدت
   const isPause = event.notification.data && event.notification.data.kind === 'pause-ending';
   const pauseAction = isPause
     ? event.action === 'restore_old' || event.action === 'choose_new'
       ? event.action
       : 'review'
     : null;
-  const targetUrl = pauseAction ? '/?pauseAction=' + pauseAction : '/';
+
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      for (const client of clientList) {
-        if (client.url && 'focus' in client) {
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      for (let client of windowClients) {
+        if ((client.url === targetUrl || client.url.includes(targetUrl)) && 'focus' in client) {
           if (pauseAction) client.postMessage({ type: 'pause-action', action: pauseAction });
           return client.focus();
         }
       }
       if (clients.openWindow) {
-        return clients.openWindow(targetUrl);
+        const finalUrl = pauseAction ? '/?pauseAction=' + pauseAction : targetUrl;
+        return clients.openWindow(finalUrl);
       }
     })
   );
+});
+
+// Fallback native push event listener when browser wakes service worker directly
+self.addEventListener('push', (event) => {
+  if (fcmSdkReady || !event.data) return;
+  try {
+    const payload = event.data.json();
+    const title = payload.notification?.title || payload.data?.title || 'تذكير حصة جديدة ⏰';
+    const body = payload.notification?.body || payload.data?.body || 'لديك حصة قادمة الآن!';
+    const options = {
+      body,
+      icon: '/icon-192.png',
+      badge: '/badge-icon.png',
+      tag: payload.data?.tag || 'sanad-push',
+      renotify: true,
+      requireInteraction: true,
+      vibrate: [200, 100, 200],
+      data: {
+        url: payload.data?.url || payload.data?.click_action || '/',
+        ...payload.data,
+      },
+      actions: [{ action: 'open', title: 'فتح التطبيق 📱' }],
+    };
+    event.waitUntil(self.registration.showNotification(title, options));
+  } catch (e) {
+    console.warn('[firebase-messaging-sw.js] Native push fallback parse note:', e);
+  }
 });
