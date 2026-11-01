@@ -1,0 +1,21 @@
+# Free backup scheduler for push reminders (every 5 minutes). It only runs if the repository secrets
+# CRON_SECRET (same value as on Vercel) and APP_URL (e.g. https://sanad-almoallem-three.vercel.app) exist.
+name: Reminders cron
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /api/reminders/cron
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          if [ -z "$CRON_SECRET" ] || [ -z "$APP_URL" ]; then
+            echo "CRON_SECRET / APP_URL not set - skipping."
+            exit 0
+          fi
+          curl -sS --max-time 50 -H "Authorization: Bearer $CRON_SECRET" "$APP_URL/api/reminders/cron" || echo "cron call failed"

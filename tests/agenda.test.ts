@@ -9,6 +9,7 @@ import {
   getIndividualAgenda,
   sortAgenda,
   dueForReminder,
+  effectiveLeadMinutes,
   isInMorningWindow,
   isMutedByDnd,
   formatTimeArabic,
@@ -178,4 +179,16 @@ test('buildPauseEndingMessage: empty -> null, lists names and days', () => {
   assert.match(m.body, /أحمد \(اليوم\)/);
   assert.match(m.body, /بسمة \(غدًا\)/);
   assert.equal(m.tag, 'pause-ending');
+});
+
+test('effectiveLeadMinutes widens the window to the cron gap so no class is skipped', () => {
+  assert.equal(effectiveLeadMinutes(15, 0), 15);
+  assert.equal(effectiveLeadMinutes(15, 5), 15);
+  assert.equal(effectiveLeadMinutes(15, 30), 30);
+  assert.equal(effectiveLeadMinutes(15, 500), 60);
+  assert.equal(effectiveLeadMinutes(NaN, 0), 15);
+  // class at :45 with ticks at :16 and :46 -> at the :16 tick the diff is 29, inside the widened 30 window
+  const items = [{ id: 'a', minutes: 29 } as any];
+  assert.equal(dueForReminder(items, 0, effectiveLeadMinutes(15, 30)).length, 1);
+  assert.equal(dueForReminder(items, 0, 15).length, 0);
 });

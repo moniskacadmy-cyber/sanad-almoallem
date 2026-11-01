@@ -33,6 +33,7 @@ import {
   buildClassReminderMessage,
   buildPauseEndingMessage,
   dueForReminder,
+  effectiveLeadMinutes,
   getGroupAgenda,
   getIndividualAgenda,
   isInMorningWindow,
@@ -1454,6 +1455,20 @@ app.get('/api/reminders/cron', async (req, res) => {
     const dbAdmin = getAdminDb();
     const messagingAdmin = getAdminMessaging(getApps()[0]);
 
+    // Heartbeat: how long since the previous cron tick? An external scheduler that fires every 30 minutes
+    // would otherwise skip every class that starts between two ticks (the normal window is only
+    // `minutesBefore`). We widen the lookahead to the tick gap so NO class is ever missed.
+    const heartbeatRef = dbAdmin.collection('cronState').doc('reminders');
+    let tickGapMinutes = 0;
+    try {
+      const hb = await heartbeatRef.get();
+      const prevMs = hb.exists ? Number(hb.data()?.lastRunMs) || 0 : 0;
+      if (prevMs > 0) tickGapMinutes = Math.min(60, Math.ceil((Date.now() - prevMs) / 60000));
+      await heartbeatRef.set({ lastRunMs: Date.now(), lastRunAt: new Date().toISOString(), lastGapMinutes: tickGapMinutes }, { merge: true });
+    } catch (hbErr) {
+      console.warn('cron heartbeat unavailable:', hbErr instanceof Error ? hbErr.message : 'unknown');
+    }
+
     // Optimize reads: Query fcmTokens collectionGroup to find only teachers who have active tokens
     const fcmGroupSnap = await dbAdmin.collectionGroup('fcmTokens').get();
 
@@ -1506,7 +1521,9 @@ app.get('/api/reminders/cron', async (req, res) => {
       const tz = teacherData.timezone || 'Africa/Cairo';
       const { todayStr, currentDayOfWeek, currentTotalMinutes } = getTimezoneNowParts(tz);
 
-      const minutesBefore = Number(teacherData.reminderMinutesBefore) || 15;
+      const configuredBefore = Number(teacherData.reminderMinutesBefore) || 15;
+      // Never narrower than the gap between two cron ticks (see heartbeat above), so a slow scheduler can't skip classes.
+      const minutesBefore = effectiveLeadMinutes(configuredBefore, tickGapMinutes);
       const fcmTokens = entry.tokens;
 
       if (fcmTokens.length === 0) continue;
@@ -1642,7 +1659,8 @@ app.get('/api/reminders/cron', async (req, res) => {
           );
 
           await sentRef.set({
-            status: 'sent',
+            // If FCM accepted it for NO device, keep it retryable on the next tick instead of burning the reminder.
+            status: sendResponse.successCount > 0 ? 'sent' : 'failed',
             scheduleId: schedDoc.id,
             teacherId,
             day: todayStr,
@@ -1659,10 +1677,7 @@ app.get('/api/reminders/cron', async (req, res) => {
           sendResponse.responses.forEach((resp: any, idx: number) => {
             if (!resp.success && resp.error) {
               const errCode = resp.error.code;
-              if (
-                errCode === 'messaging/invalid-registration-token' ||
-                errCode === 'messaging/registration-token-not-registered'
-              ) {
+              if (DEAD_TOKEN_CODES.has(errCode)) {
                 const badToken = fcmTokens[idx];
                 if (badToken) {
                   const docPath = entry.tokenDocPaths.get(badToken);
@@ -1870,10 +1885,12 @@ app.get('/api/reminders/cron', async (req, res) => {
       }
     }
 
+    console.log('cron tick', JSON.stringify({ teachersChecked, notificationsSent, tickGapMinutes }));
     return res.json({
       success: true,
       teachersChecked,
       notificationsSent,
+      tickGapMinutes,
     });
   } catch (err: any) {
     console.error('Error in GET /api/reminders/cron:', err);
