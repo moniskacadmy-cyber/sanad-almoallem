@@ -137,6 +137,8 @@ export interface TeacherProfile {
     report?: string;
     lessonPrep?: string;
     absenceReminder?: string;
+    // Default WhatsApp reminder wording for ALL students (stored with {{placeholders}})
+    reminderDefaults?: { schedule?: string; dues?: string; prepaid?: string; custom?: string };
   };
   focusModeEnabled?: boolean;
   onboardingCompleted?: boolean;
@@ -237,6 +239,8 @@ export interface Student {
   teacherId: string;
   ownerUid?: string;
   name: string;
+  // Saved WhatsApp reminder wording for this student (with {{placeholders}}), per reminder type
+  reminderTemplates?: { schedule?: string; dues?: string; prepaid?: string; custom?: string };
   phone?: string;
   parentPhone?: string;
   whatsapp?: string; // legacy support

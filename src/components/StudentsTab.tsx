@@ -8,6 +8,7 @@ import { StudentStatusModal } from './StudentStatusModal';
 import { HourlyPaymentDialog } from './HourlyPaymentDialog';
 import { ParentAccessPanel } from './ParentAccessPanel';
 import { appendParentLink } from '../services/parentLink';
+import { templatize, fillTemplate, type ReminderKind } from '../services/reminderTemplates';
 import { StudentPdfExportModal } from './StudentPdfExportModal';
 import { PerformanceInsights } from './PerformanceInsights';
 import { GroupManagementTab } from './GroupManagementTab';
@@ -25,6 +26,7 @@ import {
   addStudent,
   addStudentWithSchedules,
   updateStudent,
+  updateTeacherProfile,
   deleteStudent,
   subscribeToStudentLessons,
   subscribeToGroups,
@@ -274,6 +276,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
   const [reminderType, setReminderType] = useState<'schedule' | 'dues' | 'prepaid' | 'custom'>('schedule');
   const [reminderCustomText, setReminderCustomText] = useState('');
   const [copiedReminder, setCopiedReminder] = useState(false);
+  const [saveReminderForAll, setSaveReminderForAll] = useState(false);
+  const [reminderSaveNotice, setReminderSaveNotice] = useState<string | null>(null);
   useBackHandler(!!reminderModalStudent, () => setReminderModalStudent(null), 'student_whatsapp_reminder');
 
   // Attendance Modal State
@@ -1432,21 +1436,104 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
     return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر الطالب/ة: *${studentName}*،\n\nبخصوص حصص مادة *${subject}*:\n[اكتب رسالتك وتوجيهاتك هنا]\n\nمع تحيات: *أستاذ ${teacherName}*`;
   };
 
+  /** Current values of the dynamic parts of a reminder (used to fill / extract {{placeholders}}). */
+  const getReminderVars = (student: Student): Record<string, string> => {
+    const sLessons = allLessonsMap[student.id] || [];
+    const unsettled = sLessons.filter((l) => !l.settled && isLessonFinanciallyCounted(l));
+    const hourlyRate = student.hourlyRate || 100;
+    const isMonthly = student.billingType === 'monthly' || (!student.billingType && ((student.groupIds && student.groupIds.length > 0) || student.classType === 'center'));
+    const monthlyDue = student.monthlyFee || (student.customFees && student.groupIds && student.groupIds[0] ? student.customFees[student.groupIds[0]] : 300);
+    const amount = isMonthly
+      ? (student.paymentStatus === 'paid' ? 0 : student.paymentStatus === 'partial' ? Math.round(monthlyDue / 2) : monthlyDue)
+      : unsettled.reduce((acc, l) => acc + (l.cost !== undefined ? l.cost : Math.round(((l.duration || 60) / 60) * (l.hourlyRate || hourlyRate))), 0);
+    const hours = (unsettled.reduce((acc, l) => acc + (l.duration || 60), 0) / 60).toFixed(1);
+    const next = getNextScheduleInfo(student);
+    const vars: Record<string, string> = {
+      studentName: student.name,
+      subject: student.subject || profile.subject || 'المادة',
+      teacherName: profile.name || 'معلمك',
+      amount: String(amount),
+      hours,
+      remaining: String(student.remainingPaidLessons ?? 0),
+    };
+    if (next) {
+      vars.day = next.dayName;
+      vars.date = next.formattedDate;
+      vars.time = next.time;
+      vars.duration = String(next.duration);
+    }
+    return vars;
+  };
+
+  /** Saved wording (student first, then the teacher's general default) or the auto-generated text. */
+  const buildReminderText = (student: Student, type: ReminderKind): string => {
+    const saved = student.reminderTemplates?.[type] || profile.whatsappTemplates?.reminderDefaults?.[type];
+    if (saved) return fillTemplate(saved, getReminderVars(student));
+    return generateReminderText(student, type);
+  };
+
   const handleOpenWhatsAppReminderModal = (s: Student) => {
     setReminderModalStudent(s);
     setCopiedReminder(false);
+    setReminderSaveNotice(null);
+    setSaveReminderForAll(false);
     const sLessons = allLessonsMap[s.id] || [];
     const unsettledLessons = sLessons.filter((l) => !l.settled && isLessonFinanciallyCounted(l));
-    const initialType: 'schedule' | 'dues' | 'prepaid' | 'custom' =
-      unsettledLessons.length > 0 ? 'dues' : 'schedule';
+    const initialType: ReminderKind = unsettledLessons.length > 0 ? 'dues' : 'schedule';
     setReminderType(initialType);
-    setReminderCustomText(generateReminderText(s, initialType));
+    setReminderCustomText(buildReminderText(s, initialType));
   };
 
-  const handleSwitchReminderType = (type: 'schedule' | 'dues' | 'prepaid' | 'custom') => {
+  const handleSwitchReminderType = (type: ReminderKind) => {
     if (!reminderModalStudent) return;
     setReminderType(type);
-    setReminderCustomText(generateReminderText(reminderModalStudent, type));
+    setReminderSaveNotice(null);
+    setReminderCustomText(buildReminderText(reminderModalStudent, type));
+  };
+
+  const hasSavedReminder =
+    !!reminderModalStudent &&
+    !!(reminderModalStudent.reminderTemplates?.[reminderType] || profile.whatsappTemplates?.reminderDefaults?.[reminderType]);
+
+  const handleSaveReminderTemplate = async () => {
+    if (!reminderModalStudent || !reminderCustomText.trim()) return;
+    const stored = templatize(reminderCustomText, getReminderVars(reminderModalStudent));
+    try {
+      if (saveReminderForAll) {
+        const existing = profile.whatsappTemplates || {};
+        await updateTeacherProfile(profile.id, {
+          whatsappTemplates: {
+            ...existing,
+            reminderDefaults: { ...(existing.reminderDefaults || {}), [reminderType]: stored },
+          },
+        });
+        setReminderSaveNotice('✅ اتحفظت كصيغة افتراضية لكل الطلاب.');
+      } else {
+        const next = { ...(reminderModalStudent.reminderTemplates || {}), [reminderType]: stored };
+        await updateStudent(profile.id, reminderModalStudent.id, { reminderTemplates: next });
+        setReminderModalStudent({ ...reminderModalStudent, reminderTemplates: next });
+        setReminderSaveNotice(`✅ اتحفظت كصيغة افتراضية للطالب ${reminderModalStudent.name}.`);
+      }
+    } catch (e) {
+      console.error('save reminder template failed', e);
+      setReminderSaveNotice('❌ ماتحفظتش، جرّب تاني.');
+    }
+  };
+
+  const handleResetReminderTemplate = async () => {
+    if (!reminderModalStudent) return;
+    try {
+      const next = { ...(reminderModalStudent.reminderTemplates || {}) };
+      delete next[reminderType];
+      await updateStudent(profile.id, reminderModalStudent.id, { reminderTemplates: next });
+      const updated = { ...reminderModalStudent, reminderTemplates: next };
+      setReminderModalStudent(updated);
+      // After removing the student's own wording, show the general default (if any) or the generated text.
+      setReminderCustomText(buildReminderText(updated, reminderType));
+      setReminderSaveNotice('↩️ رجعت للصيغة الأصلية.');
+    } catch (e) {
+      setReminderSaveNotice('❌ ماتمسحتش، جرّب تاني.');
+    }
   };
 
   const handleSendReminderViaWhatsApp = () => {
@@ -3925,6 +4012,43 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
                 placeholder="اكتب أو عدل نص التذكير هنا..."
                 className="w-full rounded-2xl bg-slate-950 border border-slate-700/80 p-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-400 transition font-sans leading-relaxed resize-y"
               />
+            </div>
+
+            {/* Save as default template */}
+            <div className="rounded-2xl bg-slate-950/60 border border-slate-800 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleSaveReminderTemplate}
+                  className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold transition cursor-pointer"
+                >
+                  💾 حفظ كصيغة افتراضية
+                </button>
+                {hasSavedReminder && (
+                  <span className="text-[10px] font-bold text-emerald-400">✔ في صيغة محفوظة لهذا النوع</span>
+                )}
+                {reminderModalStudent.reminderTemplates?.[reminderType] && (
+                  <button
+                    type="button"
+                    onClick={handleResetReminderTemplate}
+                    className="text-[11px] font-bold text-slate-400 hover:text-white cursor-pointer"
+                  >
+                    ↩️ الرجوع للأصلي
+                  </button>
+                )}
+              </div>
+              <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={saveReminderForAll}
+                  onChange={(e) => setSaveReminderForAll(e.target.checked)}
+                />
+                <span>احفظها لكل الطلاب (بدل الطالب ده بس)</span>
+              </label>
+              <p className="text-[10px] text-slate-500 leading-relaxed">
+                اسم الطالب والمبلغ والحصص المتبقية بتتحدّث لوحدها كل مرة، ومش هتفضل بالقيمة القديمة.
+              </p>
+              {reminderSaveNotice && <p className="text-[11px] font-bold text-amber-200">{reminderSaveNotice}</p>}
             </div>
 
             {/* Action Buttons */}
