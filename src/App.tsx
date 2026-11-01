@@ -29,6 +29,7 @@ import { OfflineIndicator } from './OfflineIndicator';
 import { AIAssistantChat } from './components/AIAssistantChat';
 import { LoadingFallback } from './components/LoadingFallback';
 import { Sidebar } from './components/Sidebar';
+import { NotificationStatusBanner } from './components/NotificationStatusBanner';
 import { useFirebaseSubscription } from './hooks/useFirebaseSubscription';
 import { ThemeToggleCompact } from './components/ThemeToggle';
 import { OnboardingModal } from './components/OnboardingModal';
@@ -864,6 +865,8 @@ export default function App() {
             </a>
           </div>
         )}
+
+        <NotificationStatusBanner signedIn={!!currentUser && !!profile} />
 
         {/* Main Body Content */}
         <main className="flex-1 p-4 pb-20 overflow-y-auto">

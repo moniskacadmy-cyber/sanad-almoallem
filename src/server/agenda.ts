@@ -283,3 +283,13 @@ export function buildPauseEndingMessage(
     tag: 'pause-ending',
   };
 }
+
+/**
+ * Lookahead window for class reminders. Never narrower than the gap between two cron ticks: with a
+ * scheduler that fires every 30 minutes, a 15-minute window would silently skip half of all classes.
+ */
+export function effectiveLeadMinutes(configuredMinutes: number, tickGapMinutes: number): number {
+  const base = Number.isFinite(configuredMinutes) && configuredMinutes > 0 ? configuredMinutes : 15;
+  const gap = Number.isFinite(tickGapMinutes) && tickGapMinutes > 0 ? Math.min(60, tickGapMinutes) : 0;
+  return Math.max(base, gap);
+}
