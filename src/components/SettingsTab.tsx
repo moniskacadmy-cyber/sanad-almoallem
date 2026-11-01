@@ -267,7 +267,18 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       } else {
         const names: Record<string, string> = { android: 'أندرويد', ios: 'آيفون', computer: 'كمبيوتر', other: 'جهاز' };
         const list = r.devices.map((d) => names[d] || 'جهاز').join('، ');
-        setPushTestNotice(`✅ اتبعت إشعار لـ ${r.sent} من ${r.tokens} جهاز (${list}). شوف الفون الأول!`);
+        const failedOnes = (r.results || []).filter((x) => !x.ok);
+        if (failedOnes.length === 0) {
+          setPushTestNotice(`✅ اتبعت إشعار لـ ${r.sent} من ${r.tokens} جهاز (${list}). شوف الفون الأول!`);
+        } else {
+          const removedCount = failedOnes.filter((x) => x.removed).length;
+          const otherFails = failedOnes.filter((x) => !x.removed);
+          let msg = `✅ وصل الإشعار لـ ${r.sent} جهاز.`;
+          if (removedCount > 0) msg += ` 🧹 اتمسح ${removedCount} جهاز قديم/ميت كان مسجّل بالغلط (متصفح اتمسح أو تطبيق اتعمله إعادة تثبيت) — ده طبيعي ومش مشكلة.`;
+          if (otherFails.length > 0) msg += ` ⚠️ ${otherFails.length} جهاز لسه مردّش (${otherFails.map((x) => names[x.device] || 'جهاز').join('، ')}) — افتح التطبيق على الجهاز ده واضغط الزرار تاني، أو جرّب تاني بعد دقيقة.`;
+          msg += ' اضغط الاختبار مرة كمان لو عاوز تتأكد إن الكل سليم.';
+          setPushTestNotice(msg);
+        }
       }
     } catch (e: any) {
       setPushTestNotice(`❌ ${e?.message || 'حصل خطأ'}`);
