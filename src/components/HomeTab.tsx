@@ -20,6 +20,8 @@ import {
 } from '../services/reminderService';
 import { LiveCountdown } from './LiveCountdown';
 import { LessonFeedbackForm } from './LessonFeedbackForm';
+
+const NO_TOPIC_LABEL = 'حصة (بدون تفاصيل)';
 import { CollapsibleSection } from './CollapsibleSection';
 import { useSettings } from '../context/SettingsContext';
 import { isStudentPaused, getPauseEndingSoonStudents } from '../services/studentStatus';
@@ -511,7 +513,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
 
   // Handle Class Registration
   const handleStartClassSubmit = async (sendWhatsApp: boolean) => {
-    if (!selectedStudentId || !classTopic.trim()) return;
+    if (!selectedStudentId) return;
     const student = students.find((s) => s.id === selectedStudentId);
     if (!student) return;
 
@@ -534,7 +536,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
 
       await addLessonLog(profile.id, student.id, {
         date: todayStr,
-        topic: classTopic.trim(),
+        topic: classTopic.trim() || NO_TOPIC_LABEL,
         homework: classHomework.trim(),
         attendance,
         duration,
@@ -568,7 +570,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           `السلام عليكم، تقرير حصة مادة ${profile.subject} للطالب/ـة: ${student.name}\n` +
           `📅 التاريخ: ${todayArabicName} ${dateFormatted}\n` +
           `🎯 الحالة: ${attendanceAr}\n` +
-          `📖 ما تم شرحه: ${classTopic.trim()}\n` +
+          (classTopic.trim() ? `📖 ما تم شرحه: ${classTopic.trim()}\n` : '') +
           (classHomework.trim() ? `📝 الواجب المطلوب: ${classHomework.trim()}\n` : '') +
           `⭐ التقييم: ${'★'.repeat(rating)}${'☆'.repeat(5 - rating)}\n\n` +
           `تحياتي، أ. ${profile.name}`;
@@ -1076,7 +1078,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs font-medium text-slate-300">
-                    ما تم شرحه *
+                    ما تم شرحه <span className="text-slate-500 font-normal">(اختياري)</span>
                   </label>
                   <VoiceInputButton
                     onTranscript={(transcript) =>
@@ -1117,7 +1119,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
               <div className="pt-2 flex flex-col gap-2">
                 <button
                   type="button"
-                  disabled={savingClass || !selectedStudentId || !classTopic.trim()}
+                  disabled={savingClass || !selectedStudentId}
                   onClick={() => handleStartClassSubmit(true)}
                   className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 py-2.5 text-xs font-bold text-white transition cursor-pointer shadow-lg"
                 >
@@ -1126,7 +1128,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
                 </button>
                 <button
                   type="button"
-                  disabled={savingClass || !selectedStudentId || !classTopic.trim()}
+                  disabled={savingClass || !selectedStudentId}
                   onClick={() => handleStartClassSubmit(false)}
                   className="w-full rounded-xl bg-purple-600/40 hover:bg-purple-600/60 border border-purple-500/40 py-2 text-xs font-bold text-purple-200 transition"
                 >

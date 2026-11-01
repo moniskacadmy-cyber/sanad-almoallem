@@ -1022,7 +1022,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
 
   const handleAddLessonSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedProfileStudent || !newLessonTopic.trim()) return;
+    if (!selectedProfileStudent) return;
 
     if (newLessonAttendance === 'absent' || newLessonAttendance === 'excused') {
       setShowAbsenceModalInProfile(true);
@@ -1037,7 +1037,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
 
       await addLessonLog(profile.id, selectedProfileStudent.id, {
         date: todayStr,
-        topic: newLessonTopic.trim(),
+        topic: newLessonTopic.trim() || 'حصة (بدون تفاصيل)',
         homework: newLessonHomework.trim(),
         attendance: newLessonAttendance,
         duration,
@@ -3378,8 +3378,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
                     type="text"
                     value={newLessonTopic}
                     onChange={(e) => setNewLessonTopic(e.target.value)}
-                    placeholder="ما تم شرحه اليوم بالتفصيل..."
-                    required
+                    placeholder="ما تم شرحه اليوم (اختياري)..."
                     className="flex-1 rounded-xl bg-slate-900 border border-slate-700 px-3 py-1.5 text-xs text-white focus:outline-none focus:border-purple-400"
                   />
                   <VoiceInputButton
