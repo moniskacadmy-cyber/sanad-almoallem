@@ -609,7 +609,7 @@ export async function updateTeacherProfile(teacherId: string, updates: {
     lessonPrep?: string;
     absenceReminder?: string;
     teacherGender?: 'male' | 'female';
-    reminderDefaults?: { schedule?: string; dues?: string; prepaid?: string; custom?: string };
+    reminderDefaults?: { schedule?: string; dues?: string; prepaid?: string; custom?: string; welcome?: string };
   };
   absencePolicy?: {
     allowExcused?: boolean;
