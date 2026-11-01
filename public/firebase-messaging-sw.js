@@ -52,7 +52,7 @@ if (firebaseConfig.apiKey && firebaseConfig.projectId) {
       const notificationTitle = payload.notification?.title || payload.data?.title || 'تذكير حصة جديدة ⏰';
       const notificationOptions = {
         body: payload.notification?.body || payload.data?.body || 'لديك حصة قادمة الآن!',
-        icon: '/icon-192.png', // مسار أيقونة تطبيقك
+        icon: '/icon-192.png',
         badge: '/badge-icon.png',
         tag: [payload.data?.tag || 'lesson-reminder', payload.data?.scheduleId || payload.data?.groupSlotId || payload.data?.taskId || '']
           .filter(Boolean)
@@ -61,7 +61,7 @@ if (firebaseConfig.apiKey && firebaseConfig.projectId) {
         requireInteraction: true,
         silent: false,
         timestamp: Date.now(),
-        vibrate: [200, 100, 200],
+        vibrate: [500, 200, 500, 200, 500],
         data: {
           url: payload.data?.url || payload.data?.click_action || '/',
           ...payload.data,
@@ -134,7 +134,7 @@ self.addEventListener('push', (event) => {
       tag: payload.data?.tag || 'sanad-push',
       renotify: true,
       requireInteraction: true,
-      vibrate: [200, 100, 200],
+      vibrate: [500, 200, 500, 200, 500],
       data: {
         url: payload.data?.url || payload.data?.click_action || '/',
         ...payload.data,
