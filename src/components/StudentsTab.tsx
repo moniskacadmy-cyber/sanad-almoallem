@@ -8,7 +8,7 @@ import { StudentStatusModal } from './StudentStatusModal';
 import { HourlyPaymentDialog } from './HourlyPaymentDialog';
 import { ParentAccessPanel } from './ParentAccessPanel';
 import { appendParentLink } from '../services/parentLink';
-import { templatize, fillTemplate, type ReminderKind } from '../services/reminderTemplates';
+import { templatize, fillTemplate, studentWord, teacherWord, swapWord, type ReminderKind } from '../services/reminderTemplates';
 import { StudentPdfExportModal } from './StudentPdfExportModal';
 import { PerformanceInsights } from './PerformanceInsights';
 import { GroupManagementTab } from './GroupManagementTab';
@@ -1384,13 +1384,15 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
     const teacherName = profile.name || 'معلمك';
     const studentName = student.name;
     const subject = student.subject || profile.subject || 'المادة';
+    const stW = studentWord(student.gender);
+    const teW = teacherWord(profile.whatsappTemplates?.teacherGender);
 
     if (type === 'schedule') {
       const nextSched = getNextScheduleInfo(student);
       if (nextSched) {
-        return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر الطالب/ة: *${studentName}*،\n\nنود تذكيركم بموعد حصة *${subject}* القادمة بإذن الله:\n📅 *اليوم:* ${nextSched.dayName} (${nextSched.formattedDate})\n⏰ *الساعة:* ${nextSched.time}\n📍 *طبيعة الحصة:* ${nextSched.classType}\n⏳ *المدة:* ${nextSched.duration} دقيقة\n\nنرجو الالتزام بالموعد والتأكد من جاهزية الأدوات والكراسة. شاكرين ومقدرين حسن تعاونكم الدائم ✨\n\nمع تحيات: *أستاذ ${teacherName}*`;
+        return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر ${stW}: *${studentName}*،\n\nنود تذكيركم بموعد حصة *${subject}* القادمة بإذن الله:\n📅 *اليوم:* ${nextSched.dayName} (${nextSched.formattedDate})\n⏰ *الساعة:* ${nextSched.time}\n📍 *طبيعة الحصة:* ${nextSched.classType}\n⏳ *المدة:* ${nextSched.duration} دقيقة\n\nنرجو الالتزام بالموعد والتأكد من جاهزية الأدوات والكراسة. شاكرين ومقدرين حسن تعاونكم الدائم ✨\n\nمع تحيات: *${teW} ${teacherName}*`;
       } else {
-        return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر الطالب/ة: *${studentName}*،\n\nنود تذكيركم بموعد حصة *${subject}* القادمة.\nيرجى التنسيق والالتزام بالموعد المحدد.\n\nمع تحيات: *أستاذ ${teacherName}*`;
+        return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر ${stW}: *${studentName}*،\n\nنود تذكيركم بموعد حصة *${subject}* القادمة.\nيرجى التنسيق والالتزام بالموعد المحدد.\n\nمع تحيات: *${teW} ${teacherName}*`;
       }
     }
 
@@ -1414,7 +1416,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
 
       if (isMonthly) {
         const partialNote = isPartial ? ' (تم تسجيل دفعة جزئية والمتبقي)' : '';
-        return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر الطالب/ة: *${studentName}*،\n\nنود إحاطتكم علماً ببيان الاشتراك الشهري لمادة *${subject}*:\n🏫 *نظام الحساب:* اشتراك شهري ثابت (مجموعة)\n💰 *المبلغ المستحق${partialNote}:* ${pendingAmount} ${currency}\n\nنرجو التكرم بسداد المبلغ في أقرب وقت مناسب لكم. شاكرين تعاونكم ودعمكم المستمر لتقدم الطالب ✨\n\nمع تحيات: *أستاذ ${teacherName}*`;
+        return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر ${stW}: *${studentName}*،\n\nنود إحاطتكم علماً ببيان الاشتراك الشهري لمادة *${subject}*:\n🏫 *نظام الحساب:* اشتراك شهري ثابت (مجموعة)\n💰 *المبلغ المستحق${partialNote}:* ${pendingAmount} ${currency}\n\nنرجو التكرم بسداد المبلغ في أقرب وقت مناسب لكم. شاكرين تعاونكم ودعمكم المستمر لتقدم الطالب ✨\n\nمع تحيات: *${teW} ${teacherName}*`;
       }
 
       const lessonsListText = unsettledLessons
@@ -1425,15 +1427,15 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
         )
         .join('\n');
 
-      return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر الطالب/ة: *${studentName}*،\n\nنود إحاطتكم علماً ببيان الحساب والمستحقات الخاصة بحصص مادة *${subject}*:\n💰 *المبلغ المستحق:* ${pendingAmount} ${currency}\n⏱️ *إجمالي الساعات المنفذة:* ${pendingHours} ساعة (${unsettledLessons.length} حصص)\n${lessonsListText ? `\n📋 *تفاصيل الحصص:*\n${lessonsListText}\n` : ''}\nنرجو التكرم بسداد المبلغ في أقرب وقت مناسب لكم. شاكرين تعاونكم ودعمكم المستمر لتقدم الطالب ✨\n\nمع تحيات: *أستاذ ${teacherName}*`;
+      return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر ${stW}: *${studentName}*،\n\nنود إحاطتكم علماً ببيان الحساب والمستحقات الخاصة بحصص مادة *${subject}*:\n💰 *المبلغ المستحق:* ${pendingAmount} ${currency}\n⏱️ *إجمالي الساعات المنفذة:* ${pendingHours} ساعة (${unsettledLessons.length} حصص)\n${lessonsListText ? `\n📋 *تفاصيل الحصص:*\n${lessonsListText}\n` : ''}\nنرجو التكرم بسداد المبلغ في أقرب وقت مناسب لكم. شاكرين تعاونكم ودعمكم المستمر لتقدم الطالب ✨\n\nمع تحيات: *${teW} ${teacherName}*`;
     }
 
     if (type === 'prepaid') {
       const remaining = student.remainingPaidLessons ?? 0;
-      return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر الطالب/ة: *${studentName}*،\n\nنود إحاطتكم علماً بأن رصيد باقة الحصص المدفوعة لمادة *${subject}*:\n⏳ *الرصيد المتبقي:* ${remaining} حصص فقط.\n\nيرجى التكرم بتجديد باقة الحصص لضمان استمرار الحصص بانتظام دون توقف. شاكرين ومقدرين تعاونكم الدائم ✨\n\nمع تحيات: *أستاذ ${teacherName}*`;
+      return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر ${stW}: *${studentName}*،\n\nنود إحاطتكم علماً بأن رصيد باقة الحصص المدفوعة لمادة *${subject}*:\n⏳ *الرصيد المتبقي:* ${remaining} حصص فقط.\n\nيرجى التكرم بتجديد باقة الحصص لضمان استمرار الحصص بانتظام دون توقف. شاكرين ومقدرين تعاونكم الدائم ✨\n\nمع تحيات: *${teW} ${teacherName}*`;
     }
 
-    return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر الطالب/ة: *${studentName}*،\n\nبخصوص حصص مادة *${subject}*:\n[اكتب رسالتك وتوجيهاتك هنا]\n\nمع تحيات: *أستاذ ${teacherName}*`;
+    return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر ${stW}: *${studentName}*،\n\nبخصوص حصص مادة *${subject}*:\n[اكتب رسالتك وتوجيهاتك هنا]\n\nمع تحيات: *${teW} ${teacherName}*`;
   };
 
   /** Current values of the dynamic parts of a reminder (used to fill / extract {{placeholders}}). */
@@ -1455,6 +1457,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
       amount: String(amount),
       hours,
       remaining: String(student.remainingPaidLessons ?? 0),
+      studentWord: studentWord(student.gender),
+      teacherWord: teacherWord(profile.whatsappTemplates?.teacherGender),
     };
     if (next) {
       vars.day = next.dayName;
@@ -1494,6 +1498,35 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
   const hasSavedReminder =
     !!reminderModalStudent &&
     !!(reminderModalStudent.reminderTemplates?.[reminderType] || profile.whatsappTemplates?.reminderDefaults?.[reminderType]);
+
+  const handleChangeStudentGender = async (g: 'male' | 'female') => {
+    if (!reminderModalStudent || reminderModalStudent.gender === g) return;
+    const oldW = studentWord(reminderModalStudent.gender);
+    const newW = studentWord(g);
+    const updated = { ...reminderModalStudent, gender: g };
+    setReminderModalStudent(updated);
+    setReminderCustomText((t) => swapWord(t, oldW, newW));
+    try {
+      await updateStudent(profile.id, reminderModalStudent.id, { gender: g });
+    } catch (e) {
+      console.error('save student gender failed', e);
+      setReminderSaveNotice('❌ الاختيار ماتحفظش، جرّب تاني.');
+    }
+  };
+
+  const handleChangeTeacherGender = async (g: 'male' | 'female') => {
+    const current = profile.whatsappTemplates?.teacherGender;
+    if (current === g) return;
+    setReminderCustomText((t) => swapWord(t, teacherWord(current), teacherWord(g)));
+    try {
+      await updateTeacherProfile(profile.id, {
+        whatsappTemplates: { ...(profile.whatsappTemplates || {}), teacherGender: g },
+      });
+    } catch (e) {
+      console.error('save teacher gender failed', e);
+      setReminderSaveNotice('❌ الاختيار ماتحفظش، جرّب تاني.');
+    }
+  };
 
   const handleSaveReminderTemplate = async () => {
     if (!reminderModalStudent || !reminderCustomText.trim()) return;
@@ -3977,6 +4010,48 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
                     {tab.label}
                   </button>
                 ))}
+              </div>
+            </div>
+
+            {/* Gender (student / teacher) */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-xl bg-slate-950/60 border border-slate-800 p-2 space-y-1">
+                <p className="text-[10px] font-bold text-slate-400">الطالب</p>
+                <div className="grid grid-cols-2 gap-1">
+                  {([['male', 'طالب 👦'], ['female', 'طالبة 👧']] as const).map(([g, label]) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => handleChangeStudentGender(g)}
+                      className={`py-1.5 rounded-lg text-[11px] font-bold border cursor-pointer ${
+                        reminderModalStudent.gender === g
+                          ? 'bg-emerald-600 border-emerald-500 text-white'
+                          : 'bg-slate-900 border-slate-700 text-slate-400'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-xl bg-slate-950/60 border border-slate-800 p-2 space-y-1">
+                <p className="text-[10px] font-bold text-slate-400">المعلم (أنت)</p>
+                <div className="grid grid-cols-2 gap-1">
+                  {([['male', 'أستاذ'], ['female', 'أستاذة']] as const).map(([g, label]) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => handleChangeTeacherGender(g)}
+                      className={`py-1.5 rounded-lg text-[11px] font-bold border cursor-pointer ${
+                        (profile.whatsappTemplates?.teacherGender || 'male') === g
+                          ? 'bg-emerald-600 border-emerald-500 text-white'
+                          : 'bg-slate-900 border-slate-700 text-slate-400'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 

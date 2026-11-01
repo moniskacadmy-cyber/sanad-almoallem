@@ -28,3 +28,15 @@ export function templatize(text: string, vars: ReminderVars): string {
 export function fillTemplate(template: string, vars: ReminderVars): string {
   return template.replace(/\{\{(\w+)\}\}/g, (m, key) => (key in vars ? vars[key] : m));
 }
+
+export type Gender = 'male' | 'female' | undefined;
+
+export const studentWord = (g: Gender) => (g === 'male' ? 'الطالب' : g === 'female' ? 'الطالبة' : 'الطالب/ة');
+export const teacherWord = (g: Gender) => (g === 'female' ? 'أستاذة' : 'أستاذ');
+
+/** Swaps one gendered word for another as a whole Arabic word (so 'الطالب' never matches inside 'الطالبة'). */
+export function swapWord(text: string, from: string, to: string): string {
+  if (from === to) return text;
+  const re = new RegExp(`(?<![\\u0600-\\u06FF])${escapeRe(from)}(?![\\u0600-\\u06FF/])`, 'g');
+  return text.replace(re, to);
+}

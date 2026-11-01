@@ -137,6 +137,7 @@ export interface TeacherProfile {
     report?: string;
     lessonPrep?: string;
     absenceReminder?: string;
+    teacherGender?: 'male' | 'female'; // used for أستاذ / أستاذة in reminder messages
     // Default WhatsApp reminder wording for ALL students (stored with {{placeholders}})
     reminderDefaults?: { schedule?: string; dues?: string; prepaid?: string; custom?: string };
   };
@@ -240,6 +241,7 @@ export interface Student {
   ownerUid?: string;
   name: string;
   // Saved WhatsApp reminder wording for this student (with {{placeholders}}), per reminder type
+  gender?: 'male' | 'female'; // طالب / طالبة in reminder messages
   reminderTemplates?: { schedule?: string; dues?: string; prepaid?: string; custom?: string };
   phone?: string;
   parentPhone?: string;
