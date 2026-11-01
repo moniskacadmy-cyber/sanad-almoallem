@@ -270,6 +270,7 @@ export interface TestPushResult {
   failed: number;
   devices: string[];
   errors: string[];
+  results?: { device: string; ok: boolean; code: string; removed: boolean }[];
 }
 
 /** Sends a real push to all devices registered for this teacher (Settings -> test button). */

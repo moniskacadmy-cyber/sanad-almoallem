@@ -1051,6 +1051,15 @@ async function sendPush(
   });
 }
 
+/** FCM error codes that mean the token can never work again (stale/other-project/garbled) -> safe to delete. */
+const DEAD_TOKEN_CODES = new Set([
+  'messaging/invalid-registration-token',
+  'messaging/registration-token-not-registered',
+  'messaging/invalid-argument',
+  'messaging/mismatched-credential',
+  'messaging/sender-id-mismatch',
+]);
+
 /** Deletes tokens that FCM reports as dead, so they are not retried every minute. */
 function removeBadTokens(
   dbAdmin: any,
@@ -1062,7 +1071,7 @@ function removeBadTokens(
   response.responses.forEach((resp: any, idx: number) => {
     if (resp.success || !resp.error) return;
     const code = resp.error.code;
-    if (code !== 'messaging/invalid-registration-token' && code !== 'messaging/registration-token-not-registered') return;
+    if (!DEAD_TOKEN_CODES.has(code)) return;
     const bad = tokens[idx];
     if (!bad) return;
     const docPath = tokenDocPaths?.get(bad) || `teachers/${teacherId}/fcmTokens/${bad}`;
@@ -1965,16 +1974,28 @@ app.post('/api/reminders/test-push', verifyFirebaseToken, userRateLimiter, async
     });
     if (tokens.length === 0) return res.json({ success: true, tokens: 0, sent: 0, failed: 0, devices: [], errors: [] });
 
-    const resp = await sendPush(
-      getAdminMessaging(getApps()[0]),
-      tokens,
-      { title: '🔔 اختبار الإشعارات', body: 'لو وصلك الإشعار ده يبقى جهازك جاهز لاستقبال التذكيرات حتى والتطبيق مقفول.', tag: 'test-push' },
-      { kind: 'test' },
-      300
-    );
+    const testMsg = { title: '🔔 اختبار الإشعارات', body: 'لو وصلك الإشعار ده يبقى جهازك جاهز لاستقبال التذكيرات حتى والتطبيق مقفول.', tag: 'test-push' };
+    const messaging = getAdminMessaging(getApps()[0]);
+    const resp = await sendPush(messaging, tokens, testMsg, { kind: 'test' }, 300);
     removeBadTokens(dbAdmin, uid, tokens, tokenDocPaths, resp);
+    // Retry transient FCM failures once (a flaky network blip must not look like a broken phone).
+    const transient = new Set(['messaging/internal-error', 'messaging/server-unavailable', 'messaging/unknown-error', 'messaging/message-rate-exceeded']);
+    const retryIdx = resp.responses.map((r: any, i: number) => (!r.success && transient.has(r.error?.code) ? i : -1)).filter((i: number) => i >= 0);
+    if (retryIdx.length) {
+      try {
+        const again = await sendPush(messaging, retryIdx.map((i: number) => tokens[i]), testMsg, { kind: 'test' }, 300);
+        again.responses.forEach((r: any, k: number) => { resp.responses[retryIdx[k]] = r; });
+        resp.successCount = resp.responses.filter((r: any) => r.success).length;
+        resp.failureCount = resp.responses.length - resp.successCount;
+      } catch { /* keep first result */ }
+    }
+    const results = resp.responses.map((r: any, i: number) => {
+      const code = r.success ? '' : String(r.error?.code || 'unknown');
+      return { device: devices[i] || 'other', ok: !!r.success, code, removed: !r.success && DEAD_TOKEN_CODES.has(code) };
+    });
     const errors = resp.responses.filter((r: any) => !r.success).map((r: any) => r.error?.code || 'unknown');
-    return res.json({ success: true, tokens: tokens.length, sent: resp.successCount, failed: resp.failureCount, devices, errors });
+    console.error('test-push result', JSON.stringify(results.map((r: any) => ({ d: r.device, ok: r.ok, c: r.code }))));
+    return res.json({ success: true, tokens: tokens.length, sent: resp.successCount, failed: resp.failureCount, devices, errors, results });
   } catch (err) {
     console.error('Error in POST /api/reminders/test-push:', err);
     return res.status(500).json({ error: 'تعذر إرسال الإشعار التجريبي.' });
