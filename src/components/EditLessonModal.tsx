@@ -123,28 +123,43 @@ export const EditLessonModal: React.FC<EditLessonModalProps> = ({
     setConflictError(null);
   }, [isOpen, schedule]);
 
+// Helper function to normalize Arabic text
+const normalizeArabic = (text: string = ''): string => {
+  return text
+    .toString()
+    .toLowerCase()
+    .trim()
+    .replace(/[\u064B-\u065F\u0670]/g, '')
+    .replace(/[إأآا]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي')
+    .replace(/ؤ/g, 'و')
+    .replace(/ئ/g, 'ي');
+};
+
   // Combine and filter options for dropdown
   const filteredStudentOptions = useMemo(() => {
     const activeStudents = students.filter((s) => !s.archived);
     if (!searchQuery.trim()) return activeStudents;
-    const q = searchQuery.trim().toLowerCase();
+    const q = normalizeArabic(searchQuery);
     return activeStudents.filter(
       (s) =>
-        s.name.toLowerCase().includes(q) ||
-        (s.subject && s.subject.toLowerCase().includes(q)) ||
-        (s.phone && s.phone.includes(q))
+        normalizeArabic(s.name).includes(q) ||
+        (s.subject && normalizeArabic(s.subject).includes(q)) ||
+        (s.phone && s.phone.includes(searchQuery.trim())) ||
+        (s.whatsapp && s.whatsapp.includes(searchQuery.trim()))
     );
   }, [students, searchQuery]);
 
   const filteredGroupOptions = useMemo(() => {
     const activeGroups = groups.filter((g) => !g.archived && g.status !== 'paused');
     if (!searchQuery.trim()) return activeGroups;
-    const q = searchQuery.trim().toLowerCase();
+    const q = normalizeArabic(searchQuery);
     return activeGroups.filter(
       (g) =>
-        g.name.toLowerCase().includes(q) ||
-        (g.centerName && g.centerName.toLowerCase().includes(q)) ||
-        (g.subject && g.subject.toLowerCase().includes(q))
+        normalizeArabic(g.name).includes(q) ||
+        (g.centerName && normalizeArabic(g.centerName).includes(q)) ||
+        (g.subject && normalizeArabic(g.subject).includes(q))
     );
   }, [groups, searchQuery]);
 
@@ -326,6 +341,15 @@ export const EditLessonModal: React.FC<EditLessonModalProps> = ({
               <option value="" disabled>
                 -- اختر الطالب أو المجموعة --
               </option>
+
+              {/* If current selection is outside filter, keep it rendered so value is never orphaned */}
+              {selectedTargetMeta &&
+                !filteredStudentOptions.some((s) => `student:${s.id}` === selectedTargetKey) &&
+                !filteredGroupOptions.some((g) => `group:${g.id}` === selectedTargetKey) && (
+                  <option value={selectedTargetKey}>
+                    ✓ الحالي: {selectedTargetMeta.name}
+                  </option>
+                )}
 
               {/* Group 1: Individual Students */}
               <optgroup label="👤 الطلاب الفرديين">

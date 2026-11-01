@@ -216,6 +216,20 @@ export interface FormSlotItem {
   notes?: string;
 }
 
+// Helper function to normalize Arabic text for resilient search and matching
+export const normalizeArabicText = (text: string = ''): string => {
+  return text
+    .toString()
+    .toLowerCase()
+    .trim()
+    .replace(/[\u064B-\u065F\u0670]/g, '') // remove tashkeel/harakat
+    .replace(/[إأآا]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي')
+    .replace(/ؤ/g, 'و')
+    .replace(/ئ/g, 'ي');
+};
+
 export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, students: propsStudents, schedules: propsSchedules }) => {
   const { data: studentsData = [] } = useFirebaseSubscription(
     profile ? `students/${profile.id}` : null,
@@ -376,17 +390,51 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
   // Grid scroll container reference
   const gridScrollRef = useRef<HTMLDivElement>(null);
 
-  // Filter existing students list by search term
+  // Active (non-archived) students list for schedule booking
+  const activeStudents = useMemo(() => {
+    return (students || []).filter((s) => !s.archived);
+  }, [students]);
+
+  // Filter existing students list by search term with resilient Arabic normalization
   const filteredStudents = useMemo(() => {
-    if (!formStudentSearch.trim()) return students;
-    const term = formStudentSearch.trim().toLowerCase();
-    return students.filter(
-      (s) =>
-        s.name.toLowerCase().includes(term) ||
-        (s.subject && s.subject.toLowerCase().includes(term)) ||
-        (s.whatsapp && s.whatsapp.includes(term))
-    );
-  }, [students, formStudentSearch]);
+    if (!formStudentSearch.trim()) return activeStudents;
+    const term = normalizeArabicText(formStudentSearch);
+    return activeStudents.filter((s) => {
+      const nameMatch = normalizeArabicText(s.name).includes(term);
+      const subjectMatch = s.subject ? normalizeArabicText(s.subject).includes(term) : false;
+      const phoneMatch =
+        (s.whatsapp && s.whatsapp.includes(formStudentSearch.trim())) ||
+        (s.phone && s.phone.includes(formStudentSearch.trim()));
+      return nameMatch || subjectMatch || phoneMatch;
+    });
+  }, [activeStudents, formStudentSearch]);
+
+  // Explicit handler to accurately set the selected student without state mismatch
+  const handleSelectExistingStudent = (studentId: string) => {
+    setFormStudentId(studentId);
+    setConflictError(null);
+  };
+
+  // Search input change handler that synchronizes search query and auto-selects first match if current selection is excluded
+  const handleStudentSearchChange = (query: string) => {
+    setFormStudentSearch(query);
+    setConflictError(null);
+    if (!query.trim()) return;
+
+    const term = normalizeArabicText(query);
+    const matches = activeStudents.filter((s) => {
+      const nameMatch = normalizeArabicText(s.name).includes(term);
+      const subjectMatch = s.subject ? normalizeArabicText(s.subject).includes(term) : false;
+      const phoneMatch =
+        (s.whatsapp && s.whatsapp.includes(query.trim())) ||
+        (s.phone && s.phone.includes(query.trim()));
+      return nameMatch || subjectMatch || phoneMatch;
+    });
+
+    if (matches.length > 0 && !matches.some((s) => s.id === formStudentId)) {
+      setFormStudentId(matches[0].id);
+    }
+  };
 
   // Auto-scroll grid to ~08:00 AM on initial load
   useEffect(() => {
@@ -453,7 +501,10 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
     setEditingSchedule(null);
     setViewingScheduleDetails(null);
     setFormStudentSearch('');
-    if (students.length > 0) {
+    if (activeStudents.length > 0) {
+      setStudentSelectionMode('existing');
+      setFormStudentId(activeStudents[0].id);
+    } else if (students.length > 0) {
       setStudentSelectionMode('existing');
       setFormStudentId(students[0].id);
     } else {
@@ -487,7 +538,10 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
     setEditingSchedule(null);
     setViewingScheduleDetails(null);
     setFormStudentSearch('');
-    if (students.length > 0) {
+    if (activeStudents.length > 0) {
+      setStudentSelectionMode('existing');
+      setFormStudentId(activeStudents[0].id);
+    } else if (students.length > 0) {
       setStudentSelectionMode('existing');
       setFormStudentId(students[0].id);
     } else {
@@ -1840,43 +1894,147 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
 
                   {/* Mode A: Existing Student Picker */}
                   {studentSelectionMode === 'existing' && (
-                    <div className="space-y-2">
-                      {students.length > 0 ? (
+                    <div className="space-y-3">
+                      {activeStudents.length > 0 || students.length > 0 ? (
                         <>
-                          {/* Search Input */}
-                          <div className="relative">
-                            <input
-                              type="text"
-                              value={formStudentSearch}
-                              onChange={(e) => setFormStudentSearch(e.target.value)}
-                              placeholder="ابحث باسم الطالب أو المادة..."
-                              className="w-full rounded-xl bg-slate-900 border border-slate-700/80 pr-8 pl-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400"
-                            />
-                            <Search className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2.5" />
+                          {/* Search Input with count and clear button */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px] text-slate-300">
+                              <span>بحث في قائمة الطلاب المسجلين:</span>
+                              {formStudentSearch.trim() && (
+                                <span className="text-[10px] text-purple-300 font-semibold">
+                                  {filteredStudents.length} نتائج مطابقة
+                                </span>
+                              )}
+                            </div>
+                            <div className="relative">
+                              <input
+                                type="text"
+                                value={formStudentSearch}
+                                onChange={(e) => handleStudentSearchChange(e.target.value)}
+                                placeholder="ابحث باسم الطالب أو المادة أو الهاتف..."
+                                className="w-full rounded-xl bg-slate-900 border border-slate-700/80 pr-8 pl-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400 transition"
+                              />
+                              <Search className="w-3.5 h-3.5 text-purple-400 absolute right-2.5 top-3" />
+                              {formStudentSearch && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setFormStudentSearch('');
+                                    setConflictError(null);
+                                  }}
+                                  className="absolute left-2.5 top-2.5 p-0.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                                  title="مسح البحث"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </div>
 
-                          {/* Student Select Dropdown */}
-                          <select
-                            value={formStudentId}
-                            onChange={(e) => setFormStudentId(e.target.value)}
-                            required
-                            className="w-full rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-400 cursor-pointer"
-                          >
-                            {filteredStudents.map((s) => (
-                              <option key={s.id} value={s.id}>
-                                {s.name} • {s.subject || 'بدون مادة'} • {s.hourlyRate || 100} ج.م/ساعة
-                              </option>
-                            ))}
-                          </select>
+                          {/* Quick Interactive Clickable Student Options List */}
+                          {filteredStudents.length > 0 ? (
+                            <div className="space-y-1">
+                              <label className="block text-[11px] text-slate-400">
+                                اختر الطالب بالضغط عليه مباشرة:
+                              </label>
+                              <div className="max-h-40 overflow-y-auto space-y-1.5 pr-0.5">
+                                {filteredStudents.map((s) => {
+                                  const isSelected = s.id === formStudentId;
+                                  return (
+                                    <button
+                                      key={s.id}
+                                      type="button"
+                                      onClick={() => handleSelectExistingStudent(s.id)}
+                                      className={`w-full text-right p-2.5 rounded-xl border transition flex items-center justify-between cursor-pointer ${
+                                        isSelected
+                                          ? 'bg-purple-900/40 border-purple-400/80 ring-1 ring-purple-400/50 shadow-sm text-white'
+                                          : 'bg-slate-900/80 border-slate-700/60 hover:border-purple-700 hover:bg-slate-800/80 text-slate-200'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <div
+                                          className={`w-5 h-5 rounded-full flex items-center justify-center border text-[10px] shrink-0 ${
+                                            isSelected
+                                              ? 'bg-purple-600 border-purple-300 text-white font-bold'
+                                              : 'border-slate-600 text-transparent'
+                                          }`}
+                                        >
+                                          ✓
+                                        </div>
+                                        <div className="truncate">
+                                          <span className="font-bold text-xs block text-white truncate">
+                                            {s.name}
+                                          </span>
+                                          <span className="text-[10px] text-purple-300">
+                                            {s.subject || 'بدون مادة'}
+                                          </span>
+                                        </div>
+                                      </div>
 
-                          {/* Selected Student Quick Info Badge */}
+                                      <div className="text-left shrink-0 font-mono text-[11px] text-amber-300">
+                                        {s.hourlyRate || 100} {profile.currency || 'ج.م'}
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-700/60 text-center text-xs text-slate-400">
+                              <p>لم يتم العثور على طالب يطابق "{formStudentSearch}".</p>
+                              <button
+                                type="button"
+                                onClick={() => setFormStudentSearch('')}
+                                className="mt-1 text-purple-400 hover:underline font-bold"
+                              >
+                                مسح البحث وعرض جميع الطلاب
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Selected Student Confirmation / Validation Card (المربع الخاص بالاعتماد والتأكيد) */}
                           {(() => {
                             const sel = students.find((s) => s.id === formStudentId);
-                            if (!sel) return null;
+                            if (!sel) {
+                              return (
+                                <div className="p-3 rounded-2xl bg-amber-950/40 border border-amber-500/40 text-amber-200 text-xs flex items-center gap-2">
+                                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                                  <span>يرجى اختيار طالب معتمد لتثبيت موعد الحصة بالجدول</span>
+                                </div>
+                              );
+                            }
                             return (
-                              <div className="flex items-center justify-between text-[11px] px-2.5 py-1.5 rounded-xl bg-purple-950/40 border border-purple-800/30 text-purple-200">
-                                <span className="font-semibold">{sel.name}</span>
-                                <span className="text-slate-400">{sel.subject} • سعر الساعة: {sel.hourlyRate || 100}</span>
+                              <div className="p-3 rounded-2xl bg-gradient-to-r from-purple-950/60 via-slate-900 to-indigo-950/60 border border-purple-500/50 shadow-md space-y-2">
+                                <div className="flex items-center justify-between pb-1.5 border-b border-purple-800/40">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/40">
+                                      <CheckCircle className="w-3.5 h-3.5" />
+                                    </div>
+                                    <span className="text-[11px] font-bold text-white">
+                                      الطالب المعتمد لتثبيت الموعد بالجدول:
+                                    </span>
+                                  </div>
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-500/40 text-emerald-300">
+                                    معتمد ومطابق ✓
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                                  <div className="bg-slate-900/80 p-2 rounded-xl border border-purple-900/30">
+                                    <span className="text-slate-400 block text-[10px]">الاسم:</span>
+                                    <span className="font-bold text-purple-200 truncate block">{sel.name}</span>
+                                  </div>
+                                  <div className="bg-slate-900/80 p-2 rounded-xl border border-purple-900/30">
+                                    <span className="text-slate-400 block text-[10px]">المادة:</span>
+                                    <span className="font-semibold text-slate-200 truncate block">{sel.subject || 'بدون مادة'}</span>
+                                  </div>
+                                  <div className="bg-slate-900/80 p-2 rounded-xl border border-purple-900/30 col-span-2 sm:col-span-1">
+                                    <span className="text-slate-400 block text-[10px]">سعر الساعة:</span>
+                                    <span className="font-mono font-bold text-amber-300">
+                                      {sel.hourlyRate || 100} {profile.currency || 'ج.م'}
+                                    </span>
+                                  </div>
+                                </div>
                               </div>
                             );
                           })()}
