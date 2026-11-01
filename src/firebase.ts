@@ -607,6 +607,8 @@ export async function updateTeacherProfile(teacherId: string, updates: {
     payment?: string;
     report?: string;
     lessonPrep?: string;
+    absenceReminder?: string;
+    reminderDefaults?: { schedule?: string; dues?: string; prepaid?: string; custom?: string };
   };
   absencePolicy?: {
     allowExcused?: boolean;
