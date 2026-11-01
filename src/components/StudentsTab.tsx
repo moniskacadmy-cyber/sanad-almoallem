@@ -277,6 +277,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
   const [reminderCustomText, setReminderCustomText] = useState('');
   const [copiedReminder, setCopiedReminder] = useState(false);
   const [saveReminderForAll, setSaveReminderForAll] = useState(false);
+  // Manually chosen class date/time for the schedule reminder ('' = automatic: next scheduled slot)
+  const [reminderWhen, setReminderWhen] = useState<{ date: string; time: string }>({ date: '', time: '' });
   const [reminderSaveNotice, setReminderSaveNotice] = useState<string | null>(null);
   useBackHandler(!!reminderModalStudent, () => setReminderModalStudent(null), 'student_whatsapp_reminder');
 
@@ -1324,8 +1326,26 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
   // -------------------------------------------------------------
   // WhatsApp Reminder Modal Helpers
   // -------------------------------------------------------------
-  const getNextScheduleInfo = (student: Student) => {
+  const getNextScheduleInfo = (student: Student, when?: { date: string; time: string }) => {
     const studentScheds = schedules.filter((sch) => sch.studentId === student.id);
+
+    // Teacher picked a specific date + time: use it instead of the automatic next slot.
+    if (when && when.date && when.time) {
+      const target = new Date(`${when.date}T00:00:00`);
+      if (!Number.isNaN(target.getTime())) {
+        const [ph, pm] = when.time.split(':').map(Number);
+        const slot = studentScheds.find((x) => x.dayOfWeek === target.getDay()) || studentScheds[0];
+        return {
+          dayName: WEEK_DAYS.find((d) => d.dayIndex === target.getDay())?.name || 'اليوم المحدد',
+          formattedDate: new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'long' }).format(target),
+          time: `${ph % 12 || 12}:${String(pm || 0).padStart(2, '0')} ${ph >= 12 ? 'مساءً' : 'صباحاً'}`,
+          classType:
+            slot?.classType === 'online' ? 'أونلاين 🌐' : slot?.classType === 'center' ? 'في السنتر 🏫' : 'حصة خاصة / منزلية 👤',
+          duration: slot?.duration || 60,
+        };
+      }
+    }
+
     if (!studentScheds.length) return null;
 
     const now = new Date();
@@ -1379,7 +1399,8 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
 
   const generateReminderText = (
     student: Student,
-    type: ReminderKind
+    type: ReminderKind,
+    when?: { date: string; time: string }
   ): string => {
     if (type === 'welcome') return DEFAULT_GROUP_WELCOME;
     const teacherName = profile.name || 'معلمك';
@@ -1389,7 +1410,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
     const teW = teacherWord(profile.whatsappTemplates?.teacherGender);
 
     if (type === 'schedule') {
-      const nextSched = getNextScheduleInfo(student);
+      const nextSched = getNextScheduleInfo(student, when);
       if (nextSched) {
         return `السلام عليكم ورحمة الله وبركاته 🌸\nتحية طيبة لولي أمر ${stW}: *${studentName}*،\n\nنود تذكيركم بموعد حصة *${subject}* القادمة بإذن الله:\n📅 *اليوم:* ${nextSched.dayName} (${nextSched.formattedDate})\n⏰ *الساعة:* ${nextSched.time}\n📍 *طبيعة الحصة:* ${nextSched.classType}\n⏳ *المدة:* ${nextSched.duration} دقيقة\n\nنرجو الالتزام بالموعد والتأكد من جاهزية الأدوات والكراسة. شاكرين ومقدرين حسن تعاونكم الدائم ✨\n\nمع تحيات: *${teW} ${teacherName}*`;
       } else {
@@ -1440,7 +1461,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
   };
 
   /** Current values of the dynamic parts of a reminder (used to fill / extract {{placeholders}}). */
-  const getReminderVars = (student: Student): Record<string, string> => {
+  const getReminderVars = (student: Student, when?: { date: string; time: string }): Record<string, string> => {
     const sLessons = allLessonsMap[student.id] || [];
     const unsettled = sLessons.filter((l) => !l.settled && isLessonFinanciallyCounted(l));
     const hourlyRate = student.hourlyRate || 100;
@@ -1450,7 +1471,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
       ? (student.paymentStatus === 'paid' ? 0 : student.paymentStatus === 'partial' ? Math.round(monthlyDue / 2) : monthlyDue)
       : unsettled.reduce((acc, l) => acc + (l.cost !== undefined ? l.cost : Math.round(((l.duration || 60) / 60) * (l.hourlyRate || hourlyRate))), 0);
     const hours = (unsettled.reduce((acc, l) => acc + (l.duration || 60), 0) / 60).toFixed(1);
-    const next = getNextScheduleInfo(student);
+    const next = getNextScheduleInfo(student, when);
     const vars: Record<string, string> = {
       studentName: student.name,
       subject: student.subject || profile.subject || 'المادة',
@@ -1471,10 +1492,10 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
   };
 
   /** Saved wording (student first, then the teacher's general default) or the auto-generated text. */
-  const buildReminderText = (student: Student, type: ReminderKind): string => {
+  const buildReminderText = (student: Student, type: ReminderKind, when?: { date: string; time: string }): string => {
     const saved = student.reminderTemplates?.[type] || profile.whatsappTemplates?.reminderDefaults?.[type];
-    if (saved) return fillTemplate(saved, getReminderVars(student));
-    return generateReminderText(student, type);
+    if (saved) return fillTemplate(saved, getReminderVars(student, when));
+    return generateReminderText(student, type, when);
   };
 
   const handleOpenWhatsAppReminderModal = (s: Student) => {
@@ -1482,6 +1503,7 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
     setCopiedReminder(false);
     setReminderSaveNotice(null);
     setSaveReminderForAll(false);
+    setReminderWhen({ date: '', time: '' });
     const sLessons = allLessonsMap[s.id] || [];
     const unsettledLessons = sLessons.filter((l) => !l.settled && isLessonFinanciallyCounted(l));
     const initialType: ReminderKind = unsettledLessons.length > 0 ? 'dues' : 'schedule';
@@ -1494,12 +1516,28 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
     setReminderType(type);
     setReminderSaveNotice(null);
     setSaveReminderForAll(type === 'welcome'); // the group welcome is shared by everyone
-    setReminderCustomText(buildReminderText(reminderModalStudent, type));
+    setReminderCustomText(buildReminderText(reminderModalStudent, type, reminderWhen));
   };
 
   const hasSavedReminder =
     !!reminderModalStudent &&
     !!(reminderModalStudent.reminderTemplates?.[reminderType] || profile.whatsappTemplates?.reminderDefaults?.[reminderType]);
+
+  /** Teacher picks (or clears) the class date/time: update only the day/date/time parts of the text. */
+  const handleChangeReminderWhen = (next: { date: string; time: string }) => {
+    if (!reminderModalStudent) return;
+    const prev = reminderWhen;
+    setReminderWhen(next);
+    const pick = (v: Record<string, string>) => ({ day: v.day, date: v.date, time: v.time });
+    const oldParts = pick(getReminderVars(reminderModalStudent, prev));
+    const marked = templatize(reminderCustomText, oldParts as Record<string, string>);
+    const hasAll = marked !== reminderCustomText && ['day', 'date', 'time'].every((k) => marked.includes(`{{${k}}}`));
+    if (hasAll && ((next.date && next.time) || (!next.date && !next.time))) {
+      setReminderCustomText(fillTemplate(marked, getReminderVars(reminderModalStudent, next)));
+    } else if ((next.date && next.time) || (!next.date && !next.time)) {
+      setReminderCustomText(buildReminderText(reminderModalStudent, 'schedule', next));
+    }
+  };
 
   const handleChangeStudentGender = async (g: 'male' | 'female') => {
     if (!reminderModalStudent || reminderModalStudent.gender === g) return;
@@ -4015,6 +4053,40 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
                 ))}
               </div>
             </div>
+
+            {reminderType === 'schedule' && (
+              <div className="rounded-xl bg-slate-950/60 border border-slate-800 p-2.5 space-y-2">
+                <p className="text-[11px] font-bold text-slate-300">📅 اختار موعد الحصة بنفسك (اختياري)</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="date"
+                    value={reminderWhen.date}
+                    onChange={(e) => handleChangeReminderWhen({ ...reminderWhen, date: e.target.value })}
+                    className="rounded-lg bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs text-white"
+                  />
+                  <input
+                    type="time"
+                    value={reminderWhen.time}
+                    onChange={(e) => handleChangeReminderWhen({ ...reminderWhen, time: e.target.value })}
+                    className="rounded-lg bg-slate-900 border border-slate-700 px-2 py-1.5 text-xs text-white"
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] text-slate-500">
+                    {reminderWhen.date && reminderWhen.time ? 'الموعد اللي اخترته هو اللي في الرسالة.' : 'اختار التاريخ والساعة الاتنين، أو سيبهم فاضيين والرسالة تاخد أقرب موعد من جدولك.'}
+                  </p>
+                  {(reminderWhen.date || reminderWhen.time) && (
+                    <button
+                      type="button"
+                      onClick={() => handleChangeReminderWhen({ date: '', time: '' })}
+                      className="text-[11px] font-bold text-slate-400 hover:text-white cursor-pointer whitespace-nowrap"
+                    >
+                      ↩️ تلقائي
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Gender (student / teacher) */}
             <div className="grid grid-cols-2 gap-2">
