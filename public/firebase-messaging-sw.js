@@ -25,12 +25,12 @@ function getFirebaseConfigFromLocation() {
   }
 
   return {
-    apiKey: 'AIzaSyCW-2H9dXUvJEpWKs9x1Cr7ME9gqV3uZMk',
-    projectId: 'gen-lang-client-0886550561',
-    messagingSenderId: '65313535187',
-    appId: '1:65313535187:web:7652704feb5f4a04e85026',
-    authDomain: 'gen-lang-client-0886550561.firebaseapp.com',
-    storageBucket: 'gen-lang-client-0886550561.firebasestorage.app',
+    apiKey: 'AIzaSyBOWJa3xUpdSJIfT1MwDO5UP9LJvC41WkY',
+    projectId: 'sanadak-3cc89',
+    messagingSenderId: '234541494466',
+    appId: '1:234541494466:web:b040e478d26a745f400b5b',
+    authDomain: 'sanadak-3cc89.firebaseapp.com',
+    storageBucket: 'sanadak-3cc89.firebasestorage.app',
   };
 }
 

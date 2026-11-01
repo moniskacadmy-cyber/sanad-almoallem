@@ -214,25 +214,22 @@ export function checkUpcomingSlots(params: {
     const isIn15MinWindow = diffMinutes >= (minutesWindow - 1) && diffMinutes <= minutesWindow;
 
     if (isIn15MinWindow) {
+      if (!slot.studentId) {
+        continue;
+      }
       const student = students.find((s) => s.id === slot.studentId);
-      // Skip paused or archived students from reminders completely
-      if (student && isStudentPaused(student)) {
+      // Strictly skip if the student does not exist (deleted) or is archived, deleted, or paused
+      if (!student || student.archived === true || student.status === 'archived' || student.status === 'deleted' || isStudentPaused(student)) {
         continue;
       }
 
-      const effectiveStudent = student || {
-        id: slot.studentId,
-        name: slot.studentName,
-        whatsapp: '',
-        subject: '',
-      };
-
+      const effectiveStudent = student;
       const cleanStudentPhone = formatWhatsAppPhone(effectiveStudent.whatsapp || '');
       const cleanTeacherPhone = formatWhatsAppPhone(teacherWhatsapp || '');
 
       // 1. Prepare Parent Reminder
       const parentMsg = buildParentReminderMessage({
-        studentName: slot.studentName,
+        studentName: slot.studentName || student.name || 'طالب',
         teacherName,
         subject: student.subject || 'المادة',
         classTime: slot.time,

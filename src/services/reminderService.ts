@@ -10,6 +10,9 @@ import {
   isInDoNotDisturbPeriod,
 } from '../types';
 import { getAuthenticatedHeaders } from './authHelper';
+import { isStudentPaused } from './studentStatus';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
 const REMINDER_SETTINGS_KEY = 'sanad_reminder_settings';
 const DEFAULT_SETTINGS: ReminderSettings = {
@@ -121,6 +124,118 @@ export function storeReminderSettings(settings: ReminderSettings) {
   }
 }
 
+// In-memory registry of scheduled timers / notification timeouts
+const scheduledNotificationTimers = new Map<string, any>();
+
+/**
+ * Register a scheduled timer for a student or schedule slot
+ */
+export function registerScheduledReminderTimer(key: string, timerId: any) {
+  if (scheduledNotificationTimers.has(key)) {
+    clearTimeout(scheduledNotificationTimers.get(key));
+  }
+  scheduledNotificationTimers.set(key, timerId);
+}
+
+/**
+ * Cancels scheduled in-memory notifications and alarms for a specific student or schedule slot.
+ * Dispatches an event to instantly dismiss any active reminder UI.
+ */
+export function cancelScheduledNotification(params: { studentId?: string; scheduleId?: string }) {
+  const { studentId, scheduleId } = params;
+
+  // 1. Clear matched in-memory timers
+  for (const [key, timerId] of scheduledNotificationTimers.entries()) {
+    const matchesStudent = studentId && (key === studentId || key.startsWith(`${studentId}_`) || key.includes(`_${studentId}_`));
+    const matchesSchedule = scheduleId && (key === scheduleId || key.includes(`_${scheduleId}_`) || key.endsWith(`_${scheduleId}`));
+    if (matchesStudent || matchesSchedule) {
+      clearTimeout(timerId);
+      scheduledNotificationTimers.delete(key);
+    }
+  }
+
+  // 2. Dispatch UI cancellation event for active banners
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(
+        new CustomEvent('sanad:cancel-reminder', {
+          detail: { studentId, scheduleId },
+        })
+      );
+    } catch (_) {}
+  }
+}
+
+/**
+ * Clears all reminders and alarms associated with a deleted student.
+ * Removes in-memory timers and local storage reminder keys.
+ */
+export function clearStudentReminders(studentId: string) {
+  if (!studentId) return;
+  cancelScheduledNotification({ studentId });
+
+  // Clean localStorage reminder tracking keys for this student
+  if (typeof window !== 'undefined') {
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.includes(studentId) || key.startsWith(`sanad_reminder_${studentId}`))) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
+    } catch (e) {
+      console.warn('Could not clean student reminder keys from localStorage:', e);
+    }
+  }
+}
+
+/**
+ * Verifies with Firestore that the student document exists, is not deleted, and is not archived.
+ * Also verifies the schedule slot exists if scheduleId is provided.
+ * If invalid, automatically cancels and drops any reminder.
+ */
+export async function verifyStudentAndScheduleActive(
+  teacherId: string,
+  studentId?: string,
+  scheduleId?: string
+): Promise<{ valid: boolean; reason?: string }> {
+  if (!teacherId) return { valid: false, reason: 'missing_teacher_id' };
+
+  try {
+    // 1. Verify student exists and is active in Firestore
+    if (studentId) {
+      const studentDocRef = doc(db, 'teachers', teacherId, 'students', studentId);
+      const studentSnap = await getDoc(studentDocRef);
+      if (!studentSnap.exists()) {
+        cancelScheduledNotification({ studentId });
+        return { valid: false, reason: 'student_deleted' };
+      }
+      const data = studentSnap.data() as any;
+      if (data?.archived === true || data?.status === 'archived' || data?.status === 'deleted' || isStudentPaused(data)) {
+        cancelScheduledNotification({ studentId });
+        return { valid: false, reason: 'student_inactive' };
+      }
+    }
+
+    // 2. Verify schedule slot exists if provided
+    if (scheduleId) {
+      const schedDocRef = doc(db, 'teachers', teacherId, 'schedules', scheduleId);
+      const schedSnap = await getDoc(schedDocRef);
+      if (!schedSnap.exists()) {
+        cancelScheduledNotification({ scheduleId });
+        return { valid: false, reason: 'schedule_slot_deleted' };
+      }
+    }
+
+    return { valid: true };
+  } catch (err) {
+    console.warn('Error in verifyStudentAndScheduleActive:', err);
+    return { valid: true };
+  }
+}
+
 // Call /api/reminders/check with the teacher's current schedules and local time
 export async function checkRemindersApi(
   params: {
@@ -152,6 +267,20 @@ export async function checkRemindersApi(
     return { success: false, checkedCount: 0, remindersSent: 0, matchedReminders: [] };
   }
 
+  // Filter out any students that are deleted, archived, or paused
+  const activeStudents = (params.students || []).filter(
+    (s) => !s.archived && s.status !== 'paused' && !isStudentPaused(s)
+  );
+  const activeStudentIds = new Set(activeStudents.map((s) => s.id));
+
+  // Only check schedules belonging to active students (or group classes)
+  const validSchedules = (params.schedules || []).filter((slot) => {
+    if (slot.studentId) {
+      return activeStudentIds.has(slot.studentId);
+    }
+    return true;
+  });
+
   const MAX_RETRIES = 2;
 
   try {
@@ -167,9 +296,9 @@ export async function checkRemindersApi(
         teacherId: params.teacher.id,
         teacherName: params.teacher.name,
         teacherWhatsapp: params.teacher.whatsapp,
-        schedules: params.schedules,
+        schedules: validSchedules,
         groups: params.groups,
-        students: params.students,
+        students: activeStudents,
         clientTime: new Date().toISOString(),
         minutesBefore: params.minutesBefore || 15,
       }),
@@ -180,7 +309,21 @@ export async function checkRemindersApi(
     }
 
     const data = await response.json();
-    return data;
+    const rawMatched: ReminderLog[] = data.matchedReminders || [];
+
+    // Filter matched reminders: absolutely ensure no reminder for a deleted student is ever emitted
+    const sanitizedReminders = rawMatched.filter((rem) => {
+      if (rem.studentId) {
+        return activeStudentIds.has(rem.studentId);
+      }
+      return true;
+    });
+
+    return {
+      ...data,
+      matchedReminders: sanitizedReminders,
+      remindersSent: sanitizedReminders.length,
+    };
   } catch (err: any) {
     const errorMessage = err.message || '';
 
@@ -374,8 +517,15 @@ export function sendEndOfDaySummaryNotification(params: {
     }
   }
 
-  // Calculate today's completed and scheduled classes
-  const todaySlots = (Array.isArray(schedules) ? schedules : []).filter((s) => s.dayOfWeek === currentDayOfWeek);
+  // Calculate today's completed and scheduled classes (only for active, existing students)
+  const activeStudentIds = new Set(
+    (params.students || [])
+      .filter((s) => !s.archived && s.status !== 'paused' && !isStudentPaused(s))
+      .map((s) => s.id)
+  );
+  const todaySlots = (Array.isArray(schedules) ? schedules : [])
+    .filter((s) => s.dayOfWeek === currentDayOfWeek)
+    .filter((s) => !s.studentId || activeStudentIds.has(s.studentId));
   const completedSlots = todaySlots.filter((s) => s.completedTodayDate === todayStr);
   const completedStudentNames = completedSlots.map((s) => s.studentName).filter(Boolean);
 
@@ -408,12 +558,20 @@ export function generateDailyDigestMessage(params: {
   students?: Student[];
 }): { title: string; body: string; count: number } {
   const schedules = Array.isArray(params.schedules) ? params.schedules : [];
+  const students = Array.isArray(params.students) ? params.students : [];
   const now = new Date();
   const currentDayOfWeek = now.getDay();
 
-  // Filter today's slots and sort chronologically by time
+  const activeStudentIds = new Set(
+    students
+      .filter((s) => !s.archived && s.status !== 'paused' && !isStudentPaused(s))
+      .map((s) => s.id)
+  );
+
+  // Filter today's slots and sort chronologically by time (excluding deleted/archived students)
   const todaySlots = schedules
     .filter((s) => s.dayOfWeek === currentDayOfWeek)
+    .filter((s) => !s.studentId || activeStudentIds.has(s.studentId))
     .sort((a, b) => {
       const [ha, ma] = (a.time || '00:00').split(':').map(Number);
       const [hb, mb] = (b.time || '00:00').split(':').map(Number);

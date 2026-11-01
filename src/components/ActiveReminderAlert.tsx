@@ -9,6 +9,8 @@ export interface ActiveReminderAlertData {
   studentPhone?: string;
   subject?: string;
   targetTime?: Date | number;
+  studentId?: string;
+  scheduleId?: string;
 }
 
 interface ActiveReminderAlertProps {

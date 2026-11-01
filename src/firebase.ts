@@ -77,6 +77,7 @@ import {
   validateInstallmentAmount,
   roundMoney,
 } from './services/billing';
+import { clearStudentReminders, cancelScheduledNotification } from './services/reminderService';
 
 import rawFirebaseConfig from '../firebase-applet-config.json';
 
@@ -308,6 +309,10 @@ export async function bulkDeleteStudents(
   studentIds: string[]
 ): Promise<void> {
   if (!studentIds || studentIds.length === 0) return;
+
+  // Clear timers, alarms, and scheduled notifications for all targeted students
+  studentIds.forEach((id) => clearStudentReminders(id));
+
   const path = `teachers/${teacherId}/students`;
   try {
     const studentIdSet = new Set(studentIds);
@@ -1108,6 +1113,9 @@ export async function updateStudent(
 }
 
 export async function deleteStudent(teacherId: string, studentId: string) {
+  // Clear scheduled reminders, alarms, and timers for this student immediately
+  clearStudentReminders(studentId);
+
   const path = `teachers/${teacherId}/students/${studentId}`;
   try {
     // 1. Cascade Delete: Delete all lesson logs from subcollection
@@ -1390,6 +1398,9 @@ export async function saveScheduleEvaluation(
 }
 
 export async function deleteSchedule(teacherId: string, scheduleId: string) {
+  // Cancel any scheduled notifications or alarms for this schedule slot
+  cancelScheduledNotification({ scheduleId });
+
   const path = `teachers/${teacherId}/schedules/${scheduleId}`;
   try {
     await deleteDoc(doc(db, 'teachers', teacherId, 'schedules', scheduleId));
@@ -1815,7 +1826,7 @@ export async function toggleCompleteQuickNote(teacherId: string, noteId: string,
   return updateQuickNote(teacherId, noteId, { isCompleted: !currentCompleted });
 }
 
-import { getMessaging, getToken, isSupported } from 'firebase/messaging';
+import { getMessaging, getToken, deleteToken, isSupported } from 'firebase/messaging';
 
 const FCM_SW_SCOPE = '/firebase-cloud-messaging-push-scope';
 let fcmRegisteredUid: string | null = null;
@@ -1935,6 +1946,20 @@ export async function requestAndSaveFCMToken(force = false): Promise<{
       }
 
       const messaging = getMessaging(app);
+
+      if (force) {
+        try {
+          await deleteToken(messaging);
+        } catch (delErr) {
+          console.warn('Could not delete existing FCM token during force refresh:', delErr);
+        }
+        try {
+          localStorage.removeItem('sanad_fcm_uid');
+        } catch {
+          /* ignore */
+        }
+      }
+
       let swReg: ServiceWorkerRegistration | undefined = undefined;
 
       if ('serviceWorker' in navigator) {
@@ -1974,8 +1999,9 @@ export async function requestAndSaveFCMToken(force = false): Promise<{
         fcmRegisteredUid = user.uid;
         try {
           localStorage.setItem('sanad_fcm_uid', user.uid);
+          localStorage.setItem('sanad_fcm_token', token);
         } catch {
-          /* storage unavailable: the client digest may then show too, which is harmless */
+          /* storage unavailable */
         }
 
         // Unified storage: Save in teachers/{uid}/fcmTokens/{tokenId}
@@ -1984,19 +2010,55 @@ export async function requestAndSaveFCMToken(force = false): Promise<{
           teacherTokenRef,
           {
             token,
+            platform: 'web',
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo',
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
+            lastUsed: serverTimestamp(),
             userAgent: navigator.userAgent,
             deviceId: getOrCreateDeviceId(),
           },
           { merge: true }
         );
+
+        // Also update main teacher document for fast single-device push lookup
+        await updateDoc(doc(db, 'teachers', user.uid), {
+          fcmToken: token,
+          updatedAt: serverTimestamp(),
+        }).catch(() => {});
       }
 
       return { success: true, token };
     } catch (err: any) {
       console.error('Error enabling phone notifications / FCM:', err);
+      const code = String(err?.code || err?.message || '');
+      const isMismatchOrUnregistered =
+        code.includes('mismatched-credential') ||
+        code.includes('registration-token-not-registered') ||
+        code.includes('invalid-registration-token') ||
+        code.includes('not-registered');
+
+      if (isMismatchOrUnregistered && !force) {
+        console.warn('FCM token mismatched or unregistered. Purging stale token and re-requesting...');
+        try {
+          const user = auth?.currentUser;
+          const messaging = getMessaging(app);
+          await deleteToken(messaging).catch(() => {});
+          const savedToken = typeof localStorage !== 'undefined' ? localStorage.getItem('sanad_fcm_token') : null;
+          if (user?.uid && savedToken) {
+            await deleteDoc(doc(db, 'teachers', user.uid, 'fcmTokens', savedToken)).catch(() => {});
+          }
+          if (typeof localStorage !== 'undefined') {
+            localStorage.removeItem('sanad_fcm_uid');
+            localStorage.removeItem('sanad_fcm_token');
+          }
+        } catch (cleanupErr) {
+          console.warn('Token purge warning:', cleanupErr);
+        }
+        // Force re-request to generate and register a clean token
+        return requestAndSaveFCMToken(true);
+      }
+
       return {
         success: false,
         error: err.message || 'حدث خطأ أثناء تفعيل إشعارات الهاتف.',
@@ -2007,6 +2069,55 @@ export async function requestAndSaveFCMToken(force = false): Promise<{
   })();
 
   return fcmRegistrationPromise;
+}
+
+/**
+ * Cleans expired or stale FCM token documents from Firestore (teachers/{teacherId}/fcmTokens).
+ * Removes token documents that haven't been updated or used in more than maxAgeDays (default: 60 days).
+ */
+export async function cleanExpiredTokens(
+  teacherId: string,
+  maxAgeDays = 60
+): Promise<{ deletedCount: number }> {
+  const path = `teachers/${teacherId}/fcmTokens`;
+  let deletedCount = 0;
+  try {
+    const tokensRef = collection(db, 'teachers', teacherId, 'fcmTokens');
+    const snap = await getDocs(tokensRef);
+    if (snap.empty) return { deletedCount: 0 };
+
+    const cutoffMs = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+    const batch = writeBatch(db);
+    let batchOperations = 0;
+
+    snap.docs.forEach((docSnap) => {
+      const data = docSnap.data();
+      const lastUsedTimestamp = data.lastUsed || data.updatedAt || data.createdAt;
+      let lastUsedMs = 0;
+
+      if (lastUsedTimestamp?.toMillis) {
+        lastUsedMs = lastUsedTimestamp.toMillis();
+      } else if (lastUsedTimestamp?.seconds) {
+        lastUsedMs = lastUsedTimestamp.seconds * 1000;
+      } else if (typeof lastUsedTimestamp === 'string' || typeof lastUsedTimestamp === 'number') {
+        lastUsedMs = new Date(lastUsedTimestamp).getTime();
+      }
+
+      if (lastUsedMs > 0 && lastUsedMs < cutoffMs) {
+        batch.delete(docSnap.ref);
+        deletedCount++;
+        batchOperations++;
+      }
+    });
+
+    if (batchOperations > 0) {
+      await batch.commit();
+    }
+  } catch (err) {
+    console.warn('Error in cleanExpiredTokens:', err);
+    handleFirestoreError(err, OperationType.DELETE, path);
+  }
+  return { deletedCount };
 }
 
 // ==========================================

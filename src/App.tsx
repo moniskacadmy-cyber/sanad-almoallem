@@ -19,6 +19,7 @@ import {
   LibraryItem,
   isInDoNotDisturbPeriod,
 } from './types';
+import { isStudentPaused } from './services/studentStatus';
 import { AuthModal } from './components/AuthModal';
 import { LockScreen } from './components/LockScreen';
 import { HomeTab } from './components/HomeTab';
@@ -70,6 +71,8 @@ import {
   sendEndOfDaySummaryNotification,
   sendLoginSummaryApi,
   sendDailyDigestNotification,
+  verifyStudentAndScheduleActive,
+  cancelScheduledNotification,
 } from './services/reminderService';
 import { requestAndSaveFCMToken } from './firebase';
 import {
@@ -419,6 +422,31 @@ export default function App() {
     });
   }, [currentUser, profile?.id, students]);
 
+  // Listen for cancel-reminder events to immediately clear any active reminder banner
+  useEffect(() => {
+    const handleCancelReminder = (e: any) => {
+      const { studentId, scheduleId } = e.detail || {};
+      setActiveReminderAlert((current) => {
+        if (!current) return null;
+        if (studentId && current.studentId === studentId) return null;
+        if (scheduleId && current.scheduleId === scheduleId) return null;
+        return current;
+      });
+    };
+    window.addEventListener('sanad:cancel-reminder' as any, handleCancelReminder);
+    return () => window.removeEventListener('sanad:cancel-reminder' as any, handleCancelReminder);
+  }, []);
+
+  // If the active reminder belongs to a student who was removed or deleted, dismiss it immediately
+  useEffect(() => {
+    if (activeReminderAlert?.studentId) {
+      const exists = students.some((s) => s.id === activeReminderAlert.studentId && !s.archived && s.status !== 'paused' && !isStudentPaused(s));
+      if (!exists) {
+        setActiveReminderAlert(null);
+      }
+    }
+  }, [students, activeReminderAlert]);
+
   // Automated 15-Minute Class Reminders Periodic Check
   useEffect(() => {
     if (!profile || !schedules || schedules.length === 0) return;
@@ -442,6 +470,18 @@ export default function App() {
 
         if (isMounted && res.matchedReminders && res.matchedReminders.length > 0 && notifPrefs.classReminders !== false) {
           const first = res.matchedReminders[0];
+
+          // 1. Direct Firestore validation before triggering any alert or notification:
+          // Verify that the student and schedule slot still exist and are active in the database
+          if (first.studentId) {
+            const verification = await verifyStudentAndScheduleActive(profile.id, first.studentId, (first as any).scheduleId);
+            if (!verification.valid) {
+              // Student or slot was deleted in Firestore! Cancel and do not notify
+              cancelScheduledNotification({ studentId: first.studentId, scheduleId: (first as any).scheduleId });
+              return;
+            }
+          }
+
           const now = new Date();
           const [hStr, mStr] = (first.classTime || '').split(':');
           const target = new Date();
@@ -456,6 +496,8 @@ export default function App() {
 
           if (notifPrefs.inAppBanner !== false) {
             setActiveReminderAlert({
+              studentId: first.studentId,
+              scheduleId: (first as any).scheduleId,
               studentName: first.studentName,
               classTime: first.classTime,
               whatsappUrl: first.whatsappUrl,
