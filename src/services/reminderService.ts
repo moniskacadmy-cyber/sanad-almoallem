@@ -638,6 +638,18 @@ export function sendDailyDigestNotification(params: {
     }
   }
 
+  // Check custom time preference (if not forced)
+  if (!force) {
+    const nowTime = new Date();
+    const currentTotalMinutes = nowTime.getHours() * 60 + nowTime.getMinutes();
+    const [targetHour, targetMin] = (teacher.dailyDigestTime || '08:00').split(':').map(Number);
+    const targetTotalMinutes = (targetHour || 8) * 60 + (targetMin || 0);
+
+    if (currentTotalMinutes < targetTotalMinutes) {
+      return { sent: false, title: '', body: 'لم يحن وقت التذكير الصباحي المخصص بعد.', count: 0 };
+    }
+  }
+
   // Check Do Not Disturb settings
   if (isInDoNotDisturbPeriod(teacher.doNotDisturb)) {
     return { sent: false, title: '', body: 'وضع عدم الإزعاج نشط.', count: 0 };

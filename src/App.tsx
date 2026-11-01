@@ -530,23 +530,12 @@ export default function App() {
 
         // Automatic Daily Morning Digest Schedule check ("عندك X حصص اليوم")
         if (settings.dailyDigestEnabled !== false && isMounted) {
-          const nowTime = new Date();
-          const currentHour = nowTime.getHours();
-          const currentMinute = nowTime.getMinutes();
-          const [targetHour, targetMin] = (settings.dailyDigestTime || '08:00')
-            .split(':')
-            .map(Number);
-          const currentTotalMinutes = currentHour * 60 + currentMinute;
-          const targetTotalMinutes = (targetHour || 8) * 60 + (targetMin || 0);
-
-          if (currentTotalMinutes >= targetTotalMinutes) {
-            sendDailyDigestNotification({
-              teacher: profile,
-              schedules,
-              students,
-              force: false,
-            });
-          }
+          sendDailyDigestNotification({
+            teacher: profile,
+            schedules,
+            students,
+            force: false,
+          });
         }
 
         // Automatic End-of-Day Summary check

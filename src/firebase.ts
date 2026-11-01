@@ -31,8 +31,6 @@ import {
   getDocFromServer,
   onSnapshot,
   writeBatch,
-  query,
-  where,
   orderBy,
   limit,
   Firestore,
@@ -1856,23 +1854,6 @@ function getOrCreateDeviceId(): string | undefined {
   }
 }
 
-export async function cleanExpiredTokens(teacherId: string) {
-  if (!teacherId) return;
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-  try {
-    const tokensRef = collection(db, 'teachers', teacherId, 'fcmTokens');
-    const q = query(tokensRef, where('fcmTokenUpdatedAt', '<', thirtyDaysAgo));
-    const snapshot = await getDocs(q);
-
-    const deletePromises = snapshot.docs.map((tokenDoc) => deleteDoc(tokenDoc.ref));
-    await Promise.all(deletePromises);
-    console.log(`Cleaned ${deletePromises.length} expired FCM tokens for teacher ${teacherId}.`);
-  } catch (err) {
-    console.error('Error cleaning expired tokens:', err);
-  }
-}
 
 export async function requestAndSaveFCMToken(force = false): Promise<{
   success: boolean;

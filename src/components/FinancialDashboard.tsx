@@ -31,6 +31,10 @@ import {
   Legend,
   CartesianGrid,
   Cell,
+  AreaChart,
+  Area,
+  PieChart,
+  Pie,
 } from 'recharts';
 import { useTheme } from '../context/ThemeContext';
 
@@ -312,6 +316,12 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
   const totalTodayHours = studentFinancials.reduce((sum, item) => sum + item.todayHours, 0).toFixed(1);
   const totalTodayEarnings = studentFinancials.reduce((sum, item) => sum + item.todayEarnings, 0);
   const totalTodayLessonsCount = studentFinancials.reduce((sum, item) => sum + item.todayLessonsCount, 0);
+
+  // Summary chart data for current period
+  const summaryChartData = [
+    { name: 'المُحصل', value: totalPeriodCollectedDues, fill: '#10b981' },
+    { name: 'المستحقات المعلقة', value: totalPeriodPendingDues, fill: '#f59e0b' },
+  ];
 
   // Month navigation helpers
   const handlePrevMonth = () => {
@@ -795,6 +805,32 @@ export const FinancialDashboard: React.FC<FinancialDashboardProps> = ({
             <span className="text-xs text-emerald-300 font-bold">{currency}</span>
           </div>
           <p className="text-[10px] text-slate-400">تمت تصفيتها بنجاح</p>
+        </div>
+
+        {/* PIE CHART FOR PERIOD SUMMARY */}
+        <div className="rounded-3xl bg-slate-900/90 border border-purple-500/30 p-4 sm:p-5 shadow-xl space-y-3">
+          <h3 className="text-sm font-bold text-white text-center">توزيع التحصيل (المُحصل vs المعلق)</h3>
+          <div className="h-48 w-full" dir="ltr">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={summaryChartData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={50}
+                  outerRadius={70}
+                  paddingAngle={5}
+                  dataKey="value"
+                >
+                  {summaryChartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.fill} />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       </div>
 
