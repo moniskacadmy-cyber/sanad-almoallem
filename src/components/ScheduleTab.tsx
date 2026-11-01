@@ -19,6 +19,7 @@ import { exportScheduleToPdf } from '../services/pdfReportService';
 import { VoiceInputButton } from './VoiceInputButton';
 import { CalendarView } from './CalendarView';
 import { DailyAttendanceModal } from './DailyAttendanceModal';
+import { ScheduleFullscreen } from './ScheduleFullscreen';
 import { useBackHandler } from '../services/backHandler';
 import { hasConflict, getMinutesFromTime } from '../services/conflictService';
 import { isStudentPaused } from '../services/studentStatus';
@@ -46,6 +47,7 @@ import {
   Layers,
   Printer,
   MessageCircle,
+  Maximize2,
 } from 'lucide-react';
 
 interface ScheduleTabProps {
@@ -334,6 +336,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
   const [evalNotice, setEvalNotice] = useState<string | null>(null);
 
   // Register modals on back handler stack
+  const [showFullscreen, setShowFullscreen] = useState(false);
   useBackHandler(showAddModal, () => setShowAddModal(false), 'schedule_add_modal');
   useBackHandler(showQuickEvalModal, () => setShowQuickEvalModal(false), 'schedule_quick_eval_modal');
   useBackHandler(!!viewingScheduleDetails, () => setViewingScheduleDetails(null), 'schedule_details_modal');
@@ -1018,6 +1021,14 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
             </button>
           </div>
           <button
+            onClick={() => setShowFullscreen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-700/80 hover:bg-emerald-600 text-white text-xs font-bold transition cursor-pointer border border-emerald-500/50"
+            title="عرض الجدول بملء الشاشة (يتابع وقت الحصة الحالية تلقائياً)"
+          >
+            <Maximize2 className="w-4 h-4" />
+            <span>ملء الشاشة</span>
+          </button>
+          <button
             onClick={handleOpenAddDefault}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:brightness-110 text-white text-xs font-bold shadow-lg shadow-purple-950/50 active:scale-95 transition cursor-pointer"
           >
@@ -1663,6 +1674,14 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
             </div>
           )}
         </div>
+      )}
+
+      {showFullscreen && (
+        <ScheduleFullscreen
+          schedules={schedules}
+          teacherName={profile.name}
+          onClose={() => setShowFullscreen(false)}
+        />
       )}
 
       {/* GROUP ATTENDANCE MODAL (Directly opened on clicking group slot) */}
