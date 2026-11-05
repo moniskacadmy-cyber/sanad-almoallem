@@ -9,6 +9,7 @@ import {
 import { updateSchedule, cleanUndefined } from '../firebase';
 import { hasConflict } from '../services/conflictService';
 import { useBackHandler } from '../services/backHandler';
+import { syncSingleSlotToCalendar, isCalendarConnected } from '../services/googleCalendar';
 import {
   X,
   User,
@@ -98,7 +99,38 @@ export const EditLessonModal: React.FC<EditLessonModalProps> = ({
   // UI state
   const [conflictError, setConflictError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSyncingCalendar, setIsSyncingCalendar] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const handleSyncToCalendar = async () => {
+    if (!schedule) return;
+    setIsSyncingCalendar(true);
+    setConflictError(null);
+    try {
+      const mergedSlot: ScheduleSlot = {
+        ...schedule,
+        dayOfWeek: Number(dayOfWeek),
+        time,
+        duration: Number(duration) || 60,
+        recurrence,
+        classType,
+        color,
+        locationOrLink: locationOrLink.trim() || '',
+        notes: notes.trim() || '',
+      };
+      const res = await syncSingleSlotToCalendar(teacherId, mergedSlot);
+      if (res.success) {
+        setToastMessage('تمت مزامنة الموعد مع تقويم Google بنجاح! 📅✨');
+        setTimeout(() => setToastMessage(null), 3500);
+      } else {
+        setConflictError(res.error || 'فشلت المزامنة مع تقويم Google.');
+      }
+    } catch (e: any) {
+      setConflictError(e.message || 'حدث خطأ أثناء المزامنة مع تقويم Google.');
+    } finally {
+      setIsSyncingCalendar(false);
+    }
+  };
 
   // Initialize form state when modal opens or schedule changes
   useEffect(() => {
@@ -531,6 +563,19 @@ const normalizeArabic = (text: string = ''): string => {
                   <span>حفظ التعديلات في جدول المواعيد</span>
                 </>
               )}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSyncToCalendar}
+              disabled={isSyncingCalendar || isSubmitting}
+              className="py-3 px-3.5 rounded-xl bg-blue-950/70 hover:bg-blue-900/80 border border-blue-500/40 text-blue-200 font-bold text-xs transition cursor-pointer active:scale-98 flex items-center gap-1.5"
+              title="مزامنة موعد الحصة مع Google Calendar"
+            >
+              <Calendar className={`w-4 h-4 text-blue-400 ${isSyncingCalendar ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">
+                {isSyncingCalendar ? 'جارٍ المزامنة...' : 'مزامنة مع التقويم 📅'}
+              </span>
             </button>
 
             <button

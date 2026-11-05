@@ -1042,9 +1042,17 @@ async function sendPush(
   // With a "notification" block the browser would ALSO draw its own plain copy -> two notifications.
   return messagingAdmin.sendEachForMulticast({
     tokens,
+    notification: { title: msg.title, body: msg.body },
     data: { ...data, title: msg.title, body: msg.body, tag: msg.tag },
-    // Native Android app: high priority data message => delivered immediately, even in Doze.
-    android: { priority: 'high', ttl: ttlSeconds * 1000 },
+    android: { 
+      priority: 'high', 
+      ttl: ttlSeconds * 1000 
+    },
+    apns: {
+      headers: {
+        'apns-priority': '10'
+      }
+    },
     webpush: {
       headers: { Urgency: 'high', TTL: String(ttlSeconds) },
       fcmOptions: { link: '/' },
@@ -1552,7 +1560,34 @@ app.get('/api/reminders/cron', async (req, res) => {
         if (!slot || !slot.time || !slot.time.includes(':')) {
           continue;
         }
-        if (slot.studentId && pauseState.pausedIds.has(String(slot.studentId))) continue;
+        // Strict Guard Clause: Do not trigger if status != active
+        if (slot.cancelled === true) continue;
+        if (slot.status && slot.status !== 'active') continue;
+
+        if (slot.studentId) {
+          if (pauseState.pausedIds.has(String(slot.studentId))) continue;
+          try {
+            const stSnap = await dbAdmin
+              .collection('teachers')
+              .doc(teacherId)
+              .collection('students')
+              .doc(String(slot.studentId))
+              .get();
+            if (!stSnap.exists) continue;
+            const stData = stSnap.data();
+            if (
+              stData?.archived === true ||
+              stData?.status === 'archived' ||
+              stData?.status === 'deleted' ||
+              stData?.active === false ||
+              isStudentPaused(stData)
+            ) {
+              continue;
+            }
+          } catch (stErr) {
+            console.warn(`Error verifying student ${slot.studentId} for teacher ${teacherId}:`, stErr);
+          }
+        }
 
         const [slotHour, slotMin] = slot.time.split(':').map(Number);
         const slotTotalMinutes = slotHour * 60 + slotMin;

@@ -25,6 +25,12 @@ import { hasConflict, getMinutesFromTime } from '../services/conflictService';
 import { isStudentPaused } from '../services/studentStatus';
 import { formatTime12h, formatTime12hShort } from '../utils/timeZone';
 import {
+  connectGoogleCalendar,
+  isCalendarConnected,
+  syncAllSchedulesToCalendar,
+  syncSingleSlotToCalendar,
+} from '../services/googleCalendar';
+import {
   Calendar,
   Clock,
   Plus,
@@ -334,6 +340,118 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
   const [evalNotes, setEvalNotes] = useState<string>('');
   const [isSavingEval, setIsSavingEval] = useState(false);
   const [evalNotice, setEvalNotice] = useState<string | null>(null);
+
+  // Google Calendar Integration State
+  const [isGoogleCalConnected, setIsGoogleCalConnected] = useState<boolean>(
+    Boolean(profile?.googleCalendarConnected && isCalendarConnected())
+  );
+  const [isSyncingCal, setIsSyncingCal] = useState<boolean>(false);
+  const [calBannerNotice, setCalBannerNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  useEffect(() => {
+    setIsGoogleCalConnected(Boolean(profile?.googleCalendarConnected && isCalendarConnected()));
+  }, [profile?.googleCalendarConnected]);
+
+  useEffect(() => {
+    const handleConnected = () => {
+      setIsGoogleCalConnected(true);
+      setCalBannerNotice({ type: 'success', message: 'تم ربط تقويم Google بنجاح! مزامنة الحصص نشطة.' });
+      setTimeout(() => setCalBannerNotice(null), 5000);
+    };
+    const handleDisconnected = () => {
+      setIsGoogleCalConnected(false);
+    };
+    const handleAuthError = (e: any) => {
+      setIsGoogleCalConnected(false);
+      setCalBannerNotice({
+        type: 'error',
+        message: e.detail?.message || 'انتهت صلاحية جلسة تقويم Google. اضغط هنا لإعادة الربط.',
+      });
+    };
+
+    window.addEventListener('sanad:google-calendar-connected', handleConnected);
+    window.addEventListener('sanad:google-calendar-disconnected', handleDisconnected);
+    window.addEventListener('sanad:google-calendar-auth-error', handleAuthError);
+
+    return () => {
+      window.removeEventListener('sanad:google-calendar-connected', handleConnected);
+      window.removeEventListener('sanad:google-calendar-disconnected', handleDisconnected);
+      window.removeEventListener('sanad:google-calendar-auth-error', handleAuthError);
+    };
+  }, []);
+
+  const handleCalendarSyncOrConnect = async () => {
+    if (!isCalendarConnected()) {
+      setIsSyncingCal(true);
+      const res = await connectGoogleCalendar(profile.id);
+      setIsSyncingCal(false);
+      if (res.success) {
+        setIsGoogleCalConnected(true);
+        // Automatically sync all slots
+        setIsSyncingCal(true);
+        try {
+          const syncRes = await syncAllSchedulesToCalendar(profile.id, schedules, profile.subject);
+          setCalBannerNotice({
+            type: 'success',
+            message: `تم ربط تقويم Google ومزامنة ${syncRes.synced} حصة بنجاح! 📅✨`,
+          });
+        } catch (_) {}
+        setIsSyncingCal(false);
+        setTimeout(() => setCalBannerNotice(null), 5000);
+      } else {
+        setCalBannerNotice({ type: 'error', message: res.error || 'تعذر الربط مع تقويم Google.' });
+      }
+      return;
+    }
+
+    setIsSyncingCal(true);
+    try {
+      const syncRes = await syncAllSchedulesToCalendar(profile.id, schedules, profile.subject);
+      setCalBannerNotice({
+        type: 'success',
+        message: `تمت مزامنة ${syncRes.synced} حصة في تقويم Google بنجاح! 📅`,
+      });
+      setTimeout(() => setCalBannerNotice(null), 5000);
+    } catch (err: any) {
+      setCalBannerNotice({
+        type: 'error',
+        message: err.message || 'فشلت المزامنة مع تقويم Google.',
+      });
+    } finally {
+      setIsSyncingCal(false);
+    }
+  };
+
+  const [syncToCalendarOnAdd, setSyncToCalendarOnAdd] = useState<boolean>(true);
+  const [syncingSingleSlotId, setSyncingSingleSlotId] = useState<string | null>(null);
+
+  const handleSyncSingleSlot = async (slot: ScheduleSlot) => {
+    setSyncingSingleSlotId(slot.id);
+    setCalBannerNotice(null);
+    try {
+      const res = await syncSingleSlotToCalendar(profile.id, slot, profile.subject);
+      if (res.success) {
+        setIsGoogleCalConnected(true);
+        setCalBannerNotice({
+          type: 'success',
+          message: `تمت مزامنة حصة (${slot.studentName}) مع تقويم Google بنجاح! 📅✨`,
+        });
+        setTimeout(() => setCalBannerNotice(null), 5000);
+      } else {
+        setCalBannerNotice({
+          type: 'error',
+          message: res.error || 'فشلت المزامنة مع تقويم Google.',
+        });
+      }
+    } catch (err: any) {
+      setCalBannerNotice({
+        type: 'error',
+        message: err.message || 'حدث خطأ أثناء مزامنة الموعد.',
+      });
+    } finally {
+      setSyncingSingleSlotId(null);
+    }
+  };
 
   // Register modals on back handler stack
   const [showFullscreen, setShowFullscreen] = useState(false);
@@ -1043,8 +1161,55 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
             <Printer className="w-4 h-4" />
             <span>تصدير المواعيد</span>
           </button>
+          <button
+            onClick={handleCalendarSyncOrConnect}
+            disabled={isSyncingCal}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer border ${
+              isGoogleCalConnected
+                ? 'bg-blue-950/70 border-blue-500/40 text-blue-200 hover:bg-blue-900/80 shadow-md shadow-blue-950/40'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+            }`}
+            title={isGoogleCalConnected ? 'مزامنة الحصص مع Google Calendar' : 'ربط ومزامنة تقويم Google'}
+          >
+            <Calendar className={`w-3.5 h-3.5 ${isGoogleCalConnected ? 'text-blue-400' : 'text-slate-400'} ${isSyncingCal ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">
+              {isSyncingCal
+                ? 'جارٍ المزامنة...'
+                : isGoogleCalConnected
+                ? 'مزامنة التقويم 📅'
+                : 'ربط Google Calendar'}
+            </span>
+          </button>
         </div>
       </div>
+
+      {/* Google Calendar Notification / Re-auth Banner */}
+      {calBannerNotice && (
+        <div
+          className={`p-3 rounded-2xl flex items-center justify-between text-xs font-bold border transition animate-in fade-in ${
+            calBannerNotice.type === 'success'
+              ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300'
+              : 'bg-rose-950/90 border-rose-500/50 text-rose-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {calBannerNotice.type === 'success' ? (
+              <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            )}
+            <span>{calBannerNotice.message}</span>
+          </div>
+          {calBannerNotice.type === 'error' && (
+            <button
+              onClick={handleCalendarSyncOrConnect}
+              className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-bold cursor-pointer"
+            >
+              إعادة الربط الآن
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Time Shift Modal */}
       <TimeShiftModal 
@@ -1799,6 +1964,21 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
               })()}
 
               <button
+                onClick={() => handleSyncSingleSlot(viewingScheduleDetails)}
+                disabled={syncingSingleSlotId === viewingScheduleDetails.id}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-900/60 hover:bg-blue-800/80 border border-blue-500/40 text-blue-100 text-xs font-bold transition cursor-pointer shadow-md"
+              >
+                <Calendar className={`w-3.5 h-3.5 text-blue-300 ${syncingSingleSlotId === viewingScheduleDetails.id ? 'animate-spin' : ''}`} />
+                <span>
+                  {syncingSingleSlotId === viewingScheduleDetails.id
+                    ? 'جارٍ المزامنة مع Google Calendar...'
+                    : viewingScheduleDetails.googleCalendarEventId
+                    ? 'تحديث المزامنة مع التقويم 📅'
+                    : 'مزامنة مع التقويم 📅'}
+                </span>
+              </button>
+
+              <button
                 onClick={() => {
                   const toEdit = viewingScheduleDetails;
                   setViewingScheduleDetails(null);
@@ -2357,6 +2537,48 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
                 </div>
               )}
 
+              {/* Google Calendar Sync Option */}
+              <div className="p-3 rounded-2xl bg-blue-950/40 border border-blue-500/30 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-blue-600/20 text-blue-300 flex items-center justify-center border border-blue-500/30">
+                    <Calendar className="w-4 h-4 text-blue-400" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-white block">مزامنة الحصة مع تقويم Google</span>
+                    <span className="text-[10px] text-slate-400">
+                      {isGoogleCalConnected
+                        ? 'سيتم إنشاء حدث وتنبيه تلقائي في Google Calendar'
+                        : 'انقر للمزامنة وربط الحساب مع Google'}
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!isCalendarConnected()) {
+                      await handleCalendarSyncOrConnect();
+                    } else {
+                      setSyncToCalendarOnAdd(!syncToCalendarOnAdd);
+                    }
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border ${
+                    isCalendarConnected() && syncToCalendarOnAdd
+                      ? 'bg-blue-600 border-blue-500 text-white shadow-md shadow-blue-950/50'
+                      : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white'
+                  }`}
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>
+                    {isCalendarConnected()
+                      ? syncToCalendarOnAdd
+                        ? 'المزامنة مفعلة ✅'
+                        : 'تفعيل المزامنة'
+                      : 'مزامنة مع التقويم 📅'}
+                  </span>
+                </button>
+              </div>
+
               {/* Submit & Cancel Buttons */}
               <div className="pt-2 flex items-center gap-2 sticky bottom-0 bg-slate-900 pb-1">
                 <button
@@ -2373,6 +2595,28 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
                       : `تثبيت ${formSlotsList.length > 1 ? `${formSlotsList.length} مواعيد` : 'الموعد'} بالجدول`}
                   </span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!isCalendarConnected()) {
+                      await handleCalendarSyncOrConnect();
+                    } else {
+                      setSyncToCalendarOnAdd(true);
+                      setCalBannerNotice({
+                        type: 'success',
+                        message: 'تم تفعيل المزامنة مع Google Calendar، سيتم رفع المواعيد فور الضغط على تثبيت!',
+                      });
+                      setTimeout(() => setCalBannerNotice(null), 4000);
+                    }
+                  }}
+                  className="px-3.5 py-3 rounded-2xl bg-blue-950/70 border border-blue-500/40 text-blue-200 hover:bg-blue-900/80 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                  title="مزامنة مع التقويم"
+                >
+                  <Calendar className="w-3.5 h-3.5 text-blue-400" />
+                  <span className="hidden sm:inline">مزامنة مع التقويم</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}

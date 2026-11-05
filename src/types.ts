@@ -144,6 +144,9 @@ export interface TeacherProfile {
   focusModeEnabled?: boolean;
   onboardingCompleted?: boolean;
   notificationPreferences?: NotificationPreferences;
+  googleCalendarConnected?: boolean;
+  googleCalendarEmail?: string | null;
+  googleCalendarLastSync?: string | null;
   createdAt: any;
   updatedAt: any;
 }
@@ -343,6 +346,9 @@ export interface ScheduleSlot {
   notes?: string; // ملاحظات وتقييم أداء الطالب في الحصة
   isMakeup?: boolean; // هل هي حصة تعويضية مجدولة
   originalLessonId?: string; // معرف الحصة الأصلية الغائبة
+  googleCalendarEventId?: string | null; // معرف الحدث في تقويم جوجل
+  status?: 'active' | 'cancelled' | 'paused';
+  cancelled?: boolean;
   createdAt: any;
   updatedAt: any;
 }

@@ -13,6 +13,7 @@ import { getAuthenticatedHeaders } from './authHelper';
 import { isStudentPaused } from './studentStatus';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { checkGoogleCalendarEventActive } from './googleCalendarService';
 
 const REMINDER_SETTINGS_KEY = 'sanad_reminder_settings';
 const DEFAULT_SETTINGS: ReminderSettings = {
@@ -204,28 +205,57 @@ export async function verifyStudentAndScheduleActive(
   if (!teacherId) return { valid: false, reason: 'missing_teacher_id' };
 
   try {
-    // 1. Verify student exists and is active in Firestore
+    // 1. Strict Student Verification: Check if student exists and is active in Firestore
     if (studentId) {
       const studentDocRef = doc(db, 'teachers', teacherId, 'students', studentId);
       const studentSnap = await getDoc(studentDocRef);
       if (!studentSnap.exists()) {
-        cancelScheduledNotification({ studentId });
+        cancelScheduledNotification({ studentId, scheduleId });
         return { valid: false, reason: 'student_deleted' };
       }
       const data = studentSnap.data() as any;
-      if (data?.archived === true || data?.status === 'archived' || data?.status === 'deleted' || isStudentPaused(data)) {
-        cancelScheduledNotification({ studentId });
+      if (
+        data?.archived === true ||
+        data?.status === 'archived' ||
+        data?.status === 'deleted' ||
+        data?.active === false ||
+        isStudentPaused(data)
+      ) {
+        cancelScheduledNotification({ studentId, scheduleId });
         return { valid: false, reason: 'student_inactive' };
       }
     }
 
-    // 2. Verify schedule slot exists if provided
+    // 2. Strict Schedule Verification: Check slot in Firestore
     if (scheduleId) {
       const schedDocRef = doc(db, 'teachers', teacherId, 'schedules', scheduleId);
       const schedSnap = await getDoc(schedDocRef);
       if (!schedSnap.exists()) {
         cancelScheduledNotification({ scheduleId });
         return { valid: false, reason: 'schedule_slot_deleted' };
+      }
+
+      const slotData = schedSnap.data() as any;
+      // Strict Guard Clause: Do not trigger if status != active
+      if (slotData?.cancelled === true || (slotData?.status && slotData?.status !== 'active')) {
+        cancelScheduledNotification({ scheduleId });
+        return { valid: false, reason: 'schedule_slot_cancelled' };
+      }
+
+      // 3. Strict Calendar Verification: If synced with Google Calendar, verify event status
+      if (slotData?.googleCalendarEventId) {
+        try {
+          const calStatus = await checkGoogleCalendarEventActive(slotData.googleCalendarEventId);
+          if (!calStatus.active) {
+            cancelScheduledNotification({ scheduleId });
+            return {
+              valid: false,
+              reason: `google_calendar_event_${calStatus.status || 'inactive'}`,
+            };
+          }
+        } catch (calErr) {
+          console.warn('Could not verify calendar event status, falling back to database check:', calErr);
+        }
       }
     }
 
@@ -234,6 +264,22 @@ export async function verifyStudentAndScheduleActive(
     console.warn('Error in verifyStudentAndScheduleActive:', err);
     return { valid: true };
   }
+}
+
+/**
+ * Strict Guard Clause: Confirms 100% whether a schedule slot is active and eligible for alert
+ */
+export async function isScheduleEligibleForReminder(
+  teacherId: string,
+  slot: ScheduleSlot
+): Promise<boolean> {
+  if (!slot) return false;
+  // Strict Guard Clause: Do not trigger if status != active
+  if (slot.cancelled === true) return false;
+  if (slot.status && slot.status !== 'active') return false;
+
+  const verification = await verifyStudentAndScheduleActive(teacherId, slot.studentId, slot.id);
+  return verification.valid;
 }
 
 // Call /api/reminders/check with the teacher's current schedules and local time

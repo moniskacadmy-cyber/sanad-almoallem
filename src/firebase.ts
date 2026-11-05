@@ -78,6 +78,12 @@ import {
   roundMoney,
 } from './services/billing';
 import { clearStudentReminders, cancelScheduledNotification } from './services/reminderService';
+import {
+  createGoogleCalendarEvent,
+  updateGoogleCalendarEvent,
+  deleteGoogleCalendarEvent,
+  isCalendarConnected,
+} from './services/googleCalendarService';
 
 import rawFirebaseConfig from '../firebase-applet-config.json';
 
@@ -1147,6 +1153,18 @@ export async function deleteStudent(teacherId: string, studentId: string) {
         const data = d.data();
         return data.studentId === studentId;
       });
+      // Also clean up any associated Google Calendar events
+      if (isCalendarConnected()) {
+        for (const slotDoc of studentSchedules) {
+          const sData = slotDoc.data() as ScheduleSlot;
+          if (sData?.googleCalendarEventId) {
+            deleteGoogleCalendarEvent(sData.googleCalendarEventId).catch((e) =>
+              console.warn('Failed to delete Google Calendar event for deleted student:', e)
+            );
+          }
+        }
+      }
+
       const deleteSchedulePromises = studentSchedules.map((d) => deleteDoc(d.ref));
       await Promise.all(deleteSchedulePromises);
     } catch (e) {
@@ -1346,12 +1364,35 @@ export async function addSchedule(
   try {
     const colRef = collection(db, 'teachers', teacherId, 'schedules');
     const newDoc = doc(colRef);
+
+    let googleCalendarEventId: string | null = (schedule as any).googleCalendarEventId || null;
+
+    // Auto-sync with Google Calendar if connected
+    if (isCalendarConnected()) {
+      try {
+        const eventId = await createGoogleCalendarEvent({
+          ...schedule,
+          id: newDoc.id,
+          teacherId,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        } as ScheduleSlot);
+        if (eventId) {
+          googleCalendarEventId = eventId;
+        }
+      } catch (calErr) {
+        console.warn('Google Calendar auto-sync on addSchedule:', calErr);
+      }
+    }
+
     await setDoc(
       newDoc,
       cleanUndefined({
         ...schedule,
         id: newDoc.id,
         teacherId,
+        googleCalendarEventId,
+        status: (schedule as any).status || 'active',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       })
@@ -1370,7 +1411,37 @@ export async function updateSchedule(
   const path = `teachers/${teacherId}/schedules/${scheduleId}`;
   try {
     const sanitizedUpdates = cleanUndefined(updates);
-    await updateDoc(doc(db, 'teachers', teacherId, 'schedules', scheduleId), {
+    const docRef = doc(db, 'teachers', teacherId, 'schedules', scheduleId);
+
+    // Auto-sync updates with Google Calendar if connected
+    if (isCalendarConnected()) {
+      try {
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          const currentData = snap.data() as ScheduleSlot;
+          const mergedSlot: ScheduleSlot = {
+            ...currentData,
+            ...sanitizedUpdates,
+            id: scheduleId,
+            teacherId,
+          };
+
+          if (currentData.googleCalendarEventId) {
+            await updateGoogleCalendarEvent(currentData.googleCalendarEventId, mergedSlot);
+          } else {
+            // Slot did not have a Google Calendar event yet, create one now
+            const newEventId = await createGoogleCalendarEvent(mergedSlot);
+            if (newEventId) {
+              sanitizedUpdates.googleCalendarEventId = newEventId;
+            }
+          }
+        }
+      } catch (calErr) {
+        console.warn('Google Calendar auto-sync on updateSchedule:', calErr);
+      }
+    }
+
+    await updateDoc(docRef, {
       ...sanitizedUpdates,
       updatedAt: serverTimestamp(),
     });
@@ -1403,7 +1474,24 @@ export async function deleteSchedule(teacherId: string, scheduleId: string) {
 
   const path = `teachers/${teacherId}/schedules/${scheduleId}`;
   try {
-    await deleteDoc(doc(db, 'teachers', teacherId, 'schedules', scheduleId));
+    const docRef = doc(db, 'teachers', teacherId, 'schedules', scheduleId);
+
+    // Delete associated event from Google Calendar if connected
+    if (isCalendarConnected()) {
+      try {
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          const data = snap.data() as ScheduleSlot;
+          if (data?.googleCalendarEventId) {
+            await deleteGoogleCalendarEvent(data.googleCalendarEventId);
+          }
+        }
+      } catch (calErr) {
+        console.warn('Google Calendar delete on deleteSchedule:', calErr);
+      }
+    }
+
+    await deleteDoc(docRef);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }

@@ -1,8 +1,11 @@
 {
-  "apiKey": "AIzaSyBOWJa3xUpdSJIfT1MwDO5UP9LJvC41WkY",
-  "authDomain": "sanadak-3cc89.firebaseapp.com",
-  "projectId": "sanadak-3cc89",
-  "storageBucket": "sanadak-3cc89.firebasestorage.app",
-  "messagingSenderId": "234541494466",
-  "appId": "1:234541494466:web:b040e478d26a745f400b5b"
+  "projectId": "gen-lang-client-0583022199",
+  "appId": "1:790762701267:web:5f81ae954dfde2bbe9ef26",
+  "apiKey": "AIzaSyD9kKYjE6n8lynTQG29NZXqv5bpGdUiU1g",
+  "authDomain": "gen-lang-client-0583022199.firebaseapp.com",
+  "storageBucket": "gen-lang-client-0583022199.firebasestorage.app",
+  "messagingSenderId": "790762701267",
+  "measurementId": "",
+  "oAuthClientId": "790762701267-oai9820tkaeu0i6hctrp3tt2qu3ji2i9.apps.googleusercontent.com",
+  "recaptchaSiteKey": ""
 }
