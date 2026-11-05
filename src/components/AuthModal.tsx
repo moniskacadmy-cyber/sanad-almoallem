@@ -1,3 +1,4 @@
+import { CommunityJoinButton } from './CommunityJoinButton';
 import React, { useState } from 'react';
 import {
   registerTeacher,
@@ -637,6 +638,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
             </button>
           </div>
         )}
+
+        <div className="px-1 pt-1 space-y-1.5 text-center">
+          <CommunityJoinButton />
+          <p className="text-[10px] text-slate-500">الانضمام مجاني — هتتحوّل على واتساب برسالة جاهزة.</p>
+        </div>
       </div>
     </div>
   );

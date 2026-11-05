@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { CommunityJoinButton } from './CommunityJoinButton';
 import { useTranslation } from 'react-i18next';
 import {
   LayoutGrid,
@@ -179,6 +180,10 @@ export function Sidebar({ isOpen, onClose, activeItem, onSelect, profile }: Side
                 </button>
               );
             })}
+          </div>
+
+          <div className="px-3 pb-2">
+            <CommunityJoinButton compact />
           </div>
 
           {/* Footer info */}
