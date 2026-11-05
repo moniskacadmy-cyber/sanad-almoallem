@@ -510,6 +510,8 @@ export type NoteColor = 'amber' | 'emerald' | 'purple' | 'blue' | 'rose';
 export interface QuickNote {
   id: string;
   teacherId: string;
+  studentId?: string;
+  category?: 'progress' | 'academic' | 'behavior' | 'general' | string;
   text: string;
   color?: NoteColor;
   isPinned?: boolean;

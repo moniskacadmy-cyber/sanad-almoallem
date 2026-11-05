@@ -150,6 +150,39 @@ function getNextOccurrenceDate(dayOfWeek: number, timeStr: string): { start: Dat
   return { start: startDate, end: endDate, durationMinutes };
 }
 
+// Google Calendar event color IDs (1-11)
+const GOOGLE_CALENDAR_COLORS: Record<string, string> = {
+  cyan: '7',     // Peacock
+  emerald: '10', // Basil
+  amber: '6',    // Tangerine
+  purple: '3',   // Grape
+  blue: '9',     // Blueberry
+  rose: '4',     // Flamingo
+  red: '11',     // Tomato
+  indigo: '1',   // Lavender
+};
+
+/**
+ * Format Date to RFC 3339 with local timezone offset for Google Calendar API
+ */
+function formatRfc3339(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const year = d.getFullYear();
+  const month = pad(d.getMonth() + 1);
+  const day = pad(d.getDate());
+  const hours = pad(d.getHours());
+  const minutes = pad(d.getMinutes());
+  const seconds = pad(d.getSeconds());
+
+  const offsetMinutes = -d.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? '+' : '-';
+  const absOffset = Math.abs(offsetMinutes);
+  const offsetHours = pad(Math.floor(absOffset / 60));
+  const offsetMins = pad(absOffset % 60);
+
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${sign}${offsetHours}:${offsetMins}`;
+}
+
 /**
  * Format a ScheduleSlot into Google Calendar Event payload
  */
@@ -183,17 +216,19 @@ function buildEventPayload(slot: ScheduleSlot, teacherSubject?: string) {
   const dayCode = DAY_CODES[slot.dayOfWeek] || 'SU';
   const isOneTime = slot.recurrence === 'once';
   const recurrence = isOneTime ? undefined : [`RRULE:FREQ=WEEKLY;BYDAY=${dayCode}`];
+  const colorId = slot.color ? GOOGLE_CALENDAR_COLORS[slot.color] || undefined : undefined;
 
   return {
     summary,
     description,
     location: slot.locationOrLink || '',
+    colorId,
     start: {
-      dateTime: start.toISOString(),
+      dateTime: formatRfc3339(start),
       timeZone,
     },
     end: {
-      dateTime: actualEnd.toISOString(),
+      dateTime: formatRfc3339(actualEnd),
       timeZone,
     },
     recurrence,
