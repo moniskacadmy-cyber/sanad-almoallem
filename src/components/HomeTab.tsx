@@ -403,7 +403,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({
           className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold hover:bg-amber-500/30 transition cursor-pointer shadow-sm"
         >
           <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-          <span>تجربة مجانية • متبقي {Math.max(0, diffDays)} أيام</span>
+          <span>متبقي {Math.max(0, diffDays)} أيام على الاشتراك</span>
         </button>
       );
     }

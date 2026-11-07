@@ -1,4 +1,3 @@
-import { CommunityJoinButton } from './CommunityJoinButton';
 import React, { useState } from 'react';
 import {
   registerTeacher,
@@ -13,7 +12,6 @@ import {
   User,
 } from 'firebase/auth';
 import {
-  Sparkles,
   Mail,
   Lock,
   User as UserIcon,
@@ -215,20 +213,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
           </p>
         </div>
 
-        {/* Free trial highlight banner */}
-        {!googlePendingUser && (
-          <div className="mb-5 rounded-2xl bg-gradient-to-r from-purple-900/60 to-indigo-900/60 border border-purple-500/40 p-3.5 flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-purple-600/50 flex items-center justify-center flex-shrink-0 text-amber-300">
-              <Sparkles className="w-5 h-5 animate-pulse" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-amber-300">تجربة مجانية كاملة لمدة 30 يوماً (شهر كامل)</p>
-              <p className="text-[11px] text-purple-200 mt-0.5 leading-snug">
-                سجل حسابك واستمتع بجميع المميزات تلقائياً وبدون أي بطاقة بنكية.
-              </p>
-            </div>
-          </div>
-        )}
 
         {/* Email Verification Screen */}
         {showEmailVerificationNotice ? (
@@ -270,7 +254,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 onClick={onSuccess}
                 className="w-full rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 py-2.5 text-xs font-bold text-white transition active:scale-98 cursor-pointer shadow-md shadow-purple-900/40 flex items-center justify-center gap-2"
               >
-                <span>متابعة إلى المنصة (بدء التجربة المجانية 30 يوماً) 🚀</span>
+                <span>متابعة إلى المنصة 🚀</span>
               </button>
 
               <button
@@ -420,7 +404,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 disabled={loading}
                 className="w-full rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 py-3 text-sm font-bold text-white transition active:scale-98 disabled:opacity-50 cursor-pointer shadow-lg shadow-purple-900/40"
               >
-                {loading ? 'جارٍ الإعداد...' : 'بدء التجربة المجانية (30 يوماً) 🚀'}
+                {loading ? 'جارٍ الإعداد...' : 'إنشاء الحساب 🚀'}
               </button>
             </form>
           </div>
@@ -442,7 +426,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 }`}
               >
                 <UserPlus className="w-3.5 h-3.5" />
-                <span>حساب جديد (تجربة مجانية)</span>
+                <span>حساب جديد</span>
               </button>
               <button
                 type="button"
@@ -594,7 +578,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 {loading
                   ? 'جارٍ التحميل...'
                   : isRegister
-                  ? 'إنشاء الحساب وبدء التجربة المجانية (30 يوماً) 🚀'
+                  ? 'إنشاء الحساب 🚀'
                   : 'تسجيل الدخول'}
               </button>
             </form>
@@ -638,11 +622,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
             </button>
           </div>
         )}
-
-        <div className="px-1 pt-1 space-y-1.5 text-center">
-          <CommunityJoinButton />
-          <p className="text-[10px] text-slate-500">الانضمام مجاني — هتتحوّل على واتساب برسالة جاهزة.</p>
-        </div>
       </div>
     </div>
   );
