@@ -20,6 +20,8 @@ import { VoiceInputButton } from './VoiceInputButton';
 import { CalendarView } from './CalendarView';
 import { DailyAttendanceModal } from './DailyAttendanceModal';
 import { ScheduleFullscreen } from './ScheduleFullscreen';
+import { CalendarSyncPanel } from './CalendarSyncPanel';
+import { downloadSlotIcs } from '../services/calendarApi';
 import { useBackHandler } from '../services/backHandler';
 import { hasConflict, getMinutesFromTime } from '../services/conflictService';
 import { isStudentPaused } from '../services/studentStatus';
@@ -455,6 +457,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
 
   // Register modals on back handler stack
   const [showFullscreen, setShowFullscreen] = useState(false);
+  const [showCalendarPanel, setShowCalendarPanel] = useState(false);
   useBackHandler(showAddModal, () => setShowAddModal(false), 'schedule_add_modal');
   useBackHandler(showQuickEvalModal, () => setShowQuickEvalModal(false), 'schedule_quick_eval_modal');
   useBackHandler(!!viewingScheduleDetails, () => setViewingScheduleDetails(null), 'schedule_details_modal');
@@ -1161,24 +1164,34 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
             <Printer className="w-4 h-4" />
             <span>تصدير المواعيد</span>
           </button>
+          {isGoogleCalConnected && (
+            <button
+              onClick={handleCalendarSyncOrConnect}
+              disabled={isSyncingCal}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer border ${
+                isGoogleCalConnected
+                  ? 'bg-blue-950/70 border-blue-500/40 text-blue-200 hover:bg-blue-900/80 shadow-md shadow-blue-950/40'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+              }`}
+              title={isGoogleCalConnected ? 'مزامنة الحصص مع Google Calendar' : 'ربط ومزامنة تقويم Google'}
+            >
+              <Calendar className={`w-3.5 h-3.5 ${isGoogleCalConnected ? 'text-blue-400' : 'text-slate-400'} ${isSyncingCal ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">
+                {isSyncingCal
+                  ? 'جارٍ المزامنة...'
+                  : isGoogleCalConnected
+                  ? 'مزامنة التقويم 📅'
+                  : 'ربط Google Calendar'}
+              </span>
+            </button>
+          )}
           <button
-            onClick={handleCalendarSyncOrConnect}
-            disabled={isSyncingCal}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer border ${
-              isGoogleCalConnected
-                ? 'bg-blue-950/70 border-blue-500/40 text-blue-200 hover:bg-blue-900/80 shadow-md shadow-blue-950/40'
-                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
-            }`}
-            title={isGoogleCalConnected ? 'مزامنة الحصص مع Google Calendar' : 'ربط ومزامنة تقويم Google'}
+            onClick={() => setShowCalendarPanel(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer border bg-blue-950/70 border-blue-500/40 text-blue-200 hover:bg-blue-900/80"
+            title="اشترك في جدولك من Google Calendar أو تقويم الآيفون"
           >
-            <Calendar className={`w-3.5 h-3.5 ${isGoogleCalConnected ? 'text-blue-400' : 'text-slate-400'} ${isSyncingCal ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">
-              {isSyncingCal
-                ? 'جارٍ المزامنة...'
-                : isGoogleCalConnected
-                ? 'مزامنة التقويم 📅'
-                : 'ربط Google Calendar'}
-            </span>
+            <Calendar className="w-3.5 h-3.5 text-blue-400" />
+            <span className="hidden sm:inline">اشتراك التقويم 📅</span>
           </button>
         </div>
       </div>
@@ -1841,6 +1854,15 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
         </div>
       )}
 
+      {showCalendarPanel && (
+        <div className="fixed inset-0 z-[60] bg-black/70 flex items-center justify-center p-4" onClick={() => setShowCalendarPanel(false)}>
+          <div className="w-full max-w-md space-y-2" onClick={(e) => e.stopPropagation()}>
+            <CalendarSyncPanel />
+            <button type="button" onClick={() => setShowCalendarPanel(false)} className="w-full py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold cursor-pointer">إغلاق</button>
+          </div>
+        </div>
+      )}
+
       {showFullscreen && (
         <ScheduleFullscreen
           schedules={schedules}
@@ -1964,6 +1986,28 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
               })()}
 
               <button
+                onClick={() =>
+                  downloadSlotIcs(
+                    {
+                      id: viewingScheduleDetails.id,
+                      title: `حصة: ${viewingScheduleDetails.studentName}`,
+                      dayOfWeek: viewingScheduleDetails.dayOfWeek,
+                      time: viewingScheduleDetails.time,
+                      duration: viewingScheduleDetails.duration,
+                      recurrence: viewingScheduleDetails.recurrence,
+                      location: viewingScheduleDetails.locationOrLink,
+                    },
+                    profile.timezone || 'Africa/Cairo',
+                    [profile.reminderMinutesBefore || 15]
+                  )
+                }
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-900/60 hover:bg-blue-800/80 border border-blue-500/40 text-blue-100 text-xs font-bold transition cursor-pointer shadow-md"
+              >
+                <Calendar className="w-3.5 h-3.5 text-blue-300" />
+                <span>أضف للتقويم (مع منبّه) 📅</span>
+              </button>
+              {isGoogleCalConnected && (
+              <button
                 onClick={() => handleSyncSingleSlot(viewingScheduleDetails)}
                 disabled={syncingSingleSlotId === viewingScheduleDetails.id}
                 className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-900/60 hover:bg-blue-800/80 border border-blue-500/40 text-blue-100 text-xs font-bold transition cursor-pointer shadow-md"
@@ -1977,6 +2021,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = React.memo(({ profile, st
                     : 'مزامنة مع التقويم 📅'}
                 </span>
               </button>
+              )}
 
               <button
                 onClick={() => {

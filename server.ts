@@ -1,5 +1,13 @@
 import express from 'express';
 import path from 'path';
+import {
+  buildIcs,
+  generateFeedToken,
+  hashFeedToken,
+  isPlausibleFeedToken,
+  safeTimeZone,
+  type FeedSlot,
+} from './src/server/calendarFeed.js';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { getApps, initializeApp, cert } from 'firebase-admin/app';
@@ -1206,6 +1214,136 @@ app.post('/api/parent/settings', verifyFirebaseToken, userRateLimiter, async (re
     return res.json({ success: true, showFinance });
   } catch {
     return res.status(500).json({ error: 'تعذر حفظ الإعداد.' });
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// Calendar subscription (ICS). The secret token lives in the URL because calendar apps can only GET.
+// `calendarFeeds/{sha256(token)}` is server-only (Firestore rules deny clients); revoking = delete.
+// ---------------------------------------------------------------------------------------------
+function calendarFeedUrl(req: express.Request, token: string) {
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || 'sanad-almoallem-three.vercel.app').split(',')[0];
+  const proto = String(req.headers['x-forwarded-proto'] || 'https').split(',')[0];
+  return { https: `${proto}://${host}/api/calendar/${token}/schedule.ics`, webcal: `webcal://${host}/api/calendar/${token}/schedule.ics` };
+}
+
+app.get('/api/calendar/feed', verifyFirebaseToken, userRateLimiter, async (req, res) => {
+  try {
+    const uid = (req as any).user?.uid as string;
+    const snap = await getAdminDb().collection('calendarFeeds').where('teacherId', '==', uid).limit(1).get();
+    if (snap.empty) return res.json({ success: true, url: null });
+    return res.json({ success: true, ...calendarFeedUrl(req, String(snap.docs[0].data().token)) });
+  } catch {
+    return res.status(500).json({ error: 'تعذر قراءة رابط التقويم.' });
+  }
+});
+
+// Create (or rotate = old link stops working) the teacher's private calendar link.
+app.post('/api/calendar/feed', verifyFirebaseToken, userRateLimiter, async (req, res) => {
+  try {
+    const uid = (req as any).user?.uid as string;
+    const dbAdmin = getAdminDb();
+    const old = await dbAdmin.collection('calendarFeeds').where('teacherId', '==', uid).get();
+    const token = generateFeedToken();
+    const batch = dbAdmin.batch();
+    old.forEach((d: any) => batch.delete(d.ref));
+    batch.set(dbAdmin.collection('calendarFeeds').doc(hashFeedToken(token)), { teacherId: uid, token, createdAtMs: Date.now() });
+    await batch.commit();
+    return res.json({ success: true, ...calendarFeedUrl(req, token) });
+  } catch (err) {
+    console.error('calendar feed create error:', err instanceof Error ? err.message : 'unknown');
+    return res.status(500).json({ error: 'تعذر إنشاء رابط التقويم.' });
+  }
+});
+
+app.delete('/api/calendar/feed', verifyFirebaseToken, userRateLimiter, async (req, res) => {
+  try {
+    const uid = (req as any).user?.uid as string;
+    const dbAdmin = getAdminDb();
+    const old = await dbAdmin.collection('calendarFeeds').where('teacherId', '==', uid).get();
+    const batch = dbAdmin.batch();
+    old.forEach((d: any) => batch.delete(d.ref));
+    await batch.commit();
+    return res.json({ success: true });
+  } catch {
+    return res.status(500).json({ error: 'تعذر إلغاء الرابط.' });
+  }
+});
+
+async function feedRateLimiter(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const key = `calfeed:${req.ip || 'anon'}`;
+  const result = await incrementRedisCounter(`ratelimit:${key}`, 3600, 120);
+  const blocked = result.limited || (result.unavailable && !checkAndIncrementMemoryAiBucket(key, 3600_000, 120));
+  if (blocked) return res.status(429).send('Too many requests');
+  next();
+}
+
+// Public: the calendar app polls this URL. Unknown/revoked token -> plain 404 (no hints).
+app.get('/api/calendar/:token/schedule.ics', feedRateLimiter, async (req, res) => {
+  try {
+    const token = req.params.token;
+    if (!isPlausibleFeedToken(token)) return res.status(404).send('Not found');
+    const dbAdmin = getAdminDb();
+    const feed = await dbAdmin.collection('calendarFeeds').doc(hashFeedToken(token)).get();
+    if (!feed.exists) return res.status(404).send('Not found');
+    const teacherId = String(feed.data()?.teacherId || '');
+    if (!teacherId) return res.status(404).send('Not found');
+
+    const tRef = dbAdmin.collection('teachers').doc(teacherId);
+    const [tSnap, schedSnap, groupsSnap, pause] = await Promise.all([
+      tRef.get(),
+      tRef.collection('schedules').get(),
+      tRef.collection('groups').get(),
+      loadPauseState(dbAdmin, teacherId).catch(() => ({ pausedIds: new Set<string>() as ReadonlySet<string> })),
+    ]);
+    if (!tSnap.exists) return res.status(404).send('Not found');
+    const teacher: any = tSnap.data() || {};
+
+    const slots: FeedSlot[] = [];
+    for (const d of schedSnap.docs) {
+      const x: any = d.data();
+      if (x.cancelled === true || x.status === 'cancelled' || x.status === 'paused') continue;
+      if (x.studentId && (pause as any).pausedIds?.has(String(x.studentId))) continue;
+      slots.push({
+        id: d.id,
+        title: `حصة: ${String(x.studentName || 'طالب').slice(0, 80)}`,
+        dayOfWeek: Number(x.dayOfWeek),
+        time: String(x.time || ''),
+        duration: Number(x.duration) || 60,
+        recurrence: x.recurrence,
+        location: x.locationOrLink ? String(x.locationOrLink).slice(0, 200) : undefined,
+      });
+    }
+    for (const g of groupsSnap.docs) {
+      const gd: any = g.data();
+      if (gd.status === 'paused' || gd.archived || !Array.isArray(gd.schedule)) continue;
+      gd.schedule.forEach((sl: any, i: number) => {
+        slots.push({
+          id: `g-${g.id}-${i}`,
+          title: `مجموعة: ${String(gd.name || 'مجموعة').slice(0, 80)}`,
+          dayOfWeek: Number(sl.day),
+          time: String(sl.time || ''),
+          duration: Number(sl.duration) || 60,
+          recurrence: 'weekly',
+          location: gd.centerName ? String(gd.centerName).slice(0, 120) : undefined,
+        });
+      });
+    }
+
+    const ics = buildIcs({
+      calendarName: `حصص ${String(teacher.name || 'المعلم').slice(0, 60)} — سند المعلم`,
+      timeZone: safeTimeZone(teacher.timezone),
+      slots,
+      alarmMinutes: [Number(teacher.reminderMinutesBefore) || 15],
+    });
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    res.setHeader('Content-Disposition', 'inline; filename="schedule.ics"');
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.setHeader('X-Robots-Tag', 'noindex');
+    return res.status(200).send(ics);
+  } catch (err) {
+    console.error('calendar feed error:', err instanceof Error ? err.message : 'unknown');
+    return res.status(500).send('Error');
   }
 });
 
