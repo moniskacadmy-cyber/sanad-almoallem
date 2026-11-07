@@ -2011,6 +2011,57 @@ app.post('/api/reminders/login-summary', verifyFirebaseToken, userRateLimiter, a
 
 // Manual test from Settings: sends a push to every registered device of this teacher right now
 // and reports how many devices are registered and what FCM answered (for troubleshooting).
+/**
+ * Push the OWNER (every admins/{uid}) the moment a new teacher registers, with the data they entered.
+ * The uid comes only from the verified token; the profile is read server-side (never trusted from the body);
+ * it only fires for a brand-new profile and at most once per user (signupNotices/{uid}).
+ */
+app.post('/api/admin/notify-signup', verifyFirebaseToken, userRateLimiter, async (req, res) => {
+  try {
+    const uid = (req as any).user?.uid as string | undefined;
+    if (!uid) return res.status(401).json({ error: 'رمز الدخول غير صالح.' });
+    const dbAdmin = getAdminDb();
+
+    const tSnap = await dbAdmin.collection('teachers').doc(uid).get();
+    if (!tSnap.exists) return res.json({ success: true, notified: 0, reason: 'no_profile' });
+    const t: any = tSnap.data() || {};
+    const createdMs = typeof t.createdAt?.toMillis === 'function' ? t.createdAt.toMillis() : 0;
+    if (!createdMs || Date.now() - createdMs > 30 * 60 * 1000) {
+      return res.json({ success: true, notified: 0, reason: 'not_new' });
+    }
+
+    // Exactly-once: create() fails if the notice already exists.
+    try {
+      await dbAdmin.collection('signupNotices').doc(uid).create({ at: new Date().toISOString() });
+    } catch {
+      return res.json({ success: true, notified: 0, reason: 'already' });
+    }
+
+    const clean = (v: unknown, max = 60) => String(v ?? '').replace(/[\r\n]+/g, ' ').slice(0, max);
+    const body = `${clean(t.name)} • ${clean(t.subject)}${t.whatsapp ? ` • 📱 ${clean(t.whatsapp, 20)}` : ''}${t.email ? ` • ${clean(t.email, 80)}` : ''}`;
+    const msg = { title: '👤 مستخدم جديد سجّل في سند المعلم', body, tag: `new-signup-${uid}` };
+
+    const adminsSnap = await dbAdmin.collection('admins').get();
+    const messaging = getAdminMessaging(getApps()[0]);
+    let notified = 0;
+    for (const adminDoc of adminsSnap.docs) {
+      try {
+        const { tokens, tokenDocPaths } = await loadDeviceTokens(dbAdmin, adminDoc.id);
+        if (!tokens.length) continue;
+        const resp = await sendPush(messaging, tokens, msg, { kind: 'new_signup', teacherId: uid }, 86400);
+        removeBadTokens(dbAdmin, adminDoc.id, tokens, tokenDocPaths, resp);
+        notified += resp.successCount;
+      } catch (e) {
+        console.warn('notify-signup: admin push failed', e instanceof Error ? e.message : 'unknown');
+      }
+    }
+    return res.json({ success: true, notified });
+  } catch (err) {
+    console.error('Error in POST /api/admin/notify-signup:', err instanceof Error ? err.message : 'unknown');
+    return res.status(500).json({ error: 'تعذر إرسال إشعار التسجيل.' });
+  }
+});
+
 app.post('/api/reminders/test-push', verifyFirebaseToken, userRateLimiter, async (req, res) => {
   try {
     const uid = (req as any).user?.uid as string | undefined;

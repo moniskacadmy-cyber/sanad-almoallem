@@ -532,6 +532,17 @@ export async function registerTeacher(params: {
     console.warn('Could not record admin notification:', err);
   }
 
+  // Tell the owner (push) that someone registered. Best-effort: never blocks or fails the signup.
+  try {
+    const idToken = await user.getIdToken();
+    void fetch('/api/admin/notify-signup', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+    }).catch(() => {});
+  } catch {
+    /* ignore */
+  }
+
   // Seed starter library templates
   try {
     await seedDefaultLibraryItems(user.uid);
