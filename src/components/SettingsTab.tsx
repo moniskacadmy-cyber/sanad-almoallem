@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { PublicPagePanel } from './PublicPagePanel';
 import { CalendarSyncPanel } from './CalendarSyncPanel';
+import { NativeAlarmPanel } from './NativeAlarmPanel';
 import { useTranslation } from 'react-i18next';
 import { TeacherProfile, Student, ScheduleSlot, LibraryItem, BackupData, ReminderLog, ReminderSettings, DEFAULT_WHATSAPP_TEMPLATES, SUPPORTED_CURRENCIES, NotificationPreferences, DEFAULT_NOTIFICATION_PREFERENCES, DoNotDisturbSettings, DEFAULT_DND_SETTINGS, isInDoNotDisturbPeriod } from '../types';
 import { getStoredNotificationPrefs } from './NotificationCenter';
@@ -1601,6 +1602,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       </div>
 
       <PublicPagePanel profile={profile} />
+
+        <NativeAlarmPanel profile={profile} />
 
         <CalendarSyncPanel />
 
