@@ -281,11 +281,16 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
 
     try {
       // Gather context from all uploaded teacher sources
-      const sourcesContext = sources.map((s) => ({
-        title: s.title,
-        type: s.type === 'pdf' ? 'كتاب / ملف PDF' : s.type === 'image' ? 'صورة منهج' : 'مرجع تدريس',
-        content: s.content || s.title,
-      }));
+      // The server rejects > 20 sources or > 100k chars in total, so send the newest 20 sources, each trimmed to 5000
+      // characters (the server only reads 5000 per source anyway). Otherwise a big library made every question fail.
+      const sourcesContext = [...sources]
+        .sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
+        .slice(0, 20)
+        .map((s) => ({
+          title: String(s.title || '').slice(0, 200),
+          type: s.type === 'pdf' ? 'كتاب / ملف PDF' : s.type === 'image' ? 'صورة منهج' : 'مرجع تدريس',
+          content: String(s.content || s.title || '').slice(0, 5000),
+        }));
 
       const token = await auth.currentUser?.getIdToken();
       const res = await fetch('/api/ai/ask', {
@@ -423,6 +428,10 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
         console.error('Image compression error:', err);
         setFileUploadError('حدث خطأ أثناء معالجة وضغط الصورة.');
       }
+    } else {
+      setSourceFileName('');
+      setSourceFileSize('');
+      setFileUploadError('نوع الملف غير مدعوم. ارفع ملف PDF أو صورة، أو اكتب المحتوى في الخانة يدوياً.');
     }
   };
 
@@ -455,6 +464,7 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
     } catch (err) {
       console.error('Error saving source:', err);
       setCloudStatus('idle');
+      setFileUploadError('تعذر حفظ المصدر. جرّب تاني، ولو فيه صورة كبيرة اختار صورة أصغر أو قلّل النص.');
     } finally {
       setIsSavingSource(false);
     }
@@ -476,7 +486,12 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
   // Seed default templates
   const handleRestoreDefaults = async () => {
     if (window.confirm('هل تريد إضافة النماذج المقترحة الافتراضية إلى مكتبتك؟')) {
-      await seedDefaultLibraryItems(profile.id);
+      try {
+        await seedDefaultLibraryItems(profile.id);
+      } catch (err) {
+        console.error('seed defaults failed', err);
+        alert('تعذر إضافة النماذج الافتراضية، جرّب تاني.');
+      }
     }
   };
 
@@ -533,7 +548,7 @@ export const LibraryTab: React.FC<LibraryTabProps> = ({ profile, libraryItems })
 
   const handleCopyPrepModal = () => {
     const textToCopy = prepModalContent || generateNewLessonPrepText();
-    navigator.clipboard.writeText(textToCopy);
+    navigator.clipboard?.writeText(textToCopy).catch(() => {});
     setCopiedPrepModal(true);
     setTimeout(() => setCopiedPrepModal(false), 2000);
   };

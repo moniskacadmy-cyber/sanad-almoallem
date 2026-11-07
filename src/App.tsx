@@ -53,6 +53,7 @@ import {
   Calendar,
   BookOpen,
   Settings,
+  Library,
   Loader2,
   Clock,
   MessageCircle,
@@ -728,6 +729,8 @@ export default function App() {
     { label: 'المجموعات', icon: Users },
     { label: 'المالية', icon: DollarSign },
     { label: 'المواعيد', icon: Calendar, badge: schedules.length },
+    { label: 'مكتبتي', icon: Library },
+    { label: 'الإعدادات', icon: Settings },
   ];
 
   return (
@@ -967,7 +970,7 @@ export default function App() {
               <button
                 key={tab.label}
                 onClick={() => handleSelectTab(idx)}
-                className={`flex-1 flex flex-col items-center justify-center py-1.5 px-1 rounded-2xl transition cursor-pointer relative ${
+                className={`flex-1 min-w-0 flex flex-col items-center justify-center py-1.5 px-0.5 rounded-2xl transition cursor-pointer relative ${
                   isActive
                     ? 'text-purple-700 dark:text-purple-300 font-bold'
                     : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
@@ -980,7 +983,7 @@ export default function App() {
                 >
                   <Icon className="w-5 h-5" />
                 </div>
-                <span className="text-[10px] mt-0.5">{tab.label}</span>
+                <span className="text-[9px] mt-0.5 whitespace-nowrap">{tab.label}</span>
 
                 {tab.badge !== undefined && tab.badge > 0 && (
                   <span className="absolute top-1 left-2.5 px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-purple-600 text-white border border-purple-400/40 shadow">
