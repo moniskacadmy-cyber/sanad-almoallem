@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { PublicPagePanel } from './PublicPagePanel';
 import { SettingsGroup } from './SettingsGroup';
+import { HowToGuide } from './HowToGuide';
 import { CalendarSyncPanel } from './CalendarSyncPanel';
 import { NativeAlarmPanel } from './NativeAlarmPanel';
 import { useTranslation } from 'react-i18next';
@@ -1044,6 +1045,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </div>
         </div>
       )}
+
+      <HowToGuide />
 
       <SettingsGroup icon="🔔" title="الإشعارات والتذكيرات" hint="تذكير الحصص، ملخص الصباح، المنبّه" defaultOpen>
       {/* Automated Class Reminders Card */}
