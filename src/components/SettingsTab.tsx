@@ -204,20 +204,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     setIsConnectingCal(false);
     if (res.success) {
       setIsGoogleCalConnected(true);
-      setCalSyncNotice(`تم ربط تقويم Google بنجاح (${res.email || 'الحساب المرتبط'}) 🎉 جارٍ مزامنة جدول الحصص...`);
+      setCalSyncNotice(`تم ربط تقويم Google بنجاح (${res.email || 'الحساب المرتبط'}) 🎉`);
       triggerConfetti({ particleCount: 35, spread: 60 });
-      // Automatically sync all active schedules immediately upon connecting
-      try {
-        setIsSyncingCal(true);
-        const result = await syncAllSchedulesToCalendar(profile.id, schedules, profile.subject);
-        setCalSyncNotice(
-          `تم ربط تقويم Google بنجاح ومزامنة ${result.synced} حصة نشطة تلقائياً! 📅✨`
-        );
-      } catch (syncErr) {
-        console.warn('Initial auto-sync error:', syncErr);
-      } finally {
-        setIsSyncingCal(false);
-      }
       setTimeout(() => setCalSyncNotice(null), 6000);
     } else {
       setCalErrorNotice(res.error || 'فشل الاتصال بتقويم Google.');

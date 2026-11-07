@@ -1,6 +1,8 @@
 {
-  "name": "تذكيراتي",
-  "description": "تطبيق تذكيرات ذكي ومتكامل باللغة العربية مع دعم تقويم جوجل وتقويم الهاتف واشتراك PWA كامل.",
+  "name": "Remix سند المعلم",
+  "description": "تطبيق ويب متكامل لتنظيم الحصص والطلاب والمواعيد والمدفوعات للمعلمين الخصوصيين مع إدارة الاشتراكات.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

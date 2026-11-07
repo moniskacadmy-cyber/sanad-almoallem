@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { TeacherProfile, Student, LessonLog, ClassType, PaymentStatus, ScheduleSlot, DEFAULT_WHATSAPP_TEMPLATES, renderTemplate, isLessonFinanciallyCounted, ALL_SUBJECTS, Group, QuickNote, NoteColor } from '../types';
+import { TeacherProfile, Student, LessonLog, ClassType, PaymentStatus, ScheduleSlot, DEFAULT_WHATSAPP_TEMPLATES, renderTemplate, isLessonFinanciallyCounted, ALL_SUBJECTS, Group } from '../types';
 import { AbsenceDetailsModal, AbsenceDetailsResult } from './AbsenceDetailsModal';
 import { DailyAttendanceModal } from './DailyAttendanceModal';
 import { StudentStatusModal } from './StudentStatusModal';
@@ -43,11 +43,6 @@ import {
   recordStudentAttendance,
   bulkArchiveStudents,
   bulkDeleteStudents,
-  subscribeToStudentQuickNotes,
-  addStudentQuickNote,
-  updateStudentQuickNote,
-  deleteStudentQuickNote,
-  togglePinStudentQuickNote,
 } from '../firebase';
 import {
   WEEK_DAYS,
@@ -90,8 +85,6 @@ import {
   Archive,
   CheckSquare,
   Square,
-  Pin,
-  StickyNote,
 } from 'lucide-react';
 
 interface FormScheduleRow {
@@ -108,109 +101,6 @@ export const DURATION_OPTIONS = [
   { value: 90, label: '90 دقيقة' },
   { value: 120, label: '120 دقيقة' },
 ];
-
-const NOTE_COLOR_STYLES: Record<
-  NoteColor,
-  {
-    card: string;
-    border: string;
-    text: string;
-    badge: string;
-    dot: string;
-    name: string;
-  }
-> = {
-  purple: {
-    card: 'bg-gradient-to-r from-purple-950/40 via-slate-900/90 to-purple-950/20',
-    border: 'border-purple-500/35 hover:border-purple-400/50',
-    text: 'text-purple-100',
-    badge: 'bg-purple-900/50 text-purple-200 border-purple-500/30',
-    dot: 'bg-purple-400',
-    name: 'بنفسجي',
-  },
-  emerald: {
-    card: 'bg-gradient-to-r from-emerald-950/40 via-slate-900/90 to-emerald-950/20',
-    border: 'border-emerald-500/35 hover:border-emerald-400/50',
-    text: 'text-emerald-100',
-    badge: 'bg-emerald-900/50 text-emerald-200 border-emerald-500/30',
-    dot: 'bg-emerald-400',
-    name: 'أخضر',
-  },
-  amber: {
-    card: 'bg-gradient-to-r from-amber-950/40 via-slate-900/90 to-amber-950/20',
-    border: 'border-amber-500/35 hover:border-amber-400/50',
-    text: 'text-amber-100',
-    badge: 'bg-amber-900/50 text-amber-200 border-amber-500/30',
-    dot: 'bg-amber-400',
-    name: 'عنبري',
-  },
-  blue: {
-    card: 'bg-gradient-to-r from-sky-950/40 via-slate-900/90 to-sky-950/20',
-    border: 'border-sky-500/35 hover:border-sky-400/50',
-    text: 'text-sky-100',
-    badge: 'bg-sky-900/50 text-sky-200 border-sky-500/30',
-    dot: 'bg-sky-400',
-    name: 'أزرق',
-  },
-  rose: {
-    card: 'bg-gradient-to-r from-rose-950/40 via-slate-900/90 to-rose-950/20',
-    border: 'border-rose-500/35 hover:border-rose-400/50',
-    text: 'text-rose-100',
-    badge: 'bg-rose-900/50 text-rose-200 border-rose-500/30',
-    dot: 'bg-rose-400',
-    name: 'وردي',
-  },
-};
-
-const STUDENT_NOTE_CATEGORIES = [
-  { id: 'progress', label: 'تقدم ومستوى', icon: '📈' },
-  { id: 'academic', label: 'أكاديمي وواجبات', icon: '📚' },
-  { id: 'behavior', label: 'سلوك وتركيز', icon: '💡' },
-  { id: 'general', label: 'عام', icon: '📝' },
-] as const;
-
-function formatArabicNoteDate(timestamp: any): string {
-  if (!timestamp) return 'الآن';
-  try {
-    let date: Date;
-    if (timestamp.toDate) {
-      date = timestamp.toDate();
-    } else if (timestamp.toMillis) {
-      date = new Date(timestamp.toMillis());
-    } else if (timestamp._seconds) {
-      date = new Date(timestamp._seconds * 1000);
-    } else if (timestamp instanceof Date) {
-      date = timestamp;
-    } else {
-      date = new Date(timestamp);
-    }
-    if (isNaN(date.getTime())) return 'مؤخراً';
-
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMinutes = Math.floor(diffMs / (1000 * 60));
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-    if (diffMinutes < 1) return 'الآن';
-    if (diffMinutes < 60) return `منذ ${diffMinutes} دقيقة`;
-    if (diffHours < 24 && now.getDate() === date.getDate()) {
-      return `اليوم ${date.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}`;
-    }
-    if (diffDays === 1) {
-      return `أمس ${date.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}`;
-    }
-    return date.toLocaleDateString('ar-EG', {
-      day: 'numeric',
-      month: 'short',
-      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return 'مؤخراً';
-  }
-}
 
 interface StudentsTabProps {
   profile: TeacherProfile;
@@ -447,17 +337,6 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
   const [isProfileNotesOpen, setIsProfileNotesOpen] = useState(false);
   const [profileNotes, setProfileNotes] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
-
-  // Student Quick Notes & Progress Remarks State
-  const [studentQuickNotes, setStudentQuickNotes] = useState<QuickNote[]>([]);
-  const [isStudentQuickNotesOpen, setIsStudentQuickNotesOpen] = useState(true);
-  const [quickNoteInputText, setQuickNoteInputText] = useState('');
-  const [quickNoteColor, setQuickNoteColor] = useState<NoteColor>('purple');
-  const [quickNoteCategory, setQuickNoteCategory] = useState<'progress' | 'academic' | 'behavior' | 'general'>('progress');
-  const [quickNotePinned, setQuickNotePinned] = useState(false);
-  const [isSavingQuickNote, setIsSavingQuickNote] = useState(false);
-  const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
-  const [quickNoteCategoryFilter, setQuickNoteCategoryFilter] = useState<string>('all');
 
   // Form fields for Add/Edit Student
   const [formName, setFormName] = useState('');
@@ -721,97 +600,21 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
     void loadAllLessons();
   }, [profile.id, students]);
 
-  // Subscribe to selected student's lessons and quick notes
+  // Subscribe to selected student's lessons
   useEffect(() => {
     if (!selectedProfileStudent) {
       setStudentLessons([]);
-      setStudentQuickNotes([]);
-      setQuickNoteInputText('');
       return;
     }
     setProfileLearningStyle(selectedProfileStudent.learningStyle || '');
     setProfileNotes(selectedProfileStudent.notes || '');
     setIsProfileLearningStyleOpen(false);
     setIsProfileNotesOpen(!!selectedProfileStudent.notes);
-
-    const unsubLessons = subscribeToStudentLessons(profile.id, selectedProfileStudent.id, (lessons) => {
+    const unsub = subscribeToStudentLessons(profile.id, selectedProfileStudent.id, (lessons) => {
       setStudentLessons(lessons);
     });
-
-    const unsubNotes = subscribeToStudentQuickNotes(profile.id, selectedProfileStudent.id, (notes) => {
-      setStudentQuickNotes(notes);
-    });
-
-    return () => {
-      unsubLessons();
-      unsubNotes();
-    };
-  }, [profile.id, selectedProfileStudent?.id]);
-
-  const handleAddStudentQuickNote = async (overrideText?: string) => {
-    const textToSave = (overrideText || quickNoteInputText).trim();
-    if (!textToSave || !selectedProfileStudent) return;
-    setIsSavingQuickNote(true);
-    try {
-      await addStudentQuickNote(profile.id, selectedProfileStudent.id, {
-        text: textToSave,
-        color: quickNoteColor,
-        isPinned: quickNotePinned,
-        category: quickNoteCategory,
-      });
-      setQuickNoteInputText('');
-      setQuickNotePinned(false);
-      setToastMessage({ type: 'success', text: 'تم حفظ ملاحظة التقدم بنجاح! 📝' });
-      setTimeout(() => setToastMessage(null), 3000);
-    } catch (e) {
-      console.error('Error saving student quick note:', e);
-      setToastMessage({ type: 'error', text: 'تعذر حفظ الملاحظة، يرجى المحاولة ثانية' });
-      setTimeout(() => setToastMessage(null), 3000);
-    } finally {
-      setIsSavingQuickNote(false);
-    }
-  };
-
-  const handleDeleteStudentQuickNote = async (noteId: string) => {
-    if (!selectedProfileStudent) return;
-    setDeletingNoteId(noteId);
-    try {
-      await deleteStudentQuickNote(profile.id, selectedProfileStudent.id, noteId);
-      setToastMessage({ type: 'success', text: 'تم حذف الملاحظة' });
-      setTimeout(() => setToastMessage(null), 2500);
-    } catch (e) {
-      console.error('Error deleting student quick note:', e);
-    } finally {
-      setDeletingNoteId(null);
-    }
-  };
-
-  const handleTogglePinStudentQuickNote = async (note: QuickNote) => {
-    if (!selectedProfileStudent) return;
-    try {
-      await togglePinStudentQuickNote(profile.id, selectedProfileStudent.id, note.id, !!note.isPinned);
-    } catch (e) {
-      console.error('Error toggling pin:', e);
-    }
-  };
-
-  const handleShareNoteToWhatsApp = (note: QuickNote) => {
-    if (!selectedProfileStudent) return;
-    const phone = selectedProfileStudent.whatsapp ? selectedProfileStudent.whatsapp.replace(/[^0-9]/g, '') : '';
-    const dateFormatted = note.createdAt?.toDate
-      ? note.createdAt.toDate().toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' })
-      : '';
-    const catTitles: Record<string, string> = {
-      progress: 'تقرير تقدم ومستوى',
-      academic: 'ملاحظة أكاديمية وواجبات',
-      behavior: 'ملاحظة سلوك وتركيز',
-      general: 'ملاحظة متابعة عامة',
-    };
-    const catLabel = catTitles[note.category || 'progress'] || 'ملاحظة متابعة';
-    const message = `السلام عليكم ورحمة الله وبركاته،\n\n📌 *${catLabel}* بخصوص الطالب/ـة *${selectedProfileStudent.name}*:\n"${note.text}"\n\n${dateFormatted ? `🗓️ التاريخ: ${dateFormatted}\n` : ''}مع خالص تحياتي، أ. ${profile.name}`;
-    const url = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}` : `https://wa.me/?text=${encodeURIComponent(message)}`;
-    window.open(url, '_blank');
-  };
+    return () => unsub();
+  }, [profile.id, selectedProfileStudent]);
 
   useEffect(() => {
     const unsub = subscribeToGroups(profile.id, (g) => setGroups(g));
@@ -3122,333 +2925,6 @@ export const StudentsTab: React.FC<StudentsTabProps> = React.memo(({
             {selectedProfileStudent && (
               <ParentAccessPanel teacherId={profile.id} teacherName={profile.name} student={selectedProfileStudent} />
             )}
-
-            {/* SECTION: سجل ملاحظات وتقدم الطالب (Quick Notes & Progress Remarks) */}
-            <div className="rounded-2xl bg-gradient-to-r from-purple-950/40 via-slate-950/80 to-indigo-950/40 border border-purple-500/30 overflow-hidden transition-all shadow-lg">
-              {/* Collapsible Header */}
-              <button
-                type="button"
-                onClick={() => setIsStudentQuickNotesOpen(!isStudentQuickNotesOpen)}
-                className="w-full p-3.5 flex items-center justify-between text-right cursor-pointer hover:bg-purple-950/30 transition"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center border border-purple-500/30 flex-shrink-0 shadow-inner">
-                    <StickyNote className="w-4 h-4 text-purple-300" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-white flex items-center gap-1.5 flex-wrap">
-                      <span>ملاحظات وتطور مستوى الطالب (Quick Remarks)</span>
-                      <span className="text-[10px] text-purple-200 font-bold px-2 py-0.5 rounded-full bg-purple-900/60 border border-purple-500/40 shadow-sm">
-                        {studentQuickNotes.length > 0
-                          ? `${studentQuickNotes.length} ملاحظة مسجلة 📝`
-                          : 'سجل الملاحظات الفورية'}
-                      </span>
-                      {studentQuickNotes.some((n) => n.isPinned) && (
-                        <span className="text-[9px] text-amber-200 font-semibold px-1.5 py-0.5 rounded-md bg-amber-950/80 border border-amber-500/40 flex items-center gap-1">
-                          <Pin className="w-2.5 h-2.5 fill-amber-300 text-amber-300" />
-                          <span>
-                            {studentQuickNotes.filter((n) => n.isPinned).length} مثبتة
-                          </span>
-                        </span>
-                      )}
-                    </h4>
-                    <p className="text-[10px] text-slate-400">
-                      توثيق فوري لمستوى الطالب، الإنجاز الأكاديمي، والسلوك بختم زمني
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 text-xs text-purple-300">
-                  <span className="text-[10px] font-medium">
-                    {isStudentQuickNotesOpen ? 'إغلاق' : 'عرض'}
-                  </span>
-                  <ChevronDown
-                    className={`w-4 h-4 transform transition-transform duration-200 ${
-                      isStudentQuickNotesOpen ? 'rotate-180 text-purple-300' : ''
-                    }`}
-                  />
-                </div>
-              </button>
-
-              {isStudentQuickNotesOpen && (
-                <div className="p-3.5 pt-1 space-y-3 border-t border-purple-900/30 mt-1">
-                  {/* Quick Preset Remark Chips */}
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-300 mb-1.5">
-                      ⚡ وسوم وملاحظات جاهزة بضغطة زر:
-                    </label>
-                    <div className="flex flex-wrap gap-1 text-[10px]">
-                      {[
-                        { text: 'تحسن ملحوظ في الاستيعاب 📈', cat: 'progress', color: 'emerald' as NoteColor },
-                        { text: 'أنجز الواجب المنزلي بإتقان 🌟', cat: 'academic', color: 'emerald' as NoteColor },
-                        { text: 'يحتاج مراجعة وتدريب على القاعدة ⚠️', cat: 'academic', color: 'amber' as NoteColor },
-                        { text: 'خطوة بخطوة - تركيزه أفضل ✍️', cat: 'progress', color: 'purple' as NoteColor },
-                        { text: 'تفاعل ممتاز وإيجابي أثناء الشرح 💡', cat: 'behavior', color: 'blue' as NoteColor },
-                        { text: 'تشتت بالانتباه أثناء الحصة 📉', cat: 'behavior', color: 'rose' as NoteColor },
-                      ].map((item) => (
-                        <button
-                          key={item.text}
-                          type="button"
-                          onClick={() => {
-                            setQuickNoteInputText(item.text);
-                            setQuickNoteCategory(item.cat as any);
-                            setQuickNoteColor(item.color);
-                          }}
-                          className="px-2 py-0.5 rounded-lg bg-slate-900/90 hover:bg-purple-900/50 border border-slate-700/80 hover:border-purple-500/40 text-slate-300 hover:text-purple-200 transition cursor-pointer active:scale-95 shadow-sm"
-                        >
-                          + {item.text}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Add Note Composer Box */}
-                  <div className="rounded-xl bg-slate-900/90 border border-purple-500/30 p-2.5 space-y-2 shadow-inner">
-                    <div className="relative">
-                      <textarea
-                        value={quickNoteInputText}
-                        onChange={(e) => setQuickNoteInputText(e.target.value)}
-                        placeholder="سجّل ملاحظة تقدم جديدة للطالب (مثال: أتقن حل مسائل القسمة المطولة اليوم)..."
-                        rows={2}
-                        className="w-full rounded-xl bg-slate-950/80 border border-slate-700/80 p-2.5 pl-10 text-xs text-slate-200 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400/50 transition resize-y"
-                      />
-                      <div className="absolute left-2 bottom-2.5">
-                        <VoiceInputButton
-                          onTranscript={(text) =>
-                            setQuickNoteInputText((prev) => (prev ? `${prev} ${text}` : text))
-                          }
-                          className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-purple-300"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Metadata Selector Controls (Category, Color, Pin, Submit) */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-800/80 text-[11px]">
-                      {/* Category Chips */}
-                      <div className="flex items-center gap-1 flex-wrap">
-                        <span className="text-[10px] text-slate-400 font-bold ml-1">التصنيف:</span>
-                        {STUDENT_NOTE_CATEGORIES.map((cat) => (
-                          <button
-                            key={cat.id}
-                            type="button"
-                            onClick={() => setQuickNoteCategory(cat.id as any)}
-                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition cursor-pointer border ${
-                              quickNoteCategory === cat.id
-                                ? 'bg-purple-600 text-white border-purple-400 shadow-sm'
-                                : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
-                            }`}
-                          >
-                            <span>{cat.icon} {cat.label}</span>
-                          </button>
-                        ))}
-                      </div>
-
-                      {/* Color Tag & Pin & Submit */}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {/* Color Selector */}
-                        <div className="flex items-center gap-1">
-                          {(['purple', 'emerald', 'amber', 'blue', 'rose'] as NoteColor[]).map((c) => (
-                            <button
-                              key={c}
-                              type="button"
-                              onClick={() => setQuickNoteColor(c)}
-                              title={NOTE_COLOR_STYLES[c].name}
-                              className={`w-4 h-4 rounded-full transition cursor-pointer ${
-                                NOTE_COLOR_STYLES[c].dot
-                              } ${
-                                quickNoteColor === c
-                                  ? 'ring-2 ring-white ring-offset-1 ring-offset-slate-900 scale-110'
-                                  : 'opacity-70 hover:opacity-100'
-                              }`}
-                            />
-                          ))}
-                        </div>
-
-                        {/* Pin Toggle */}
-                        <button
-                          type="button"
-                          onClick={() => setQuickNotePinned(!quickNotePinned)}
-                          className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer border ${
-                            quickNotePinned
-                              ? 'bg-amber-950/80 border-amber-500/60 text-amber-300'
-                              : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
-                          }`}
-                          title={quickNotePinned ? 'مثبتة في الأعلى' : 'تثبيت في الأعلى'}
-                        >
-                          <Pin className={`w-3 h-3 ${quickNotePinned ? 'fill-amber-300' : ''}`} />
-                          <span>تثبيت</span>
-                        </button>
-
-                        {/* Save Button */}
-                        <button
-                          type="button"
-                          disabled={!quickNoteInputText.trim() || isSavingQuickNote}
-                          onClick={() => handleAddStudentQuickNote()}
-                          className="px-3 py-1 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:brightness-110 text-white text-[11px] font-bold transition shadow disabled:opacity-40 cursor-pointer active:scale-95 flex items-center gap-1"
-                        >
-                          {isSavingQuickNote ? (
-                            <span>جارٍ الحفظ...</span>
-                          ) : (
-                            <>
-                              <Plus className="w-3.5 h-3.5" />
-                              <span>حفظ الملاحظة</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Filter Tabs if multiple notes exist */}
-                  {studentQuickNotes.length > 2 && (
-                    <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[10px]">
-                      <button
-                        type="button"
-                        onClick={() => setQuickNoteCategoryFilter('all')}
-                        className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer border ${
-                          quickNoteCategoryFilter === 'all'
-                            ? 'bg-purple-600 text-white border-purple-400'
-                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800'
-                        }`}
-                      >
-                        الكل ({studentQuickNotes.length})
-                      </button>
-                      {studentQuickNotes.some((n) => n.isPinned) && (
-                        <button
-                          type="button"
-                          onClick={() => setQuickNoteCategoryFilter('pinned')}
-                          className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer border ${
-                            quickNoteCategoryFilter === 'pinned'
-                              ? 'bg-amber-600 text-white border-amber-400'
-                              : 'bg-slate-900 text-amber-300/80 border-slate-800 hover:bg-slate-800'
-                          }`}
-                        >
-                          المثبتة 📌 ({studentQuickNotes.filter((n) => n.isPinned).length})
-                        </button>
-                      )}
-                      {STUDENT_NOTE_CATEGORIES.map((cat) => {
-                        const count = studentQuickNotes.filter((n) => (n.category || 'progress') === cat.id).length;
-                        if (count === 0) return null;
-                        return (
-                          <button
-                            key={cat.id}
-                            type="button"
-                            onClick={() => setQuickNoteCategoryFilter(cat.id)}
-                            className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer border ${
-                              quickNoteCategoryFilter === cat.id
-                                ? 'bg-purple-600 text-white border-purple-400'
-                                : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800'
-                            }`}
-                          >
-                            {cat.icon} {cat.label} ({count})
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Notes List */}
-                  {studentQuickNotes.length === 0 ? (
-                    <div className="text-center py-4 px-3 rounded-xl bg-slate-900/60 border border-slate-800/80 text-slate-400">
-                      <Sparkles className="w-5 h-5 mx-auto text-purple-400/60 mb-1" />
-                      <p className="text-xs font-semibold text-slate-300">لا توجد ملاحظات مسجلة للطالب بعد</p>
-                      <p className="text-[10px] text-slate-500 mt-0.5">
-                        استخدم الوسوم الجاهزة أعلاه أو اكتب ملاحظتك لتوثيق تقدم الطالب وتطور مستواه
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                      {studentQuickNotes
-                        .filter((note) => {
-                          if (quickNoteCategoryFilter === 'all') return true;
-                          if (quickNoteCategoryFilter === 'pinned') return !!note.isPinned;
-                          return (note.category || 'progress') === quickNoteCategoryFilter;
-                        })
-                        .map((note) => {
-                          const color = (note.color as NoteColor) || 'purple';
-                          const style = NOTE_COLOR_STYLES[color] || NOTE_COLOR_STYLES.purple;
-                          const catMeta = STUDENT_NOTE_CATEGORIES.find(
-                            (c) => c.id === (note.category || 'progress')
-                          ) || STUDENT_NOTE_CATEGORIES[0];
-
-                          return (
-                            <div
-                              key={note.id}
-                              className={`p-2.5 rounded-xl border transition shadow-sm ${style.card} ${style.border}`}
-                            >
-                              {/* Note Header: Category, Date, Pin Badge */}
-                              <div className="flex items-center justify-between gap-1 text-[10px] mb-1.5 border-b border-slate-800/50 pb-1">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className={`px-1.5 py-0.5 rounded-md border font-semibold ${style.badge}`}>
-                                    {catMeta.icon} {catMeta.label}
-                                  </span>
-
-                                  {note.isPinned && (
-                                    <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-amber-950/80 border border-amber-500/50 text-amber-300 font-bold">
-                                      <Pin className="w-2.5 h-2.5 fill-amber-300" />
-                                      <span>مثبتة</span>
-                                    </span>
-                                  )}
-                                </div>
-
-                                <div className="flex items-center gap-1 text-slate-400 text-[10px]">
-                                  <Clock className="w-3 h-3 text-slate-500" />
-                                  <span>{formatArabicNoteDate(note.createdAt)}</span>
-                                </div>
-                              </div>
-
-                              {/* Note Body Text */}
-                              <p className={`text-xs leading-relaxed whitespace-pre-line font-medium ${style.text}`}>
-                                {note.text}
-                              </p>
-
-                              {/* Note Actions: Pin/Unpin, WhatsApp Share, Delete */}
-                              <div className="flex items-center justify-end gap-1.5 pt-1.5 mt-1 border-t border-slate-800/40">
-                                {/* Toggle Pin */}
-                                <button
-                                  type="button"
-                                  onClick={() => handleTogglePinStudentQuickNote(note)}
-                                  className={`p-1 rounded-md transition cursor-pointer text-[10px] flex items-center gap-1 ${
-                                    note.isPinned
-                                      ? 'text-amber-300 hover:text-amber-200 bg-amber-950/50 border border-amber-500/40'
-                                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                                  }`}
-                                  title={note.isPinned ? 'إلغاء التثبيت' : 'تثبيت في الأعلى'}
-                                >
-                                  <Pin className={`w-3 h-3 ${note.isPinned ? 'fill-amber-300' : ''}`} />
-                                  <span>{note.isPinned ? 'مثبتة' : 'تثبيت'}</span>
-                                </button>
-
-                                {/* Share via WhatsApp */}
-                                <button
-                                  type="button"
-                                  onClick={() => handleShareNoteToWhatsApp(note)}
-                                  className="p-1 px-1.5 rounded-md text-emerald-300 hover:text-emerald-200 bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-500/30 transition cursor-pointer text-[10px] flex items-center gap-1"
-                                  title="مشاركة الملاحظة مع ولي الأمر عبر واتساب"
-                                >
-                                  <MessageCircle className="w-3 h-3 text-emerald-400" />
-                                  <span>مشاركة واتساب</span>
-                                </button>
-
-                                {/* Delete */}
-                                <button
-                                  type="button"
-                                  disabled={deletingNoteId === note.id}
-                                  onClick={() => handleDeleteStudentQuickNote(note.id)}
-                                  className="p-1 rounded-md text-rose-400/80 hover:text-rose-300 hover:bg-rose-950/40 transition cursor-pointer text-[10px] flex items-center gap-0.5 disabled:opacity-40"
-                                  title="حذف الملاحظة"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                  <span>حذف</span>
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
 
             {/* SECTION 2: SECTION "إزاي الطالب ده بيتعلم أحسن؟" (Collapsible - مغلق افتراضياً) */}
             <div className="rounded-2xl bg-gradient-to-r from-purple-950/40 to-indigo-950/40 border border-purple-500/25 overflow-hidden transition-all shadow-md">

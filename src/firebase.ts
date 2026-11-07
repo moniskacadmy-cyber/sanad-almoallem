@@ -266,26 +266,6 @@ export async function bulkShiftSchedules(
     batch.update(docRef, cleanUndefined({ time: newTime, updatedAt: serverTimestamp() }));
   });
   await batch.commit();
-
-  // Auto-sync shifted schedules with Google Calendar if connected
-  if (isCalendarConnected()) {
-    for (const shift of shifts) {
-      try {
-        const snap = await getDoc(doc(db, 'teachers', teacherId, 'schedules', shift.slotId));
-        if (snap.exists()) {
-          const data = snap.data() as ScheduleSlot;
-          if (data.googleCalendarEventId) {
-            await updateGoogleCalendarEvent(data.googleCalendarEventId, {
-              ...data,
-              time: shift.newTime,
-            });
-          }
-        }
-      } catch (calErr) {
-        console.warn('Google Calendar sync on bulkShift:', calErr);
-      }
-    }
-  }
 }
 
 /**
@@ -1177,17 +1157,6 @@ export async function deleteStudent(teacherId: string, studentId: string) {
       console.warn('Could not fetch/delete student reports:', e);
     }
 
-    // 2.5. Cascade Delete: Delete all quick notes from student subcollection
-    try {
-      const notesSnap = await getDocs(
-        collection(db, 'teachers', teacherId, 'students', studentId, 'notes')
-      );
-      const deleteNotesPromises = notesSnap.docs.map((d) => deleteDoc(d.ref));
-      await Promise.all(deleteNotesPromises);
-    } catch (e) {
-      console.warn('Could not fetch/delete student notes:', e);
-    }
-
     // 3. Cascade Delete: Delete all schedule slots associated with this student
     try {
       const schedulesSnap = await getDocs(collection(db, 'teachers', teacherId, 'schedules'));
@@ -1954,100 +1923,6 @@ export async function togglePinQuickNote(teacherId: string, noteId: string, curr
 
 export async function toggleCompleteQuickNote(teacherId: string, noteId: string, currentCompleted: boolean) {
   return updateQuickNote(teacherId, noteId, { isCompleted: !currentCompleted });
-}
-
-// ==========================================
-// Student Specific Quick Notes & Progress Remarks CRUD
-// ==========================================
-export function subscribeToStudentQuickNotes(
-  teacherId: string,
-  studentId: string,
-  onUpdate: (notes: QuickNote[]) => void
-) {
-  const path = `teachers/${teacherId}/students/${studentId}/notes`;
-  return onSnapshot(
-    collection(db, 'teachers', teacherId, 'students', studentId, 'notes'),
-    (snap) => {
-      const notes = snap.docs.map((d) => ({
-        ...d.data(),
-        id: d.id,
-      })) as QuickNote[];
-
-      // Sort: pinned first, then by createdAt desc
-      notes.sort((a, b) => {
-        if (a.isPinned && !b.isPinned) return -1;
-        if (!a.isPinned && b.isPinned) return 1;
-        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt || 0).getTime();
-        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt || 0).getTime();
-        return timeB - timeA;
-      });
-
-      onUpdate(notes);
-    },
-    (err) => handleFirestoreError(err, OperationType.LIST, path)
-  );
-}
-
-export async function addStudentQuickNote(
-  teacherId: string,
-  studentId: string,
-  note: { text: string; color?: NoteColor; isPinned?: boolean; category?: string }
-) {
-  const path = `teachers/${teacherId}/students/${studentId}/notes`;
-  try {
-    const colRef = collection(db, 'teachers', teacherId, 'students', studentId, 'notes');
-    const newDoc = doc(colRef);
-    await setDoc(newDoc, {
-      id: newDoc.id,
-      teacherId,
-      studentId,
-      text: note.text.trim(),
-      color: note.color || 'purple',
-      isPinned: !!note.isPinned,
-      isCompleted: false,
-      category: note.category || 'progress',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-    return newDoc.id;
-  } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, path);
-  }
-}
-
-export async function updateStudentQuickNote(
-  teacherId: string,
-  studentId: string,
-  noteId: string,
-  updates: Partial<QuickNote>
-) {
-  const path = `teachers/${teacherId}/students/${studentId}/notes/${noteId}`;
-  try {
-    await updateDoc(doc(db, 'teachers', teacherId, 'students', studentId, 'notes', noteId), {
-      ...updates,
-      updatedAt: serverTimestamp(),
-    });
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
-}
-
-export async function deleteStudentQuickNote(teacherId: string, studentId: string, noteId: string) {
-  const path = `teachers/${teacherId}/students/${studentId}/notes/${noteId}`;
-  try {
-    await deleteDoc(doc(db, 'teachers', teacherId, 'students', studentId, 'notes', noteId));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
-  }
-}
-
-export async function togglePinStudentQuickNote(
-  teacherId: string,
-  studentId: string,
-  noteId: string,
-  currentPinned: boolean
-) {
-  return updateStudentQuickNote(teacherId, studentId, noteId, { isPinned: !currentPinned });
 }
 
 import { getMessaging, getToken, deleteToken, isSupported } from 'firebase/messaging';
