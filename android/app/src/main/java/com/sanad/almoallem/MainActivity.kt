@@ -33,6 +33,29 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun hasNotificationPermission(): Boolean = NotificationHelper.hasPermission(this@MainActivity)
 
+        // ---- Real class alarms (AlarmManager.setAlarmClock) ----
+        @JavascriptInterface
+        fun isAlarmsEnabled(): Boolean = AlarmStore.isEnabled(this@MainActivity)
+
+        @JavascriptInterface
+        fun setAlarmsEnabled(enabled: Boolean) {
+            AlarmStore.setEnabled(this@MainActivity, enabled)
+            AlarmScheduler.rescheduleAll(this@MainActivity)
+        }
+
+        /** json = [{id, day(0=Sun), time("HH:MM"), minutesBefore, title, body}] */
+        @JavascriptInterface
+        fun setClassAlarms(json: String) {
+            AlarmStore.saveRules(this@MainActivity, json)
+            AlarmScheduler.rescheduleAll(this@MainActivity)
+        }
+
+        /** Rings in 5 seconds so the teacher can hear/see exactly what the alarm does. */
+        @JavascriptInterface
+        fun testAlarm() {
+            AlarmScheduler.scheduleOnce(this@MainActivity, 5_000L, "⏰ تجربة المنبّه", "كده هيرنّ قبل حصصك")
+        }
+
         @JavascriptInterface
         fun requestNotificationPermission() {
             runOnUiThread {
