@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { PublicPagePanel } from './PublicPagePanel';
+import { SettingsGroup } from './SettingsGroup';
 import { CalendarSyncPanel } from './CalendarSyncPanel';
 import { NativeAlarmPanel } from './NativeAlarmPanel';
 import { useTranslation } from 'react-i18next';
@@ -996,109 +997,422 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         </div>
       </div>
 
-      {/* App Theme (Dark & Light Mode) Selection */}
-      <ThemeSettingsSection />
+      {/* Subscription Card */}
+      <div className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CreditCard className="w-4 h-4 text-purple-400" />
+            <h3 className="text-sm font-bold text-white">حالة الاشتراك</h3>
+          </div>
+          <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${subInfo.badgeBg}`}>
+            {subInfo.title}
+          </span>
+        </div>
 
-      {/* Interface Language Preference Section */}
-      <div className="p-4 sm:p-5 rounded-3xl bg-slate-900/90 border border-purple-500/30 shadow-xl space-y-3">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-2xl bg-indigo-600/20 text-indigo-300 flex items-center justify-center border border-indigo-500/30">
-              <Globe className="w-5 h-5 text-indigo-400" />
+        <p className="text-xs text-slate-300 leading-relaxed">{subInfo.sub}</p>
+
+        <button
+          onClick={onOpenUpgradeModal}
+          className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 py-2.5 px-4 text-xs font-bold text-white shadow-md hover:brightness-110 active:scale-98 transition cursor-pointer"
+        >
+          <Sparkles className="w-4 h-4 text-amber-300" />
+          <span>تجديد أو ترقية الباقة الآن</span>
+        </button>
+      </div>
+
+      {/* Admin Panel Option - Only shown if checkIsAdmin returned true */}
+      {isAdmin && (
+        <div className="rounded-2xl bg-gradient-to-r from-purple-950/70 via-slate-900 to-indigo-950/60 border border-purple-500/30 p-4 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30 shadow-inner">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">لوحة الإدارة (Admin Panel)</h3>
+                <p className="text-xs text-purple-200/80">إدارة المعلمين وتفعيل وتمديد الاشتراكات</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onOpenAdminDashboard?.()}
+              className="px-3.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black transition cursor-pointer shadow-md shadow-amber-500/20 flex items-center gap-1.5 active:scale-98"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>دخول</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      <SettingsGroup icon="🔔" title="الإشعارات والتذكيرات" hint="تذكير الحصص، ملخص الصباح، المنبّه" defaultOpen>
+      {/* Automated Class Reminders Card */}
+      <div className="rounded-2xl bg-gradient-to-r from-purple-950/50 via-slate-900 to-indigo-950/50 border border-purple-500/30 p-4 space-y-4 shadow-xl">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md flex-shrink-0">
+              <Clock className="w-5 h-5" />
             </div>
             <div>
-              <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                <span>{t('settings.language', 'لغة الواجهة (Interface Language)')}</span>
-              </h4>
-              <p className="text-xs text-slate-400">
-                {t('settings.select_language', 'اختر لغة عرض الواجهة والاتجاه (RTL / LTR)')}
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-white">التذكير التلقائي بالحصص (قبل 15 دقيقة)</h3>
+              </div>
+              <p className="text-[11px] text-purple-200/80 mt-0.5">
+                تنبيهات فورية للمتصفح ورسائل واتساب للوالدين والمعلمين قبل موعد الحصة
               </p>
             </div>
           </div>
-
-          <div className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-800">
-            <button
-              type="button"
-              onClick={() => changeLanguage('ar')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-                i18n.language.startsWith('ar')
-                  ? 'bg-purple-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <span>🇸🇦</span>
-              <span>العربية</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => changeLanguage('en')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-                i18n.language.startsWith('en')
-                  ? 'bg-purple-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <span>🇬🇧</span>
-              <span>English</span>
-            </button>
-          </div>
+          <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 flex-shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span>تنبيهات فورية نشطة</span>
+          </span>
         </div>
-      </div>
 
-      {/* Teacher Currency Preference Section */}
-      <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/40 via-slate-900 to-purple-950/40 border border-amber-500/30 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30">
-              <Coins className="w-5 h-5 text-amber-400" />
-            </div>
-            <div>
-              <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                <span>عملة المعلم المعتمدة</span>
-                <span className="text-xs font-mono font-black px-2 py-0.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300">
-                  {profile.currency || 'ج.م'}
-                </span>
-                {updatingCurrency && <RefreshCw className="w-3 h-3 text-amber-300 animate-spin" />}
-              </h4>
-              <p className="text-xs text-slate-400">تُستخدم في كافة الحسابات والتقارير المالية وفواتير أولياء الأمور</p>
-            </div>
-          </div>
-
-          <div className="relative">
-            <select
-              value={profile.currency || 'ج.م'}
-              onChange={(e) => handleQuickCurrencyChange(e.target.value)}
-              disabled={updatingCurrency}
-              className="appearance-none bg-slate-950 border border-amber-500/40 text-amber-300 font-bold rounded-xl pr-7 pl-3 py-1.5 text-xs cursor-pointer focus:outline-none"
-            >
-              {SUPPORTED_CURRENCIES.map((c) => (
-                <option key={c.code} value={c.code} className="bg-slate-900 text-white">
-                  {c.flag} {c.code} - {c.name}
-                </option>
-              ))}
-            </select>
-            <Coins className="w-3.5 h-3.5 text-amber-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+        {/* Clear Notice about Web Push Working When App is Closed */}
+        <div className="p-3 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-200 text-xs flex items-start gap-2.5">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <span className="font-bold block text-white">عمل التذكيرات مع إغلاق التطبيق 📱:</span>
+            <p className="text-[11px] text-emerald-200/90 leading-relaxed">
+              تستمر التذكيرات التلقائية في العمل وتصلك مباشرة على هاتفك حتى عند إغلاق التطبيق تماماً بمجرد الضغط على "تفعيل إشعارات الهاتف" بالأسفل.
+            </p>
           </div>
         </div>
 
-        {/* Quick Click Currency Badges */}
-        <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-800/80">
-          <span className="text-[11px] text-slate-400 font-bold ml-1">اختيار سريع:</span>
-          {['ج.م', 'ر.س', 'د.إ', 'د.ك', 'ر.ق', 'د.أ', '$', '€'].map((curCode) => (
+        {/* Enable Phone Push Notifications (FCM) Card & Button */}
+        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-950/70 via-slate-950 to-indigo-950/70 border border-purple-500/40 space-y-2.5">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <Smartphone className="w-4 h-4 text-purple-400 shrink-0" />
+              <div>
+                <h4 className="text-xs font-bold text-white">إشعارات الهاتف والتطبيق مغلق (Web Push)</h4>
+                <p className="text-[10px] text-purple-200/80">تفعيل وصول التنبيهات لشاشة الهاتف حتى عند عدم استخدام التطبيق</p>
+              </div>
+            </div>
             <button
-              key={curCode}
               type="button"
-              onClick={() => handleQuickCurrencyChange(curCode)}
-              disabled={updatingCurrency}
-              className={`text-xs font-bold px-2.5 py-1 rounded-xl transition cursor-pointer border ${
-                (profile.currency || 'ج.م') === curCode
-                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-black shadow-sm'
-                  : 'bg-slate-800/90 hover:bg-slate-700 text-slate-200 border-slate-700'
+              disabled={isEnablingFcm}
+              onClick={handleEnablePhoneNotifications}
+              className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 active:scale-95 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md disabled:opacity-50 shrink-0 cursor-pointer"
+            >
+              {isEnablingFcm ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Bell className="w-3.5 h-3.5 text-amber-300" />
+              )}
+              <span>{isEnablingFcm ? 'جارٍ التفعيل...' : 'تفعيل إشعارات الهاتف 🔔'}</span>
+            </button>
+          </div>
+
+          {/* FCM Success Notice */}
+          {fcmNotice && (
+            <div className="p-2.5 rounded-xl bg-emerald-950/90 border border-emerald-500/50 text-emerald-200 text-xs flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>{fcmNotice}</span>
+            </div>
+          )}
+
+          {/* FCM Error Notice */}
+          {fcmError && (
+            <div className="p-2.5 rounded-xl bg-rose-950/90 border border-rose-500/50 text-rose-200 text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>{fcmError}</span>
+            </div>
+          )}
+
+          {/* iPhone / iOS Notice */}
+          {typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent) && (
+            <div className="p-2.5 rounded-xl bg-amber-950/50 border border-amber-500/40 text-amber-200 text-[11px] leading-relaxed flex items-start gap-2">
+              <Smartphone className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block">مستخدمو هواتف آيفون (iOS):</span>
+                <span>لتلقي إشعارات الهاتف والتطبيق مغلق، يرجى تثبيت التطبيق على الشاشة الرئيسية أولاً عبر زر المشاركة في Safari (⬆️ المشاركة) ثم اختيار "إضافة إلى الشاشة الرئيسية".</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Status Notice */}
+        {reminderCheckNotice && (
+          <div className="p-3 rounded-xl bg-purple-950/80 border border-purple-500/40 text-purple-200 text-xs flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-amber-300 flex-shrink-0" />
+            <span>{reminderCheckNotice}</span>
+          </div>
+        )}
+
+        {/* Master Toggle */}
+        <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+          <div>
+            <span className="text-xs font-bold text-white block">خدمة التذكير التلقائي</span>
+            <span className="text-[11px] text-slate-400">تشغيل فحص الجدول وإرسال الرسائل قبل الحصة</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleUpdateReminderSetting('enabled', !reminderSettings.enabled)}
+            className={`w-12 h-6 flex items-center rounded-full p-1 transition cursor-pointer ${
+              reminderSettings.enabled ? 'bg-emerald-600 justify-end' : 'bg-slate-700 justify-start'
+            }`}
+          >
+            <span className="bg-white w-4 h-4 rounded-full shadow-md transform transition" />
+          </button>
+        </div>
+
+        {reminderSettings.enabled && (
+          <div className="space-y-3 pt-1 border-t border-purple-900/30">
+            {/* Notification & WhatsApp Options */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              {/* WhatsApp to Parents */}
+              <div
+                onClick={() => handleUpdateReminderSetting('notifyParent', !reminderSettings.notifyParent)}
+                className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition ${
+                  reminderSettings.notifyParent
+                    ? 'bg-emerald-950/40 border-emerald-500/40 text-white'
+                    : 'bg-slate-950/40 border-slate-800 text-slate-400'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <MessageCircle className="w-4 h-4 text-emerald-400" />
+                  <span>تذكير واتساب لولي الأمر</span>
+                </div>
+                <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                  reminderSettings.notifyParent ? 'border-emerald-400 bg-emerald-500 text-white' : 'border-slate-600'
+                }`}>
+                  {reminderSettings.notifyParent && <Check className="w-3 h-3 stroke-[3]" />}
+                </div>
+              </div>
+
+              {/* Teacher In-app / Web Notification */}
+              <div
+                onClick={() => handleUpdateReminderSetting('notifyTeacher', !reminderSettings.notifyTeacher)}
+                className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition ${
+                  reminderSettings.notifyTeacher
+                    ? 'bg-purple-950/40 border-purple-500/40 text-white'
+                    : 'bg-slate-950/40 border-slate-800 text-slate-400'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Bell className="w-4 h-4 text-purple-400" />
+                  <span>إشعار متصفح للمعلم</span>
+                </div>
+                <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                  reminderSettings.notifyTeacher ? 'border-purple-400 bg-purple-500 text-white' : 'border-slate-600'
+                }`}>
+                  {reminderSettings.notifyTeacher && <Check className="w-3 h-3 stroke-[3]" />}
+                </div>
+              </div>
+            </div>
+
+            {/* Automatic WhatsApp API Dispatch Toggle Card */}
+            <div
+              onClick={() => handleUpdateReminderSetting('autoOpenWhatsApp', !reminderSettings.autoOpenWhatsApp)}
+              className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition ${
+                reminderSettings.autoOpenWhatsApp
+                  ? 'bg-emerald-950/60 border-emerald-500/50 text-white shadow-md'
+                  : 'bg-slate-950/40 border-slate-800 text-slate-400'
               }`}
             >
-              {curCode}
-            </button>
-          ))}
+              <div className="flex items-center gap-2.5">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition ${
+                  reminderSettings.autoOpenWhatsApp
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : 'bg-slate-900 text-slate-500 border border-slate-800'
+                }`}>
+                  <MessageCircle className="w-4 h-4" />
+                </div>
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-bold text-white">إرسال رسائل واتساب تلقائية (WhatsApp API)</span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold">
+                      فتح تلقائي ⚡
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-300 leading-relaxed">
+                    فتح رابط الواتساب المحمل بتفاصيل الحصة تلقائياً فور صدور التنبيه بدلاً من الانتظار للضغط على زر الإرسال
+                  </p>
+                </div>
+              </div>
+              <div className={`w-11 h-6 flex items-center rounded-full p-1 transition shrink-0 mr-2 ${
+                reminderSettings.autoOpenWhatsApp ? 'bg-emerald-500 justify-end' : 'bg-slate-800 justify-start'
+              }`}>
+                <span className="bg-white w-4 h-4 rounded-full shadow-md transform transition" />
+              </div>
+            </div>
+
+            {/* Time Before Class Selector */}
+            <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800 space-y-2">
+              <label className="block text-xs font-semibold text-slate-300">
+                توقيت إرسال التذكير قبل موعد الحصة:
+              </label>
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                {[5, 10, 15, 20, 30, 60].map((mins) => (
+                  <button
+                    key={mins}
+                    type="button"
+                    onClick={() => handleUpdateReminderSetting('minutesBefore', mins)}
+                    className={`py-1.5 rounded-lg text-xs font-bold transition cursor-pointer border ${
+                      reminderSettings.minutesBefore === mins
+                        ? 'bg-purple-600 border-purple-400 text-white shadow'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {mins} دقيقة {mins === 15 ? '⭐' : ''}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Sound Toggle */}
+            <div className="flex items-center justify-between p-2 rounded-xl bg-slate-950/40 border border-slate-800/80 text-xs">
+              <div className="flex items-center gap-2 text-slate-300">
+                {reminderSettings.soundEnabled ? (
+                  <Volume2 className="w-4 h-4 text-amber-300" />
+                ) : (
+                  <VolumeX className="w-4 h-4 text-slate-500" />
+                )}
+                <span>تشغيل نغمة تنبيه صوتية (Chime)</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const newVal = !reminderSettings.soundEnabled;
+                  handleUpdateReminderSetting('soundEnabled', newVal);
+                  if (newVal) playNotificationChime();
+                }}
+                className={`text-[11px] px-2.5 py-1 rounded-lg border font-bold transition cursor-pointer ${
+                  reminderSettings.soundEnabled
+                    ? 'bg-amber-950/50 border-amber-500/40 text-amber-300'
+                    : 'bg-slate-800 border-slate-700 text-slate-400'
+                }`}
+              >
+                {reminderSettings.soundEnabled ? 'مفعل 🔊' : 'صامت 🔇'}
+              </button>
+            </div>
+
+            {/* End-of-Day Summary Report Section */}
+            <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-950/30 via-slate-950/60 to-purple-950/30 border border-emerald-500/30 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30">
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-white">تقرير نهاية اليوم الموجز 📊</h4>
+                    <p className="text-[10px] text-slate-400">إشعار متصفح يومي يلخص عدد الحصص المنجزة</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleUpdateReminderSetting(
+                      'endOfDaySummaryEnabled',
+                      reminderSettings.endOfDaySummaryEnabled === false
+                    )
+                  }
+                  className={`w-10 h-5 flex items-center rounded-full p-0.5 transition cursor-pointer ${
+                    reminderSettings.endOfDaySummaryEnabled !== false
+                      ? 'bg-emerald-600 justify-end'
+                      : 'bg-slate-700 justify-start'
+                  }`}
+                >
+                  <span className="bg-white w-4 h-4 rounded-full shadow-md" />
+                </button>
+              </div>
+
+              {reminderSettings.endOfDaySummaryEnabled !== false && (
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-white/5 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-slate-300">وقت إرسال التقرير:</span>
+                    <input
+                      type="time"
+                      value={reminderSettings.endOfDaySummaryTime || '21:00'}
+                      onChange={(e) =>
+                        handleUpdateReminderSetting('endOfDaySummaryTime', e.target.value)
+                      }
+                      className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleTestEndOfDaySummary}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition flex items-center gap-1 shadow cursor-pointer active:scale-95"
+                  >
+                    <Bell className="w-3 h-3" />
+                    <span>تجربة إشعار نهاية اليوم الآن 🔔</span>
+                  </button>
+                </div>
+              )}
+
+              {eodNotice && (
+                <p className="text-[11px] font-bold text-emerald-300 animate-pulse text-center">
+                  {eodNotice}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Action Buttons Row */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+          {/* Manual Run Check Now */}
+          <button
+            type="button"
+            disabled={isCheckingReminders}
+            onClick={handleManualCheckReminders}
+            className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition cursor-pointer shadow-md disabled:opacity-50"
+            title="فحص فوري لجدول الحصص القادمة"
+          >
+            {isCheckingReminders ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Clock className="w-3.5 h-3.5" />
+            )}
+            <span>{isCheckingReminders ? 'جارٍ الفحص...' : 'فحص الآن ⚡'}</span>
+          </button>
+
+          {/* Browser Permission */}
+          <button
+            type="button"
+            onClick={handleRequestNotificationPermission}
+            className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
+              browserPermission === 'granted'
+                ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
+                : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
+            }`}
+            title="إذن إشعارات المتصفح والنظام"
+          >
+            <Bell className="w-3.5 h-3.5 text-amber-400" />
+            <span>{browserPermission === 'granted' ? 'الإشعارات مفعلة ✅' : 'طلب إذن الإشعار'}</span>
+          </button>
+
+          {/* Test Reminder Modal Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setTestSuccessData(null);
+              // Pre-fill with first student if available
+              if (students.length > 0) {
+                setTestStudentName(students[0].name);
+                setTestStudentPhone(students[0].whatsapp || '');
+              } else {
+                setTestStudentName('طالب تجريبي');
+                setTestStudentPhone(profile.whatsapp || '');
+              }
+              setShowTestModal(true);
+            }}
+            className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold transition cursor-pointer"
+          >
+            <span>تجربة رسالة 🧪</span>
+          </button>
+
+          {/* View Logs Button */}
+          <button
+            type="button"
+            onClick={handleOpenLogsModal}
+            className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold transition cursor-pointer"
+          >
+            <span>سجل التذكيرات 📜</span>
+          </button>
         </div>
       </div>
 
@@ -1474,201 +1788,17 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         )}
       </div>
 
-      {/* Google Calendar Integration & Smart Alerts Section */}
-      <div className="p-4 sm:p-5 rounded-3xl bg-slate-900/90 border border-blue-500/30 shadow-xl space-y-4">
-        <div className="flex items-center justify-between border-b border-blue-900/40 pb-3 flex-wrap gap-2">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-2xl bg-blue-600/20 text-blue-300 flex items-center justify-center border border-blue-500/30">
-              <Calendar className="w-5 h-5 text-blue-400" />
-            </div>
-            <div>
-              <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                <span>دمج وتزامن Google Calendar والتنبيهات</span>
-                {isSyncingCal && <RefreshCw className="w-3 h-3 text-blue-400 animate-spin" />}
-              </h4>
-              <p className="text-xs text-slate-400">
-                مزامنة الحصص تلقائياً مع تقويم جوجل وتحقق صارم من نشاط المواعيد والطلاب
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {isGoogleCalConnected ? (
-              <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span>متصل بالتقويم ✅</span>
-              </span>
-            ) : (
-              <span className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-slate-800 border border-slate-700 text-slate-400">
-                غير متصل
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Notices */}
-        {calSyncNotice && (
-          <div className="p-3 rounded-2xl bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-2 animate-in fade-in">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>{calSyncNotice}</span>
-          </div>
-        )}
-
-        {calErrorNotice && (
-          <div className="p-3 rounded-2xl bg-rose-950/80 border border-rose-500/40 text-rose-300 text-xs font-bold flex items-center justify-between gap-2 animate-in fade-in">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-              <span>{calErrorNotice}</span>
-            </div>
-            <button
-              onClick={handleConnectGoogleCalendar}
-              className="px-2.5 py-1 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-bold shrink-0 cursor-pointer"
-            >
-              إعادة الربط الآن
-            </button>
-          </div>
-        )}
-
-        {/* Feature Explanations */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
-          <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-1">
-            <div className="font-bold text-white flex items-center gap-1.5">
-              <Plus className="w-3.5 h-3.5 text-blue-400" />
-              <span>إنشاء تلقائي للأحداث</span>
-            </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              إنشاء حدث دوري في تقويم Google فور إضافة أو جدولة أي حصة جديدة.
-            </p>
-          </div>
-
-          <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-1">
-            <div className="font-bold text-white flex items-center gap-1.5">
-              <Edit2 className="w-3.5 h-3.5 text-amber-400" />
-              <span>مزامنة التعديلات والحذف</span>
-            </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              تحديث الموعد أو حذفه في Google Calendar تلقائياً عند تغيير الجدول.
-            </p>
-          </div>
-
-          <div className="p-3 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-1">
-            <div className="font-bold text-white flex items-center gap-1.5">
-              <ShieldAlert className="w-3.5 h-3.5 text-emerald-400" />
-              <span>تحقق صارم قبل التنبيه</span>
-            </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              إلغاء التنبيه فوراً إذا تم حذف الطالب أو إلغاء الحصة بالتقويم أو قاعدة البيانات.
-            </p>
-          </div>
-        </div>
-
-        {/* Action Controls */}
-        <div className="flex items-center justify-between pt-2 flex-wrap gap-2">
-          {isGoogleCalConnected ? (
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={handleSyncAllSchedules}
-                disabled={isSyncingCal}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition cursor-pointer shadow-lg shadow-blue-950/50"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingCal ? 'animate-spin' : ''}`} />
-                <span>{isSyncingCal ? 'جارٍ مزامنة الحصص...' : 'مزامنة جميع الحصص الحالية (Sync All) 🔄'}</span>
-              </button>
-              <button
-                onClick={handleDisconnectGoogleCalendar}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-rose-950/60 text-slate-300 hover:text-rose-300 border border-slate-700 text-xs font-bold transition cursor-pointer"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span>فصل الربط</span>
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={handleConnectGoogleCalendar}
-              disabled={isConnectingCal}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:brightness-110 disabled:opacity-50 text-white text-xs font-bold transition cursor-pointer shadow-lg shadow-blue-950/50"
-            >
-              <Calendar className="w-4 h-4" />
-              <span>{isConnectingCal ? 'جارٍ الاتصال بـ Google...' : 'ربط الحساب مع Google Calendar 📅'}</span>
-            </button>
-          )}
-
-          {profile.googleCalendarEmail && (
-            <span className="text-[11px] text-slate-400 font-mono">
-              الحساب المرتبط: {profile.googleCalendarEmail}
-            </span>
-          )}
-        </div>
-      </div>
-
-      <PublicPagePanel profile={profile} />
-
         <NativeAlarmPanel profile={profile} />
+      {/* Notification Center (مركز الإشعارات) */}
+      <NotificationCenter profile={profile} />
 
+      </SettingsGroup>
+
+      <SettingsGroup icon="📅" title="تقويم الفون" hint="اشترك في جدولك من Google Calendar أو الآيفون">
         <CalendarSyncPanel />
+      </SettingsGroup>
 
-      {/* Focus Mode Toggle */}
-      <div className="p-4 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-between">
-        <div>
-          <h4 className="text-sm font-bold text-white">وضع التركيز (Focus Mode)</h4>
-          <p className="text-xs text-slate-400">تقليل التشتت أثناء الحصص</p>
-        </div>
-        <button
-          onClick={toggleFocusMode}
-          className={`w-12 h-6 rounded-full transition-colors flex items-center ${isFocusMode ? 'bg-purple-600' : 'bg-slate-600'}`}
-        >
-          <div className={`w-4 h-4 rounded-full bg-white transition-transform ${isFocusMode ? 'translate-x-[-4px]' : 'translate-x-[4px]'}`} />
-        </button>
-      </div>
-
-      {/* Subscription Card */}
-      <div className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <CreditCard className="w-4 h-4 text-purple-400" />
-            <h3 className="text-sm font-bold text-white">حالة الاشتراك</h3>
-          </div>
-          <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${subInfo.badgeBg}`}>
-            {subInfo.title}
-          </span>
-        </div>
-
-        <p className="text-xs text-slate-300 leading-relaxed">{subInfo.sub}</p>
-
-        <button
-          onClick={onOpenUpgradeModal}
-          className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 py-2.5 px-4 text-xs font-bold text-white shadow-md hover:brightness-110 active:scale-98 transition cursor-pointer"
-        >
-          <Sparkles className="w-4 h-4 text-amber-300" />
-          <span>تجديد أو ترقية الباقة الآن</span>
-        </button>
-      </div>
-
-      {/* Admin Panel Option - Only shown if checkIsAdmin returned true */}
-      {isAdmin && (
-        <div className="rounded-2xl bg-gradient-to-r from-purple-950/70 via-slate-900 to-indigo-950/60 border border-purple-500/30 p-4 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30 shadow-inner">
-                <ShieldAlert className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-white">لوحة الإدارة (Admin Panel)</h3>
-                <p className="text-xs text-purple-200/80">إدارة المعلمين وتفعيل وتمديد الاشتراكات</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => onOpenAdminDashboard?.()}
-              className="px-3.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black transition cursor-pointer shadow-md shadow-amber-500/20 flex items-center gap-1.5 active:scale-98"
-            >
-              <Lock className="w-3.5 h-3.5" />
-              <span>دخول</span>
-            </button>
-          </div>
-        </div>
-      )}
-
+      <SettingsGroup icon="💬" title="رسائل واتساب" hint="قوالب الرسائل الجاهزة">
       {/* WhatsApp Message Templates Entry Link */}
       <div
         onClick={() => setActiveSubScreen('whatsapp_templates')}
@@ -1689,6 +1819,136 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         </div>
       </div>
 
+      </SettingsGroup>
+
+      <SettingsGroup icon="🌐" title="صفحتي العامة وحجز الحصص" hint="رابطك الخاص للطلاب وأولياء الأمور">
+        <PublicPagePanel profile={profile} />
+      </SettingsGroup>
+
+      <SettingsGroup icon="🎨" title="المظهر واللغة والعملة" hint="">
+      {/* App Theme (Dark & Light Mode) Selection */}
+      <ThemeSettingsSection />
+
+      {/* Interface Language Preference Section */}
+      <div className="p-4 sm:p-5 rounded-3xl bg-slate-900/90 border border-purple-500/30 shadow-xl space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-2xl bg-indigo-600/20 text-indigo-300 flex items-center justify-center border border-indigo-500/30">
+              <Globe className="w-5 h-5 text-indigo-400" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>{t('settings.language', 'لغة الواجهة (Interface Language)')}</span>
+              </h4>
+              <p className="text-xs text-slate-400">
+                {t('settings.select_language', 'اختر لغة عرض الواجهة والاتجاه (RTL / LTR)')}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-800">
+            <button
+              type="button"
+              onClick={() => changeLanguage('ar')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                i18n.language.startsWith('ar')
+                  ? 'bg-purple-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>🇸🇦</span>
+              <span>العربية</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => changeLanguage('en')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                i18n.language.startsWith('en')
+                  ? 'bg-purple-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>🇬🇧</span>
+              <span>English</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Teacher Currency Preference Section */}
+      <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/40 via-slate-900 to-purple-950/40 border border-amber-500/30 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-500/30">
+              <Coins className="w-5 h-5 text-amber-400" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>عملة المعلم المعتمدة</span>
+                <span className="text-xs font-mono font-black px-2 py-0.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300">
+                  {profile.currency || 'ج.م'}
+                </span>
+                {updatingCurrency && <RefreshCw className="w-3 h-3 text-amber-300 animate-spin" />}
+              </h4>
+              <p className="text-xs text-slate-400">تُستخدم في كافة الحسابات والتقارير المالية وفواتير أولياء الأمور</p>
+            </div>
+          </div>
+
+          <div className="relative">
+            <select
+              value={profile.currency || 'ج.م'}
+              onChange={(e) => handleQuickCurrencyChange(e.target.value)}
+              disabled={updatingCurrency}
+              className="appearance-none bg-slate-950 border border-amber-500/40 text-amber-300 font-bold rounded-xl pr-7 pl-3 py-1.5 text-xs cursor-pointer focus:outline-none"
+            >
+              {SUPPORTED_CURRENCIES.map((c) => (
+                <option key={c.code} value={c.code} className="bg-slate-900 text-white">
+                  {c.flag} {c.code} - {c.name}
+                </option>
+              ))}
+            </select>
+            <Coins className="w-3.5 h-3.5 text-amber-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+        </div>
+
+        {/* Quick Click Currency Badges */}
+        <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-800/80">
+          <span className="text-[11px] text-slate-400 font-bold ml-1">اختيار سريع:</span>
+          {['ج.م', 'ر.س', 'د.إ', 'د.ك', 'ر.ق', 'د.أ', '$', '€'].map((curCode) => (
+            <button
+              key={curCode}
+              type="button"
+              onClick={() => handleQuickCurrencyChange(curCode)}
+              disabled={updatingCurrency}
+              className={`text-xs font-bold px-2.5 py-1 rounded-xl transition cursor-pointer border ${
+                (profile.currency || 'ج.م') === curCode
+                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-black shadow-sm'
+                  : 'bg-slate-800/90 hover:bg-slate-700 text-slate-200 border-slate-700'
+              }`}
+            >
+              {curCode}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Focus Mode Toggle */}
+      <div className="p-4 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-between">
+        <div>
+          <h4 className="text-sm font-bold text-white">وضع التركيز (Focus Mode)</h4>
+          <p className="text-xs text-slate-400">تقليل التشتت أثناء الحصص</p>
+        </div>
+        <button
+          onClick={toggleFocusMode}
+          className={`w-12 h-6 rounded-full transition-colors flex items-center ${isFocusMode ? 'bg-purple-600' : 'bg-slate-600'}`}
+        >
+          <div className={`w-4 h-4 rounded-full bg-white transition-transform ${isFocusMode ? 'translate-x-[-4px]' : 'translate-x-[4px]'}`} />
+        </button>
+      </div>
+
+      </SettingsGroup>
+
+      <SettingsGroup icon="💾" title="البيانات والتطبيق" hint="الملخص المالي، النسخ الاحتياطي، تثبيت التطبيق">
       {/* Financial Summary & Earnings Dashboard Entry */}
       {onOpenFinancialDashboard && (
         <div
@@ -1719,18 +1979,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </div>
         </div>
       )}
-
-      {/* PWA Install Component */}
-      <div className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-4 space-y-2">
-        <div className="flex items-center gap-2">
-          <Smartphone className="w-4 h-4 text-purple-400" />
-          <h3 className="text-sm font-bold text-white">تثبيت التطبيق على جهازك (PWA)</h3>
-        </div>
-        <p className="text-xs text-slate-300 leading-relaxed">
-          ثبّت "سند المعلم" على الشاشة الرئيسية لهاتفك للوصول السريع بدون كتابة الرابط والعمل أسرع.
-        </p>
-        <PWAInstallButton />
-      </div>
 
       {/* Data Backup & Restore Card */}
       <div className="rounded-2xl bg-gradient-to-r from-purple-950/40 via-slate-900 to-indigo-950/40 border border-purple-500/30 p-4 space-y-3.5 shadow-lg">
@@ -1797,378 +2045,19 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         </button>
       </div>
 
-      {/* Notification Center (مركز الإشعارات) */}
-      <NotificationCenter profile={profile} />
-
-      {/* Automated Class Reminders Card */}
-      <div className="rounded-2xl bg-gradient-to-r from-purple-950/50 via-slate-900 to-indigo-950/50 border border-purple-500/30 p-4 space-y-4 shadow-xl">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md flex-shrink-0">
-              <Clock className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-white">التذكير التلقائي بالحصص (قبل 15 دقيقة)</h3>
-              </div>
-              <p className="text-[11px] text-purple-200/80 mt-0.5">
-                تنبيهات فورية للمتصفح ورسائل واتساب للوالدين والمعلمين قبل موعد الحصة
-              </p>
-            </div>
-          </div>
-          <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 flex-shrink-0">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span>تنبيهات فورية نشطة</span>
-          </span>
+      {/* PWA Install Component */}
+      <div className="rounded-2xl bg-slate-900/80 border border-purple-500/20 p-4 space-y-2">
+        <div className="flex items-center gap-2">
+          <Smartphone className="w-4 h-4 text-purple-400" />
+          <h3 className="text-sm font-bold text-white">تثبيت التطبيق على جهازك (PWA)</h3>
         </div>
-
-        {/* Clear Notice about Web Push Working When App is Closed */}
-        <div className="p-3 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-200 text-xs flex items-start gap-2.5">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-          <div className="space-y-0.5">
-            <span className="font-bold block text-white">عمل التذكيرات مع إغلاق التطبيق 📱:</span>
-            <p className="text-[11px] text-emerald-200/90 leading-relaxed">
-              تستمر التذكيرات التلقائية في العمل وتصلك مباشرة على هاتفك حتى عند إغلاق التطبيق تماماً بمجرد الضغط على "تفعيل إشعارات الهاتف" بالأسفل.
-            </p>
-          </div>
-        </div>
-
-        {/* Enable Phone Push Notifications (FCM) Card & Button */}
-        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-950/70 via-slate-950 to-indigo-950/70 border border-purple-500/40 space-y-2.5">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2">
-              <Smartphone className="w-4 h-4 text-purple-400 shrink-0" />
-              <div>
-                <h4 className="text-xs font-bold text-white">إشعارات الهاتف والتطبيق مغلق (Web Push)</h4>
-                <p className="text-[10px] text-purple-200/80">تفعيل وصول التنبيهات لشاشة الهاتف حتى عند عدم استخدام التطبيق</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              disabled={isEnablingFcm}
-              onClick={handleEnablePhoneNotifications}
-              className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 active:scale-95 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md disabled:opacity-50 shrink-0 cursor-pointer"
-            >
-              {isEnablingFcm ? (
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Bell className="w-3.5 h-3.5 text-amber-300" />
-              )}
-              <span>{isEnablingFcm ? 'جارٍ التفعيل...' : 'تفعيل إشعارات الهاتف 🔔'}</span>
-            </button>
-          </div>
-
-          {/* FCM Success Notice */}
-          {fcmNotice && (
-            <div className="p-2.5 rounded-xl bg-emerald-950/90 border border-emerald-500/50 text-emerald-200 text-xs flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>{fcmNotice}</span>
-            </div>
-          )}
-
-          {/* FCM Error Notice */}
-          {fcmError && (
-            <div className="p-2.5 rounded-xl bg-rose-950/90 border border-rose-500/50 text-rose-200 text-xs flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-              <span>{fcmError}</span>
-            </div>
-          )}
-
-          {/* iPhone / iOS Notice */}
-          {typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent) && (
-            <div className="p-2.5 rounded-xl bg-amber-950/50 border border-amber-500/40 text-amber-200 text-[11px] leading-relaxed flex items-start gap-2">
-              <Smartphone className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-bold block">مستخدمو هواتف آيفون (iOS):</span>
-                <span>لتلقي إشعارات الهاتف والتطبيق مغلق، يرجى تثبيت التطبيق على الشاشة الرئيسية أولاً عبر زر المشاركة في Safari (⬆️ المشاركة) ثم اختيار "إضافة إلى الشاشة الرئيسية".</span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Status Notice */}
-        {reminderCheckNotice && (
-          <div className="p-3 rounded-xl bg-purple-950/80 border border-purple-500/40 text-purple-200 text-xs flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-amber-300 flex-shrink-0" />
-            <span>{reminderCheckNotice}</span>
-          </div>
-        )}
-
-        {/* Master Toggle */}
-        <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950/60 border border-slate-800">
-          <div>
-            <span className="text-xs font-bold text-white block">خدمة التذكير التلقائي</span>
-            <span className="text-[11px] text-slate-400">تشغيل فحص الجدول وإرسال الرسائل قبل الحصة</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => handleUpdateReminderSetting('enabled', !reminderSettings.enabled)}
-            className={`w-12 h-6 flex items-center rounded-full p-1 transition cursor-pointer ${
-              reminderSettings.enabled ? 'bg-emerald-600 justify-end' : 'bg-slate-700 justify-start'
-            }`}
-          >
-            <span className="bg-white w-4 h-4 rounded-full shadow-md transform transition" />
-          </button>
-        </div>
-
-        {reminderSettings.enabled && (
-          <div className="space-y-3 pt-1 border-t border-purple-900/30">
-            {/* Notification & WhatsApp Options */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-              {/* WhatsApp to Parents */}
-              <div
-                onClick={() => handleUpdateReminderSetting('notifyParent', !reminderSettings.notifyParent)}
-                className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition ${
-                  reminderSettings.notifyParent
-                    ? 'bg-emerald-950/40 border-emerald-500/40 text-white'
-                    : 'bg-slate-950/40 border-slate-800 text-slate-400'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <MessageCircle className="w-4 h-4 text-emerald-400" />
-                  <span>تذكير واتساب لولي الأمر</span>
-                </div>
-                <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                  reminderSettings.notifyParent ? 'border-emerald-400 bg-emerald-500 text-white' : 'border-slate-600'
-                }`}>
-                  {reminderSettings.notifyParent && <Check className="w-3 h-3 stroke-[3]" />}
-                </div>
-              </div>
-
-              {/* Teacher In-app / Web Notification */}
-              <div
-                onClick={() => handleUpdateReminderSetting('notifyTeacher', !reminderSettings.notifyTeacher)}
-                className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition ${
-                  reminderSettings.notifyTeacher
-                    ? 'bg-purple-950/40 border-purple-500/40 text-white'
-                    : 'bg-slate-950/40 border-slate-800 text-slate-400'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <Bell className="w-4 h-4 text-purple-400" />
-                  <span>إشعار متصفح للمعلم</span>
-                </div>
-                <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                  reminderSettings.notifyTeacher ? 'border-purple-400 bg-purple-500 text-white' : 'border-slate-600'
-                }`}>
-                  {reminderSettings.notifyTeacher && <Check className="w-3 h-3 stroke-[3]" />}
-                </div>
-              </div>
-            </div>
-
-            {/* Automatic WhatsApp API Dispatch Toggle Card */}
-            <div
-              onClick={() => handleUpdateReminderSetting('autoOpenWhatsApp', !reminderSettings.autoOpenWhatsApp)}
-              className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition ${
-                reminderSettings.autoOpenWhatsApp
-                  ? 'bg-emerald-950/60 border-emerald-500/50 text-white shadow-md'
-                  : 'bg-slate-950/40 border-slate-800 text-slate-400'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition ${
-                  reminderSettings.autoOpenWhatsApp
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                    : 'bg-slate-900 text-slate-500 border border-slate-800'
-                }`}>
-                  <MessageCircle className="w-4 h-4" />
-                </div>
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-xs font-bold text-white">إرسال رسائل واتساب تلقائية (WhatsApp API)</span>
-                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold">
-                      فتح تلقائي ⚡
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-slate-300 leading-relaxed">
-                    فتح رابط الواتساب المحمل بتفاصيل الحصة تلقائياً فور صدور التنبيه بدلاً من الانتظار للضغط على زر الإرسال
-                  </p>
-                </div>
-              </div>
-              <div className={`w-11 h-6 flex items-center rounded-full p-1 transition shrink-0 mr-2 ${
-                reminderSettings.autoOpenWhatsApp ? 'bg-emerald-500 justify-end' : 'bg-slate-800 justify-start'
-              }`}>
-                <span className="bg-white w-4 h-4 rounded-full shadow-md transform transition" />
-              </div>
-            </div>
-
-            {/* Time Before Class Selector */}
-            <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800 space-y-2">
-              <label className="block text-xs font-semibold text-slate-300">
-                توقيت إرسال التذكير قبل موعد الحصة:
-              </label>
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                {[5, 10, 15, 20, 30, 60].map((mins) => (
-                  <button
-                    key={mins}
-                    type="button"
-                    onClick={() => handleUpdateReminderSetting('minutesBefore', mins)}
-                    className={`py-1.5 rounded-lg text-xs font-bold transition cursor-pointer border ${
-                      reminderSettings.minutesBefore === mins
-                        ? 'bg-purple-600 border-purple-400 text-white shadow'
-                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {mins} دقيقة {mins === 15 ? '⭐' : ''}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Sound Toggle */}
-            <div className="flex items-center justify-between p-2 rounded-xl bg-slate-950/40 border border-slate-800/80 text-xs">
-              <div className="flex items-center gap-2 text-slate-300">
-                {reminderSettings.soundEnabled ? (
-                  <Volume2 className="w-4 h-4 text-amber-300" />
-                ) : (
-                  <VolumeX className="w-4 h-4 text-slate-500" />
-                )}
-                <span>تشغيل نغمة تنبيه صوتية (Chime)</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const newVal = !reminderSettings.soundEnabled;
-                  handleUpdateReminderSetting('soundEnabled', newVal);
-                  if (newVal) playNotificationChime();
-                }}
-                className={`text-[11px] px-2.5 py-1 rounded-lg border font-bold transition cursor-pointer ${
-                  reminderSettings.soundEnabled
-                    ? 'bg-amber-950/50 border-amber-500/40 text-amber-300'
-                    : 'bg-slate-800 border-slate-700 text-slate-400'
-                }`}
-              >
-                {reminderSettings.soundEnabled ? 'مفعل 🔊' : 'صامت 🔇'}
-              </button>
-            </div>
-
-            {/* End-of-Day Summary Report Section */}
-            <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-950/30 via-slate-950/60 to-purple-950/30 border border-emerald-500/30 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-300 flex items-center justify-center border border-emerald-500/30">
-                    <Sparkles className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-white">تقرير نهاية اليوم الموجز 📊</h4>
-                    <p className="text-[10px] text-slate-400">إشعار متصفح يومي يلخص عدد الحصص المنجزة</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleUpdateReminderSetting(
-                      'endOfDaySummaryEnabled',
-                      reminderSettings.endOfDaySummaryEnabled === false
-                    )
-                  }
-                  className={`w-10 h-5 flex items-center rounded-full p-0.5 transition cursor-pointer ${
-                    reminderSettings.endOfDaySummaryEnabled !== false
-                      ? 'bg-emerald-600 justify-end'
-                      : 'bg-slate-700 justify-start'
-                  }`}
-                >
-                  <span className="bg-white w-4 h-4 rounded-full shadow-md" />
-                </button>
-              </div>
-
-              {reminderSettings.endOfDaySummaryEnabled !== false && (
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-white/5 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-slate-300">وقت إرسال التقرير:</span>
-                    <input
-                      type="time"
-                      value={reminderSettings.endOfDaySummaryTime || '21:00'}
-                      onChange={(e) =>
-                        handleUpdateReminderSetting('endOfDaySummaryTime', e.target.value)
-                      }
-                      className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white"
-                    />
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleTestEndOfDaySummary}
-                    className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition flex items-center gap-1 shadow cursor-pointer active:scale-95"
-                  >
-                    <Bell className="w-3 h-3" />
-                    <span>تجربة إشعار نهاية اليوم الآن 🔔</span>
-                  </button>
-                </div>
-              )}
-
-              {eodNotice && (
-                <p className="text-[11px] font-bold text-emerald-300 animate-pulse text-center">
-                  {eodNotice}
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Action Buttons Row */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-          {/* Manual Run Check Now */}
-          <button
-            type="button"
-            disabled={isCheckingReminders}
-            onClick={handleManualCheckReminders}
-            className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition cursor-pointer shadow-md disabled:opacity-50"
-            title="فحص فوري لجدول الحصص القادمة"
-          >
-            {isCheckingReminders ? (
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Clock className="w-3.5 h-3.5" />
-            )}
-            <span>{isCheckingReminders ? 'جارٍ الفحص...' : 'فحص الآن ⚡'}</span>
-          </button>
-
-          {/* Browser Permission */}
-          <button
-            type="button"
-            onClick={handleRequestNotificationPermission}
-            className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
-              browserPermission === 'granted'
-                ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
-                : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
-            }`}
-            title="إذن إشعارات المتصفح والنظام"
-          >
-            <Bell className="w-3.5 h-3.5 text-amber-400" />
-            <span>{browserPermission === 'granted' ? 'الإشعارات مفعلة ✅' : 'طلب إذن الإشعار'}</span>
-          </button>
-
-          {/* Test Reminder Modal Button */}
-          <button
-            type="button"
-            onClick={() => {
-              setTestSuccessData(null);
-              // Pre-fill with first student if available
-              if (students.length > 0) {
-                setTestStudentName(students[0].name);
-                setTestStudentPhone(students[0].whatsapp || '');
-              } else {
-                setTestStudentName('طالب تجريبي');
-                setTestStudentPhone(profile.whatsapp || '');
-              }
-              setShowTestModal(true);
-            }}
-            className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold transition cursor-pointer"
-          >
-            <span>تجربة رسالة 🧪</span>
-          </button>
-
-          {/* View Logs Button */}
-          <button
-            type="button"
-            onClick={handleOpenLogsModal}
-            className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold transition cursor-pointer"
-          >
-            <span>سجل التذكيرات 📜</span>
-          </button>
-        </div>
+        <p className="text-xs text-slate-300 leading-relaxed">
+          ثبّت "سند المعلم" على الشاشة الرئيسية لهاتفك للوصول السريع بدون كتابة الرابط والعمل أسرع.
+        </p>
+        <PWAInstallButton />
       </div>
+
+      </SettingsGroup>
 
       {/* Sign Out Button */}
       <button
@@ -2178,6 +2067,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         <LogOut className="w-4 h-4" />
         <span>تسجيل الخروج من الحساب</span>
       </button>
+
 
       {/* App Footer */}
       <div className="text-center pt-2 text-[11px] text-slate-500">
