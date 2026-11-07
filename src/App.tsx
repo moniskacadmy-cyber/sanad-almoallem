@@ -30,6 +30,7 @@ import { AIAssistantChat } from './components/AIAssistantChat';
 import { LoadingFallback } from './components/LoadingFallback';
 import { Sidebar } from './components/Sidebar';
 import { NotificationStatusBanner } from './components/NotificationStatusBanner';
+import { InstallPromptBanner } from './components/InstallPromptBanner';
 import { useFirebaseSubscription } from './hooks/useFirebaseSubscription';
 import { ThemeToggleCompact } from './components/ThemeToggle';
 import { OnboardingModal } from './components/OnboardingModal';
@@ -866,6 +867,7 @@ export default function App() {
           </div>
         )}
 
+        <InstallPromptBanner signedIn={!!currentUser && !!profile} />
         <NotificationStatusBanner signedIn={!!currentUser && !!profile} />
 
         {/* Main Body Content */}
